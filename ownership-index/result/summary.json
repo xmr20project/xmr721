@@ -1,0 +1,24 @@
+{
+  "firstHeight": 2838270,
+  "lastHeight": 3802870,
+  "lastBlockHash": "f118f7cb1ace1f8bd53b5be0af4fc8289bcff1566573c850e56e695ca7f3f5a9",
+  "transactionsScanned": 36784891,
+  "blocksScanned": 964601,
+  "candidateTransactions": 43268,
+  "mordinals": 42894,
+  "registrationsIgnored": 209,
+  "transferTransactions": 165,
+  "transfersApplied": 164,
+  "mordinalsEverMoved": 139,
+  "lastAppliedTransferHeight": 3045217,
+  "lastTransferFieldHeight": 3045217,
+  "ignoredReasons": {
+    "0x10: same body already registered": 161,
+    "0x10: fee below rule": 48,
+    "0x11: spent output is not a Mordinal owner output": 1
+  },
+  "indexStopFlag": false,
+  "differencesFromOriginalIndex": 0,
+  "ownersFile": "owners.jsonl",
+  "ownersSha256": "2170e7e3db05923bca1b879e7f19916fb29979204896d2fcc96991215455a299"
+}

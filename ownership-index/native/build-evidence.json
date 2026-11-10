@@ -1,0 +1,62 @@
+{
+  "upstream": "https://github.com/mooonero/mordinals",
+  "commit": "8467001ca681f9f367b90973932ef1c0335d42b6",
+  "sourceChecks": [
+    {
+      "path": "src/cryptonote_core/inscriptions_container.cpp",
+      "sha256": "d2fa61f79a7b2237bf630b319ed370758deb50aa35af7dea336098e5c56e2f0d"
+    },
+    {
+      "path": "src/cryptonote_core/inscriptions_container.h",
+      "sha256": "abfd0adffdfaec8f3a4d1e6b2a5bedd326eda897da01c80a2870e445d3e2278b"
+    },
+    {
+      "path": "src/cryptonote_core/blockchain.cpp",
+      "sha256": "32cd1922c7e3ab6d6acb09e7401764a489396156b32d688c7dc77e26e016092a"
+    },
+    {
+      "path": "src/cryptonote_basic/tx_extra.h",
+      "sha256": "b5c228f9e92f09a7e52b2275f8071a1f2ffbfc490cef9bebdd4bdbd5df6c8330"
+    },
+    {
+      "path": "src/cryptonote_basic/cryptonote_format_utils.h",
+      "sha256": "9b54c78be3e0ce36922f350f7d8e1d3396c5af1e43dd195a317b484c062d817c"
+    },
+    {
+      "path": "src/cryptonote_basic/cryptonote_format_utils.cpp",
+      "sha256": "60f508425bd5e6d39dd515f268a3273dfb2ce138b0b09d23e1c8c99cf86fea23"
+    },
+    {
+      "path": "src/cryptonote_basic/cryptonote_basic_impl.h",
+      "sha256": "b2abfcac0ab56234c8e1fca7d38541477428bca576674ef656d10dd32c1a2154"
+    },
+    {
+      "path": "src/cryptonote_basic/cryptonote_basic_impl.cpp",
+      "sha256": "e38c90d6ed3cba1f8e7983c41273086a1d2e97882cf26d8c34e73ab61c8dad66"
+    },
+    {
+      "path": "src/cryptonote_config.h",
+      "sha256": "ea3da534c987ed48d5f2117d737628877367d0f052150ec824e898d3989ac2ac"
+    },
+    {
+      "path": "ordinals_viewer.html",
+      "sha256": "f34f3c5c4367cc56853a7955db2cba09bf6bfbc969e31ae0e70610c94fd62109"
+    },
+    {
+      "path": "src/cryptonote_core/cryptonote_tx_utils.cpp",
+      "sha256": "8d98994926203ab1eebc0ab68175fcdca89469d91ed26eacdec474af34caf12a"
+    },
+    {
+      "path": "src/cryptonote_core/cryptonote_tx_utils.h",
+      "sha256": "ec44553a3d98e84db5ef3e7dff715c5314f510a8192f6e7529db250c52fec443"
+    }
+  ],
+  "sourceRulePatches": false,
+  "freshlyCompiled": [
+    "src/cryptonote_core/inscriptions_container.cpp",
+    "src/cryptonote_basic/cryptonote_format_utils.cpp",
+    "replay.cpp"
+  ],
+  "replaySha256": "28ac3487aee7cee74ae0f73ebd5b72f1ace8ff2c2e8344b76e36af0b8a179756",
+  "binarySha256": "32b35c450d7c7269c7258f4320989cdc294e8437986c89dc0ed36a80f44aa255"
+}

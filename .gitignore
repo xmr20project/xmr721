@@ -1,0 +1,8 @@
+node_modules/
+reader/bin/
+reader/carrier/target/
+reader/shots/
+ownership-index/native/build/
+runs-lab-*/
+*.log
+.DS_Store
