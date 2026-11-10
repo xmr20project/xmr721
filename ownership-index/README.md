@@ -66,14 +66,15 @@ wallets and readers compute it (`ownersHash` in `reader/lib/owners.mjs`):
    ranges at once.
 2. `native/replay` feeds those transactions, in chain order, to the original index code.
    `inscriptions_container.cpp` and `cryptonote_format_utils.cpp` are compiled unchanged;
-   `native/build.py` checks their hashes first and writes `native/build-evidence.json`.
+   `native/build.py` checks their hashes against `native/source-manifest.json` first and
+   writes `native/build-evidence.json`.
 3. `check.py` is a second replay written separately in Python, with its own transaction and
    extra-field parser. It compares every decision and every owner with step 2 and stops on
    any difference. Then it writes the result files.
 
 ```
 NODE_SSH=user@host ./run-scan.sh SCAN_DIR 3802870 5
-python3 native/build.py        # see its header for the three folders it needs
+MORDINALS_SOURCE=... MORDINALS_BUILD=... python3 native/build.py   # see its header
 native/build/replay SCAN_DIR/native.jsonl SCAN_DIR/part-0.bin ... SCAN_DIR/part-4.bin
 python3 -I check.py SCAN_DIR/native.jsonl OUT_DIR SCAN_DIR/part-0.bin ... SCAN_DIR/part-4.bin
 ```
