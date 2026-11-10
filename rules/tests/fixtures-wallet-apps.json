@@ -1,0 +1,201 @@
+{
+ "about": "Records and expected results from tests/lab-wallet-apps.test.mjs (wallet2 wallets on a local test chain). Public data only: no keys.",
+ "made": "2026-11-10",
+ "network": "mainnet",
+ "domain": "4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d",
+ "feeAddress": "44T5a5yRB7wBaSf4gGmkkefyvUrjh524fE3vUGXeBDFWRx8Nbjx9kXrLGoCK4Fx4QREpsKFRS8ygxSzSA4b788aMKLgmaQ4",
+ "startHeight": 235,
+ "rules": {
+  "feeBps": 500,
+  "marketFeeCapBps": 500,
+  "minPrice": "1000000000",
+  "maxReserve": 30,
+  "settle": 10,
+  "maxPayments": 3,
+  "maxKeys": 17
+ },
+ "owners": [
+  {
+   "number": 0,
+   "what": "dana sends to herself (the inscriber keeps it)",
+   "registrationTx": "9ce178f2ff75a9c81e94b631172dcbb1168d8194425103e866be9138d7f7004f",
+   "registrationHeight": 231,
+   "ownerTx": "9ce178f2ff75a9c81e94b631172dcbb1168d8194425103e866be9138d7f7004f",
+   "ownerHeight": 231,
+   "ownerOutputKey": "0db2ade8e330d4556b1c057b8a677f162d103a8ecdcbeb48121fe54c51128c55",
+   "ownerViewTag": "3a",
+   "ownerTxPubKeys": [
+    "9e0c240878e0c28377f73de7149627704b059cf84c41f1705fccf0490343b7ac"
+   ],
+   "ownerAdditionalPubKeys": []
+  },
+  {
+   "number": 1,
+   "what": "dana sends to herself again",
+   "registrationTx": "95c73b942a938319d54e7973af5abfc7a77a3dcba88475d9e86ea342ceef2a2b",
+   "registrationHeight": 232,
+   "ownerTx": "95c73b942a938319d54e7973af5abfc7a77a3dcba88475d9e86ea342ceef2a2b",
+   "ownerHeight": 232,
+   "ownerOutputKey": "42dfb08df73af2326a3a43a0e24db9381f60ea21c7da6dc6a368b44622745c8f",
+   "ownerViewTag": "5f",
+   "ownerTxPubKeys": [
+    "c9fa7326c0acfdf88f7cf796bddd64c25a9b133c7f1f080ab2b580cf60ffea36"
+   ],
+   "ownerAdditionalPubKeys": []
+  },
+  {
+   "number": 2,
+   "what": "sent to a subaddress of dana",
+   "registrationTx": "09f014726628c2cfd7114013dbd7595977593fd1b7184a62f0d8fc9fef2618fa",
+   "registrationHeight": 233,
+   "ownerTx": "09f014726628c2cfd7114013dbd7595977593fd1b7184a62f0d8fc9fef2618fa",
+   "ownerHeight": 233,
+   "ownerOutputKey": "a0e8f9287c4c9f9f5bb72c6dbee840540385cd6c93970001a40d90f13173a6b3",
+   "ownerViewTag": "92",
+   "ownerTxPubKeys": [
+    "a528136f9edddfa484e73cc0fe6e7c0fc7fa0bc962907bf31bc180fec909ffe8"
+   ],
+   "ownerAdditionalPubKeys": []
+  },
+  {
+   "number": 3,
+   "what": "dana sends to her own subaddress",
+   "registrationTx": "e91e049e1a37d808aae1b56d9842e3fd95e2f2364e254f407afcacb27c62a1cc",
+   "registrationHeight": 234,
+   "ownerTx": "e91e049e1a37d808aae1b56d9842e3fd95e2f2364e254f407afcacb27c62a1cc",
+   "ownerHeight": 234,
+   "ownerOutputKey": "07e64d693c244af99f15a01df10fa81aa53f506edb5c004d061ffa0faee96cd3",
+   "ownerViewTag": "61",
+   "ownerTxPubKeys": [
+    "6fcb2a369469bad7c04a37e8ea7b7a10b4ae2ff3dc1c9c23737cbe15c5828aaa"
+   ],
+   "ownerAdditionalPubKeys": []
+  },
+  {
+   "number": 4,
+   "what": "erin sends to herself (not dana's)",
+   "registrationTx": "27f559d4e25c8fa4d72c0a56021a9b47ae9378473c227b7567e8d3d6e7685734",
+   "registrationHeight": 235,
+   "ownerTx": "27f559d4e25c8fa4d72c0a56021a9b47ae9378473c227b7567e8d3d6e7685734",
+   "ownerHeight": 235,
+   "ownerOutputKey": "4e4102a6d8106d3c3e8acef5c48567044d6877cf3569fae29541b1115d352f13",
+   "ownerViewTag": "00",
+   "ownerTxPubKeys": [
+    "b4f6dba8806d1cb7ed8ec56dbec619539b226ab2addd7db62e5a59db3abd9201"
+   ],
+   "ownerAdditionalPubKeys": []
+  }
+ ],
+ "events": [
+  {
+   "name": "claim #0: proof made from the view key + message signed in the wallet (self-sent transaction)",
+   "height": 235,
+   "record": "4d4431fe019ce178f2ff75a9c81e94b631172dcbb1168d8194425103e866be9138d7f7004f9ce178f2ff75a9c81e94b631172dcbb1168d8194425103e866be9138d7f7004f00b545bac2a7bdd51f6b1926065914e87658646933d0ee705388003af3e0b9496f4060e42f4d877c92f41228e30df7f13311805e59e71f811752f56b9bfb3351fc0100b545bac2a7bdd51f6b1926065914e87658646933d0ee705388003af3e0b9496f4060e42f4d877c92f41228e30df7f13311805e59e71f811752f56b9bfb3351fc081cf498b9e59beed5a45b032871587d16e22b1e66d916d24378bd8c9ec3a91820e1d2bc98332aa8d26af59bc1cae301afb6ce93684f20a47d8c5a0a3fa41d07b7db3c1a0775100dce7d1e57a921119d9a275accd973d8d84c48a1add1f5580c00fd10994c466e43ba347d531353f49884c30b76b9490fe8db5d843c70e423120827488ba5d495f248b9d8729acbab34ebbfc521a26bb0fa9dc80f2cbab7567f01",
+   "text": "Mordinals claim: Mordinal #0 (inscription 9ce178f2ff75a9c81e94b631172dcbb1168d8194425103e866be9138d7f7004f), held by output 0 of 9ce178f2ff75a9c81e94b631172dcbb1168d8194425103e866be9138d7f7004f, now belongs to 48VXx1fD65z6FoFNVtEbUBLo6evwdHHXdEyMkd1ygio2KcHAYkSP5NBRadfKiHsKoE9YRmoYZN6xp4uGowEuBuoeVXg1Vk6; code d4cd2faec7337d11a8066aa3ca9dd2e7",
+   "accepted": true,
+   "id": "d4cd2faec7337d11a8066aa3ca9dd2e7f01c4556003d308fa926ea968a3a6800"
+  },
+  {
+   "name": "claim #2: proof made from the view key, subaddress coin, signed with the subaddress",
+   "height": 235,
+   "record": "4d4431fe0109f014726628c2cfd7114013dbd7595977593fd1b7184a62f0d8fc9fef2618fa09f014726628c2cfd7114013dbd7595977593fd1b7184a62f0d8fc9fef2618fa00b545bac2a7bdd51f6b1926065914e87658646933d0ee705388003af3e0b9496f4060e42f4d877c92f41228e30df7f13311805e59e71f811752f56b9bfb3351fc0101442cf2de11eb6b5b662557b379e1bc14ed1b0378f2aef837f5e69aa7e68c7f7982e73b4210914808a697001512a61068f9b92678d698f765cfd62c5f7a0fc4990c189a56fa7827b40115c034f62747ebad947f92736978bd88db58971b5b47d119395183954aacd83f7f49d5309d23b304b1508e260226d2ea6fbf3806b97c021135250315d93a29d054133179aa498edda39f59c0f43817b162f8aab2b2c1020010849369eca1e8341e1bbf8e1b76f58608d48473dbb9ffa9a3a8e4731ec18a04f8e84d7eac2852373c9266ca6e1918b59be84aefc3cd4bbf47987225c082050e",
+   "text": "Mordinals claim: Mordinal #2 (inscription 09f014726628c2cfd7114013dbd7595977593fd1b7184a62f0d8fc9fef2618fa), held by output 0 of 09f014726628c2cfd7114013dbd7595977593fd1b7184a62f0d8fc9fef2618fa, now belongs to 48VXx1fD65z6FoFNVtEbUBLo6evwdHHXdEyMkd1ygio2KcHAYkSP5NBRadfKiHsKoE9YRmoYZN6xp4uGowEuBuoeVXg1Vk6; code f386274c81d4e91808e8b6f16e016e3d",
+   "accepted": true,
+   "id": "f386274c81d4e91808e8b6f16e016e3d138daea7265e3aa361282fea56a2dcb2"
+  },
+  {
+   "name": "claim #4: a Mordinal of another wallet",
+   "height": 235,
+   "record": "4d4431fe0127f559d4e25c8fa4d72c0a56021a9b47ae9378473c227b7567e8d3d6e768573427f559d4e25c8fa4d72c0a56021a9b47ae9378473c227b7567e8d3d6e768573400b545bac2a7bdd51f6b1926065914e87658646933d0ee705388003af3e0b9496f4060e42f4d877c92f41228e30df7f13311805e59e71f811752f56b9bfb3351fc0100b545bac2a7bdd51f6b1926065914e87658646933d0ee705388003af3e0b9496f4060e42f4d877c92f41228e30df7f13311805e59e71f811752f56b9bfb3351fc736f6649b6a64c2b9ae3f4bb096a709e60ef1eb2f8692b3ca8f902e29cf85dd6d2d3ff7b394acaa30eab67499df995615806bbb5bbda0bdc02f27942a830910af8731152b02df5df4444c9d9d96c3292a9ba3d93e1e39214d84a8247b1e4ad0f00d72e5ed3ed7a249b1ad9377e5f8c73b26412e544afc264e83d57952dc465e204978af28a1b4efc494edb07868b51c95edd8420700beac93fd4b74ae8637b800e",
+   "text": "Mordinals claim: Mordinal #4 (inscription 27f559d4e25c8fa4d72c0a56021a9b47ae9378473c227b7567e8d3d6e7685734), held by output 0 of 27f559d4e25c8fa4d72c0a56021a9b47ae9378473c227b7567e8d3d6e7685734, now belongs to 48VXx1fD65z6FoFNVtEbUBLo6evwdHHXdEyMkd1ygio2KcHAYkSP5NBRadfKiHsKoE9YRmoYZN6xp4uGowEuBuoeVXg1Vk6; code 0c9317692bece9403474b55308dd6dc4",
+   "accepted": false,
+   "error": "This address did not receive output 0 of the owner transaction, so it does not hold this Mordinal."
+  },
+  {
+   "name": "claim #1: proof from the view-only wallet + message signed in the full wallet (self-sent transaction)",
+   "height": 235,
+   "record": "4d4431fe0195c73b942a938319d54e7973af5abfc7a77a3dcba88475d9e86ea342ceef2a2b95c73b942a938319d54e7973af5abfc7a77a3dcba88475d9e86ea342ceef2a2b00b545bac2a7bdd51f6b1926065914e87658646933d0ee705388003af3e0b9496f4060e42f4d877c92f41228e30df7f13311805e59e71f811752f56b9bfb3351fc0100b545bac2a7bdd51f6b1926065914e87658646933d0ee705388003af3e0b9496f4060e42f4d877c92f41228e30df7f13311805e59e71f811752f56b9bfb3351fc076f9f7677ba7ee2f9e32aaf57ad9a7dacfcde9825e6d7ef31473c3d2c03d80e6a04b25440537b453527eddd7f4d3c9e6707f93a87c6ce1a15d46b6d05138a045d2d7822ff810678821f2741b39d0f59f1ede589c4c47cf9b988ea60fff6190a00477285e0716129215c642046fd02fc41d6c727a9e30c6908fbd9ec03542d330b5f3549848d18ceb2f013cfbf51d2722c6b267e9a78cafe6b05c9c95e8401890b",
+   "text": "Mordinals claim: Mordinal #1 (inscription 95c73b942a938319d54e7973af5abfc7a77a3dcba88475d9e86ea342ceef2a2b), held by output 0 of 95c73b942a938319d54e7973af5abfc7a77a3dcba88475d9e86ea342ceef2a2b, now belongs to 48VXx1fD65z6FoFNVtEbUBLo6evwdHHXdEyMkd1ygio2KcHAYkSP5NBRadfKiHsKoE9YRmoYZN6xp4uGowEuBuoeVXg1Vk6; code e0a00203b9800d220b950fdf00c7ac6d",
+   "accepted": true,
+   "id": "e0a00203b9800d220b950fdf00c7ac6dea57a7f682c73dc556d84eebefee1c4c"
+  },
+  {
+   "name": "claim #3: proof from the view-only wallet, self-sent to a subaddress",
+   "height": 235,
+   "record": "4d4431fe01e91e049e1a37d808aae1b56d9842e3fd95e2f2364e254f407afcacb27c62a1cce91e049e1a37d808aae1b56d9842e3fd95e2f2364e254f407afcacb27c62a1cc01442cf2de11eb6b5b662557b379e1bc14ed1b0378f2aef837f5e69aa7e68c7f7982e73b4210914808a697001512a61068f9b92678d698f765cfd62c5f7a0fc4990101442cf2de11eb6b5b662557b379e1bc14ed1b0378f2aef837f5e69aa7e68c7f7982e73b4210914808a697001512a61068f9b92678d698f765cfd62c5f7a0fc4997d019e6d2c91c7f68d9dab4ed720df24ee80ebdb74aec4adeadb0920417a0231e8abd0dce47b235e3561e3cb192a0acdd3ca7392bade8f03a8725e8ca44b5d0ae59fd49c8ca28d4bd12d1155fe64940efa99e956b952c4f74da8bda8aeeb350900e3e01759920816b05ac1a93de2c45201debd53a9e24164042d8e6828c468410d653a8a1955168fdb11acee08721a667d92924b51b2e12fb341501d0e809f2402",
+   "text": "Mordinals claim: Mordinal #3 (inscription e91e049e1a37d808aae1b56d9842e3fd95e2f2364e254f407afcacb27c62a1cc), held by output 0 of e91e049e1a37d808aae1b56d9842e3fd95e2f2364e254f407afcacb27c62a1cc, now belongs to 8536eJuAe6EGHgismmLwqD4W1bcdVfA4PAMtUL1Z8JDCMKp7JKMH43h2SvY5Ay2GYfJZPqJEWgZd8J2hkXWZLikjJL97MoF; code 4b9abf4a85f9e284cea7fd5fe38e45df",
+   "accepted": true,
+   "id": "4b9abf4a85f9e284cea7fd5fe38e45dfd911d885573cd73d0ab3075a1f72e2a3"
+  },
+  {
+   "name": "move #0 to erin",
+   "height": 235,
+   "record": "4d4431fe029ce178f2ff75a9c81e94b631172dcbb1168d8194425103e866be9138d7f7004f0000000000b545bac2a7bdd51f6b1926065914e87658646933d0ee705388003af3e0b9496f4060e42f4d877c92f41228e30df7f13311805e59e71f811752f56b9bfb3351fc005c61afbf2d372fc2bec3956b07486fd378ba73a91a89ab52e33a6cf015c35a6142aef65e7bbe9449c50d645a6b92312103691fec8b2c6489e474a8792e24eb86001c04ed47e080c7178c18ae3ab234d379f4e4e004492f3dd8c4ca14a05e775002881470ec8182def71ca8e7cb47963b4ae0f300aefad3378d950b3da2c4e18604",
+   "text": "Mordinals move: send Mordinal #0 to 458A71kr3ocZaGnPsddoHxcNYHSvWT362Es7bKDypQQHHGYpC4UgeGKDLfDMBDyLtx6XGhFVc41yDQ4jHZP9sku8G9bcGgw; move 0; code 29761c9c6f02cb96381d6c60537f9450",
+   "accepted": true,
+   "id": "29761c9c6f02cb96381d6c60537f9450afef37fd876a09f944d4b8c707a88c11"
+  },
+  {
+   "name": "list #3 for 0.1 XMR from the subaddress",
+   "height": 235,
+   "record": "4d4431fe03e91e049e1a37d808aae1b56d9842e3fd95e2f2364e254f407afcacb27c62a1cc000000001702000000e876481700000001442cf2de11eb6b5b662557b379e1bc14ed1b0378f2aef837f5e69aa7e68c7f7982e73b4210914808a697001512a61068f9b92678d698f765cfd62c5f7a0fc4990052720054bcdb8d2e35d2829f8e5a127e80125aaad06eaf85246b69c237062d03abcd16196da6f82db9a9e9a3757fc36984bcdf3a3b5a24498cd4cd2a6897710e",
+   "text": "Mordinals list: sell Mordinal #3 for 0.1 XMR (0.095 XMR to 8536eJuAe6EGHgismmLwqD4W1bcdVfA4PAMtUL1Z8JDCMKp7JKMH43h2SvY5Ay2GYfJZPqJEWgZd8J2hkXWZLikjJL97MoF, 0.005 XMR protocol fee); valid until block 535; code f005b86aa4b043bb7e77707e3d32f8a0",
+   "accepted": true,
+   "id": "f005b86aa4b043bb7e77707e3d32f8a0c8c964915c37cbff2dd35fc783bf6f19"
+  }
+ ],
+ "final": {
+  "height": 235,
+  "claimed": [
+   {
+    "number": 0,
+    "owner": "458A71kr3ocZaGnPsddoHxcNYHSvWT362Es7bKDypQQHHGYpC4UgeGKDLfDMBDyLtx6XGhFVc41yDQ4jHZP9sku8G9bcGgw",
+    "seq": 1,
+    "lot": null,
+    "history": [
+     "claim",
+     "move"
+    ]
+   },
+   {
+    "number": 1,
+    "owner": "48VXx1fD65z6FoFNVtEbUBLo6evwdHHXdEyMkd1ygio2KcHAYkSP5NBRadfKiHsKoE9YRmoYZN6xp4uGowEuBuoeVXg1Vk6",
+    "seq": 0,
+    "lot": null,
+    "history": [
+     "claim"
+    ]
+   },
+   {
+    "number": 2,
+    "owner": "48VXx1fD65z6FoFNVtEbUBLo6evwdHHXdEyMkd1ygio2KcHAYkSP5NBRadfKiHsKoE9YRmoYZN6xp4uGowEuBuoeVXg1Vk6",
+    "seq": 0,
+    "lot": null,
+    "history": [
+     "claim"
+    ]
+   },
+   {
+    "number": 3,
+    "owner": "8536eJuAe6EGHgismmLwqD4W1bcdVfA4PAMtUL1Z8JDCMKp7JKMH43h2SvY5Ay2GYfJZPqJEWgZd8J2hkXWZLikjJL97MoF",
+    "seq": 0,
+    "lot": "f005b86aa4b043bb7e77707e3d32f8a0c8c964915c37cbff2dd35fc783bf6f19",
+    "history": [
+     "claim"
+    ]
+   }
+  ],
+  "lots": [
+   {
+    "id": "f005b86aa4b043bb7e77707e3d32f8a0c8c964915c37cbff2dd35fc783bf6f19",
+    "number": 3,
+    "seller": "8536eJuAe6EGHgismmLwqD4W1bcdVfA4PAMtUL1Z8JDCMKp7JKMH43h2SvY5Ay2GYfJZPqJEWgZd8J2hkXWZLikjJL97MoF",
+    "price": "100000000000",
+    "status": "open",
+    "buyer": null,
+    "reservations": 0
+   }
+  ],
+  "payments": []
+ }
+}

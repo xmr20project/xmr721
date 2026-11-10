@@ -1,0 +1,66 @@
+{
+ "execution": "SIMULATED (own offline fakechain; real wallet2 signatures, payment proofs and view-only wallet; throwaway wallets; Feather and Cake apps not driven)",
+ "date": "2026-11-10T08:51:12.253Z",
+ "steps": [
+  {
+   "name": "test Mordinals",
+   "count": 5,
+   "startHeight": 235,
+   "kinds": [
+    "dana sends to herself (the inscriber keeps it)",
+    "dana sends to herself again",
+    "sent to a subaddress of dana",
+    "dana sends to her own subaddress",
+    "erin sends to herself (not dana's)"
+   ]
+  },
+  {
+   "name": "claim text",
+   "text": "Mordinals claim: Mordinal #0 (inscription 9ce178f2ff75a9c81e94b631172dcbb1168d8194425103e866be9138d7f7004f), held by output 0 of 9ce178f2ff75a9c81e94b631172dcbb1168d8194425103e866be9138d7f7004f, now belongs to 48VXx1fD65z6FoFNVtEbUBLo6evwdHHXdEyMkd1ygio2KcHAYkSP5NBRadfKiHsKoE9YRmoYZN6xp4uGowEuBuoeVXg1Vk6; code d4cd2faec7337d11a8066aa3ca9dd2e7"
+  },
+  {
+   "name": "way 1: view key",
+   "found": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "proofsAcceptedByWallet2": 4,
+   "selfSentTransaction": "accepted",
+   "subaddressCoin": "accepted",
+   "viewKeySignature": "refused",
+   "otherWallet": "refused",
+   "wrongViewKey": "noticed",
+   "anotherWalletsMordinal": "refused"
+  },
+  {
+   "name": "way 2: view-only wallet",
+   "fullWalletShowsOwnerTransactionAs": "out",
+   "viewOnlyWalletShowsItAs": "in",
+   "proofMadeByWallet": "InProofV2, accepted",
+   "signingInViewOnlyWallet": "made, refused by the rules",
+   "subaddressCoin": "accepted"
+  },
+  {
+   "name": "move text",
+   "text": "Mordinals move: send Mordinal #0 to 458A71kr3ocZaGnPsddoHxcNYHSvWT362Es7bKDypQQHHGYpC4UgeGKDLfDMBDyLtx6XGhFVc41yDQ4jHZP9sku8G9bcGgw; move 0; code 29761c9c6f02cb96381d6c60537f9450"
+  },
+  {
+   "name": "after the claim",
+   "move": "accepted",
+   "listing": "accepted"
+  },
+  {
+   "name": "result",
+   "accepted": 6,
+   "refused": 1,
+   "claimRecordBytes": 361
+  }
+ ],
+ "software": {
+  "monerod": "0.18.5.3-release",
+  "walletRpc": 65568
+ },
+ "result": "PASSED"
+}

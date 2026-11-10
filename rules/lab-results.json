@@ -1,0 +1,136 @@
+{
+ "execution": "SIMULATED (own offline fakechain; real wallet2 signatures, claim proofs, payments and transaction keys; buy-record proofs checked by wallet2; throwaway wallets)",
+ "date": "2026-11-10T08:51:12.254Z",
+ "steps": [
+  {
+   "name": "test Mordinals",
+   "count": 5,
+   "startHeight": 396,
+   "kinds": [
+    "bob sends to himself (the inscriber keeps it)",
+    "alice sends to herself",
+    "sent to a subaddress of alice",
+    "sent to a subaddress of bob",
+    "paid to bob, but output 0 is the sender's change"
+   ]
+  },
+  {
+   "name": "claim text",
+   "text": "Mordinals claim: Mordinal #0 (inscription db40df3b24c24303d421a99895c3ddc9226f7112f4f8c04f83bd79582b2bea5c), held by output 0 of db40df3b24c24303d421a99895c3ddc9226f7112f4f8c04f83bd79582b2bea5c, now belongs to 41iwpUF9GaSJWPq11kX9oAd2tn2e9jBsC6jqgxWnHMcv7HjTEqpLC9Pd9ejpWSnPhf35ouBtCHpTWDMEzd7YK5VG9iDUQfY; code 5450a2858fabe3407351a62e9af3d58b"
+  },
+  {
+   "name": "claim by payment proof",
+   "selfSentTransaction": "InProofV2 made by wallet2, accepted",
+   "verifierAgreesWithWallet2": true,
+   "subaddress": "accepted",
+   "proofWithMessage": "refused",
+   "viewKeySignature": "refused",
+   "outProof": "refused",
+   "payeeOfOutput1": "refused"
+  },
+  {
+   "name": "claim by one-time key",
+   "foundInOwnerList": [
+    1,
+    2
+   ],
+   "mainAddressCoin": "accepted",
+   "subaddressCoin": "accepted",
+   "signatureOnAnotherAddress": "refused",
+   "recordBytes": 199
+  },
+  {
+   "name": "listing text",
+   "text": "Mordinals list: sell Mordinal #1 for 0.2 XMR (0.19 XMR to 4ArL9YtQuFBjDEDocD2Xn72tXfmmXrRJ1WgZj6zm3LNkbt3doK3bCutc72E2A68DXmagdUfuAGEzeLnNCR9jLPPH8C3fLCo, 0.01 XMR protocol fee); valid until block 796; code c415203a37e779e5d10fa562b6ade48b"
+  },
+  {
+   "name": "reservation text",
+   "text": "Mordinals reserve: buy Mordinal #1 for 0.2 XMR; pay exactly 0.190000740597 XMR to 4ArL9YtQuFBjDEDocD2Xn72tXfmmXrRJ1WgZj6zm3LNkbt3doK3bCutc72E2A68DXmagdUfuAGEzeLnNCR9jLPPH8C3fLCo and exactly 0.010000740597 XMR to 4B6yL7PXRWDMvmn3ZrxhGQ7D4v2H6aqUFUCK58sb53RA4oobmVubcEFUzC8NBQRJmZBdSHZdUNGHh4kEAdSGZZvYNqUKsYH by block 426; Mordinal to 42GnrdqEjTLHRLYbLxceXsPEj2XpAd9WmBrErWBqnRgk1gnb2S3aDLyZkZ8U7vGGnAJ5azmXLeF4w7mP1gDkd3rjDXGbTzH; code faeb7ac3f2e33187b0ef7efbc70deb54"
+  },
+  {
+   "name": "sale 1",
+   "price": "0.2 XMR",
+   "sellerReceived": "190000740597",
+   "feeAddressReceived": "10000740597",
+   "transactions": 1,
+   "recordBytes": 296,
+   "wallet2CheckTxKeyAgrees": true,
+   "wallet2CheckTxProofAcceptsRecordProofs": true,
+   "recordCheckAcceptsWallet2OutProof": true,
+   "walletRefusesLockTime": true,
+   "refused": [
+    "no last digits",
+    "fee without last digits",
+    "proofs with another key",
+    "proofs for another listing",
+    "second reservation",
+    "cancel while reserved",
+    "move while listed"
+   ]
+  },
+  {
+   "name": "reservation text with a marketplace fee",
+   "text": "Mordinals reserve: buy Mordinal #3 for 0.5 XMR; pay exactly 0.475000930289 XMR to 84qajhfRcN4SAnskGR6GY6WREdpQRZLPPGuveebR5PVqGY5UhCXL4fySyqYBmavJQyXTojWS7XRPYL8uiTFjSpJL2ypFVpd and exactly 0.025000930289 XMR to 4B6yL7PXRWDMvmn3ZrxhGQ7D4v2H6aqUFUCK58sb53RA4oobmVubcEFUzC8NBQRJmZBdSHZdUNGHh4kEAdSGZZvYNqUKsYH and exactly 0.012500930289 XMR to 427n9z8rFMpRqQ1h9YgJdZ7CirsHSReSUQ6atrHhHLH3bfMDAs6dK7CUptabmqhKADYVswU6EgJdf2Qmg4eaRtxYENSjNih by block 429; Mordinal to 42GnrdqEjTLHRLYbLxceXsPEj2XpAd9WmBrErWBqnRgk1gnb2S3aDLyZkZ8U7vGGnAJ5azmXLeF4w7mP1gDkd3rjDXGbTzH; code a4441dedd0b9b08fe5f5e134d196583e"
+  },
+  {
+   "name": "sale 2",
+   "price": "0.5 XMR",
+   "seller": "subaddress",
+   "paid": {
+    "seller": "475000930289",
+    "protocol fee": "25000930289",
+    "marketplace fee": "12500930289"
+   },
+   "transactions": 2,
+   "recordBytes": 425,
+   "refused": [
+    "fee above cap",
+    "marketplace fee entry missing",
+    "payment reuse"
+   ]
+  },
+  {
+   "name": "sale 3",
+   "lapsedReservation": "late payment refused, newer reservation bought",
+   "subaddressSeller": {
+    "transactionKeys": 4,
+    "recordBytes": 296,
+    "wallet2CheckTxKeyAgrees": true,
+    "recordCheckAcceptsWallet2OutProof": true
+   }
+  },
+  {
+   "name": "moves and cancel",
+   "moveWhileListed": "refused",
+   "cancelAfterExpiry": "accepted",
+   "recordSignedBeforeCancel": "refused",
+   "subaddressOwnerMoves": "accepted",
+   "formerOwner": "refused"
+  },
+  {
+   "name": "result",
+   "accepted": 22,
+   "refused": 27,
+   "largestRecordBytes": {
+    "claim": 361,
+    "list": 183,
+    "reserve": 238,
+    "buy": 425,
+    "cancel": 167,
+    "move": 236
+   },
+   "owners": [
+    "#0: claim → sale → sale",
+    "#1: claim → sale",
+    "#2: claim → move → move",
+    "#3: claim → sale",
+    "#4: claim"
+   ]
+  }
+ ],
+ "software": {
+  "monerod": "0.18.5.3-release",
+  "walletRpc": 65568
+ },
+ "result": "PASSED"
+}
