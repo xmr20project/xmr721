@@ -1,0 +1,169 @@
+// The Mordinals reader service: follows a Monero node, keeps the record journal (lib/reader.mjs), answers wallets and
+// the explorer pages, and - when it is given a carrier wallet - relays signed records to the chain (lib/relay.mjs).
+// It listens on 127.0.0.1 only. It holds no user key. Everything it answers can be rebuilt by anyone from the owner
+// list and the chain with this same code.
+//
+//   node service.mjs --owners <owners.jsonl> --domain <hex32> --fee-address <address> --node <url> --start <height> --state <dir>
+//        [--start-hash <hash>] [--network mainnet|stagenet] [--port 18951] [--every <ms>] [--transfers <transfers.jsonl>]
+//        [--carrier-bin <path> --carrier-state <dir> --carrier-network offline-fakechain|stagenet]   relay on
+//        [--content-dir <dir> | --content-archive [url]] [--views <dir>] [--allow-origin <origin>] [--allow-extension <id>] [--behind-proxy] [--test-hooks]
+//
+// Lists are served whole (the owner list in pieces, every claimed number), so a wallet never has to name the
+// Mordinals it holds before it claims them.
+import {createServer} from 'node:http';
+import {existsSync,readFileSync,statSync} from 'node:fs';
+import {join,normalize,extname,sep} from 'node:path';
+import {RULES,heldUntil,canonical} from '../rules/lib/records.mjs';
+import {createChain} from './lib/chain.mjs';
+import {openReader} from './lib/reader.mjs';
+import {createRelay,createCarrier} from './lib/relay.mjs';
+import {createContent,dirContent,archiveContent} from './lib/content.mjs';
+import {served,readOwners} from './lib/owners.mjs';
+
+const TYPES={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.woff2':'font/woff2'};
+const PAGE_CSP="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+const VIEWS=join(import.meta.dirname,'views');
+const KINDS=new Set(['claim','move','list','cancel','reserve','sale']);
+const fail=(message,status=400)=>{const e=Error(message);e.status=status;return e;};
+const int=(v,fallback,min,max)=>{const n=v==null||v===''?NaN:Number(v);return Number.isInteger(n)?Math.min(max,Math.max(min,n)):fallback;};
+
+export function createService({reader,relay=null,owners,transfers=[],content=null,views=null,origins=[],extensions=null,behindProxy=false,testHooks=false,extra=null,chunk=4000,rate={perSecond:2,burst:60},log=()=>{}}){
+ const m=reader.meta,list=owners.map(served),numbers=owners.map(o=>o.number),entry=new Map(owners.map(o=>[o.number,o])),byReg=new Map(owners.map(o=>[o.registrationTx,o]));
+ const old=new Map();for(const t of transfers){if(t.result!=='updated')continue;if(!old.has(t.mordinal))old.set(t.mordinal,[]);old.get(t.mordinal).push({kind:'transfer',height:t.height,txid:t.tx});}
+ // Answers that only change when the reader moves are kept until it does.
+ let memoAt='',memo=new Map();
+ const once=(key,make)=>{const at=reader.height+':'+reader.journal.length+':'+reader.hash;if(at!==memoAt){memoAt=at;memo=new Map();}if(!memo.has(key))memo.set(key,make());return memo.get(key);};
+ const L=()=>reader.ledger;
+ const lotView=id=>{const l=L().lot(id),r=l.reservations.at(-1)||null;
+  return {id:l.id,number:l.number,reg:l.reg,seller:l.seller,price:l.price.toString(),until:l.until,status:l.status,body:reader.body(l.id),
+   reservation:r?{record:r.record,buyer:r.buyer,height:r.height,payBy:r.payBy,rate:r.rate}:null,buyer:l.sale?.buyer||null};};
+ const state=n=>{const x=L().mordinal(n);return {number:x.number,reg:x.reg,claimed:x.claimed,owner:x.owner,seq:x.seq,lot:x.lot?lotView(x.lot):null};};
+ const open=()=>once('open',()=>reader.lots.map(lotView).filter(l=>l.status==='open'));
+ const claimed=()=>once('claimed',()=>numbers.filter(n=>L().mordinal(n).claimed));
+ const card=n=>{const o=entry.get(n),s=state(n);return {number:n,reg:s.reg,claimed:s.claimed,owner:s.owner,bodySize:o.bodySize??null,
+  lot:s.lot?{id:s.lot.id,price:s.lot.price,until:s.lot.until,seller:s.lot.seller,reserved:Boolean(s.lot.reservation&&heldUntil(s.lot.reservation)>=reader.height)}:null};};
+ const which=text=>{const t=decodeURIComponent(text);const o=/^\d{1,9}$/.test(t)?entry.get(Number(t)):/^[0-9a-f]{64}$/.test(t)?byReg.get(t):null;if(!o)throw fail('This is not a Mordinal on the owner list.',404);return o;};
+ const stats=()=>once('stats',()=>{const by={};let volume=0n,fees=0n;for(const e of reader.events){by[e.kind]=(by[e.kind]||0)+1;if(e.kind==='sale'){volume+=BigInt(e.price);fees+=BigInt(e.fee);}}
+  return {height:reader.height,mordinals:list.length,claimed:claimed().length,forSale:open().filter(l=>l.until>=reader.height).length,sales:by.sale||0,volume:volume.toString(),fees:fees.toString(),
+   records:reader.journal.filter(e=>e.ok).length,refused:reader.journal.filter(e=>!e.ok).length,byKind:by,checkpoint:reader.checkpoints.at(-1)||null};});
+ const waitingFor=q=>relay?relay.waitingFor(q):[];
+ // One sync and relay pass. The loop below runs it on a timer; tests call it directly.
+ let stepping=null;
+ const step=()=>{if(!stepping)stepping=(async()=>{const r=await reader.sync();const t=relay?await relay.tick():null;return {...r,relay:t};})().finally(()=>{stepping=null;});return stepping;};
+
+ async function route(method,url,body,req){
+  const path=url.pathname,q=url.searchParams,height=reader.height;
+  if(method==='GET'){
+   if(path==='/info')return {network:m.network,domain:m.domain,feeAddress:m.feeAddress,height,count:list.length,chunk,test:Boolean(testHooks),owners:m.owners,start:m.start,startHash:m.startHash,
+    relay:relay?{networkFee:'relay',perAddress:relay.limits.perSigner}:null,rules:{feeBps:RULES.feeBps,marketFeeCapBps:RULES.marketFeeCapBps,minPrice:RULES.minPrice.toString(),maxReserve:RULES.maxReserve,settle:RULES.settle}};
+   if(path==='/owners'){const from=int(q.get('from'),0,0,list.length),limit=int(q.get('limit'),chunk,1,chunk);return {from,total:list.length,entries:list.slice(from,from+limit)};}
+   if(path==='/claimed')return {height,numbers:claimed()};
+   if(path.startsWith('/address/')){const a=canonical(decodeURIComponent(path.slice(9)),m.network);
+    return {height,mordinals:L().owned(a).map(state),buying:open().filter(l=>l.reservation?.buyer===a),waiting:waitingFor({signer:a})};}
+   if(path==='/listings')return {height,listings:open().filter(l=>l.until>=height)};
+   if(path.startsWith('/lot/')){const id=path.slice(5);if(!/^[0-9a-f]{64}$/.test(id)||!L().lot(id))throw fail('This listing does not exist.',404);return {height,lot:lotView(id),waiting:waitingFor({number:L().lot(id).number})};}
+   if(path==='/records'){const all=reader.journal.filter(e=>e.ok),from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),1000,1,5000);
+    return {height,total:all.length,from,records:all.slice(from,from+limit).map(e=>e.record)};}
+   if(path.startsWith('/status/')){const id=path.slice(8);if(!/^[0-9a-f]{64}$/.test(id))throw fail('A record code is 64 hexadecimal characters.');
+    if(relay)return {height,...relay.status(id)};const e=reader.entryById(id);
+    return e?{height,id,state:'done',txid:e.txid,confirmations:height-e.height+1,error:null}:{height,id,state:'unknown',txid:null,confirmations:0,error:null};}
+   // A transaction as the node gives it, for a wallet that makes payment proofs. In the pool: height null.
+   if(path.startsWith('/tx/')){const id=path.slice(4);if(!/^[0-9a-f]{64}$/.test(id))throw fail('A transaction ID is 64 hexadecimal characters.');
+    if(!allow(caller(req)))throw fail('Too many requests. Try again in a minute.',429);
+    const [t]=await reader.lookup([id]);if(!t)throw fail('The Monero node does not know this transaction yet.',404);return {height,payment:t};}
+   if(path==='/pending')return {height,jobs:relay?relay.pending():[],pool:await poolNow()};
+   if(path==='/stats')return stats();
+   if(path==='/activity'||path==='/sales'){
+    const kind=path==='/sales'?'sale':q.get('kind'),number=q.has('number')?Number(q.get('number')):null,address=q.get('address'),limit=int(q.get('limit'),50,1,200);
+    if(kind&&!KINDS.has(kind))throw fail('Unknown kind.');
+    const all=reader.events,before=int(q.get('before'),all.length,0,all.length),out=[];let at=before;
+    while(at>0&&out.length<limit){const e=all[--at];
+     if(kind&&e.kind!==kind)continue;if(number!=null&&e.number!==number)continue;
+     if(address&&![e.to,e.from,e.seller,e.buyer].includes(address))continue;out.push({at,...e,confirmations:height-e.height+1});}
+    return {height,total:all.length,next:at>0?at:null,events:out};}
+   if(path==='/gallery'){const filter=q.get('filter')||'all';
+    const pick=filter==='claimed'?claimed():filter==='unclaimed'?once('unclaimed',()=>{const c=new Set(claimed());return numbers.filter(n=>!c.has(n));})
+     :filter==='listed'?once('listed',()=>open().filter(l=>l.until>=height).map(l=>l.number).sort((a,b)=>a-b)):filter==='all'?numbers:null;
+    if(!pick)throw fail('Unknown filter.');const from=int(q.get('from'),0,0,pick.length),limit=int(q.get('limit'),60,1,200);
+    return {height,filter,from,total:pick.length,items:pick.slice(from,from+limit).map(card)};}
+   if(path.startsWith('/mordinal/')){const o=which(path.slice(10)),s=state(o.number);
+    // The whole public story of one Mordinal: inscribed, moved by spending (2023), then claimed and moved by record.
+    const history=[{kind:'inscribed',height:o.registrationHeight??null,txid:o.registrationTx},...(old.get(o.number)||[]),
+     ...reader.events.filter(e=>e.number===o.number).map(e=>({...e,confirmations:height-e.height+1}))];
+    return {height,mordinal:{...s,registrationHeight:o.registrationHeight??null,ownerTx:o.ownerTx,ownerHeight:o.ownerHeight??null,bodySize:o.bodySize??null,bodySha256:o.bodySha256||null},
+     history,waiting:waitingFor({number:o.number})};}
+   if(path==='/log'){const all=reader.journal,from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),200,1,500);
+    return {height,hash:reader.hash,from,total:all.length,entries:all.slice(from,from+limit)};}
+   if(path==='/checkpoints')return {height,checkpoints:reader.checkpoints};
+   if(path==='/checkpoint')return reader.checkpoint();}
+  if(method==='POST'&&path==='/records'){
+   if(!relay)throw fail('This reader does not relay records. Publish the record yourself or use a relay.',503);
+   if(!allow(caller(req)))throw fail('Too many requests. Try again in a minute.',429);
+   return {height,...await relay.submit(body.record)};}
+  if(testHooks&&method==='POST'&&path==='/test/step')return step();
+  if(testHooks&&extra){const out=await extra(method,path,body,step);if(out!==undefined)return out;}
+  throw fail('Not found',404);}
+
+ // Many visitors asking at once share one look at the node's pool.
+ let poolRead=null;const poolNow=()=>poolRead||(poolRead=reader.waiting().finally(()=>{poolRead=null;}));
+ // Per address: a small steady rate with room for a burst. Behind this machine's own proxy the caller is the last
+ // address the proxy added; without that option the header is ignored, because anyone can write it.
+ const caller=req=>{const direct=req.socket.remoteAddress||'';if(!behindProxy)return direct;
+  const last=String(req.headers['x-forwarded-for']||'').split(',').at(-1).trim();return last||direct;};
+ const buckets=new Map();
+ function allow(ip){const t=Date.now(),b=buckets.get(ip)||{tokens:rate.burst,at:t};b.tokens=Math.min(rate.burst,b.tokens+(t-b.at)/1000*rate.perSecond);b.at=t;
+  if(buckets.size>10000)buckets.clear();buckets.set(ip,b);if(b.tokens<1)return false;b.tokens-=1;return true;}
+ async function picture(res,text){
+  const o=which(text),got=content?await content(o):{status:404,error:'This service has no pictures.'};
+  const head={'x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox",'cross-origin-resource-policy':'cross-origin'};
+  if(got.status!==200){res.writeHead(got.status,{...head,'content-type':'application/json','cache-control':got.status===502?'no-store':'public, max-age=3600'});res.end(JSON.stringify({error:got.error}));return;}
+  res.writeHead(200,{...head,'content-type':got.type,'content-length':got.bytes.length,'cache-control':'public, max-age=31536000, immutable','x-mordinal-sensitive':got.sensitive?'1':'0','x-mordinal-sha256':o.bodySha256});res.end(got.bytes);}
+ function page(res,path){
+  const rel=normalize(decodeURIComponent(path.slice(6))||'index.html'),file=join(views,rel.endsWith(sep)||rel==='.'?join(rel,'index.html'):rel);
+  if(rel.startsWith('..')||!file.startsWith(views+sep)||!existsSync(file)||!statSync(file).isFile()||!TYPES[extname(file)]){res.writeHead(404,{'content-type':'text/plain'});res.end('Not found');return;}
+  res.writeHead(200,{'content-type':TYPES[extname(file)],'cache-control':'no-store','content-security-policy':PAGE_CSP,'x-content-type-options':'nosniff','referrer-policy':'no-referrer'});res.end(readFileSync(file));}
+ const server=createServer(async(req,res)=>{
+  const origin=req.headers.origin||'',headers={'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff'};
+  if(origins.includes(origin)||(origin.startsWith('chrome-extension://')&&(!extensions||extensions.includes(origin.slice(19))))){headers['access-control-allow-origin']=origin;headers['access-control-allow-headers']='content-type';headers['access-control-expose-headers']='x-mordinal-sensitive';headers.vary='origin';}
+  if(req.method==='OPTIONS'){res.writeHead(204,headers);res.end();return;}
+  try{
+   const url=new URL(req.url,'http://127.0.0.1');
+   if(req.method==='GET'&&url.pathname.startsWith('/content/')){if(headers['access-control-allow-origin'])for(const k of ['access-control-allow-origin','access-control-expose-headers','vary'])res.setHeader(k,headers[k]);return await picture(res,url.pathname.slice(9));}
+   if(req.method==='GET'&&views&&(url.pathname==='/'||url.pathname==='/view')){res.writeHead(302,{location:'/view/'});res.end();return;}
+   if(req.method==='GET'&&views&&url.pathname.startsWith('/view/'))return page(res,url.pathname);
+   let body={};
+   if(req.method==='POST'){const kind=String(req.headers['content-type']||'').split(';')[0].trim().toLowerCase(),length=req.headers['content-length'];
+    // A page on another site can post plain text without asking; it cannot post JSON without this service agreeing first.
+    if(kind!=='application/json'&&!(kind===''&&(length==='0'||length===undefined&&!req.headers['transfer-encoding'])))throw fail('Send JSON (content-type: application/json).',415);
+    const parts=[];let size=0;for await(const c of req){size+=c.length;if(size>65536)throw fail('Request too large',413);parts.push(c);}
+    try{body=JSON.parse(Buffer.concat(parts).toString('utf8')||'{}');}catch{throw fail('The request is not JSON.');}if(!body||typeof body!=='object')throw fail('The request is not JSON.');}
+   const out=await route(req.method,url,body,req);res.writeHead(200,headers);res.end(JSON.stringify(out));}
+  catch(e){if(!e.status||e.status>=500)log({error:String(e?.message||e).slice(0,200)});if(!res.headersSent)res.writeHead(e.status||400,headers);res.end(JSON.stringify({error:String(e?.message||e).slice(0,400)}));}});
+ let timer=null;
+ return {reader,relay,server,step,
+  listen:port=>new Promise((done,bad)=>{server.once('error',bad);server.listen(port,'127.0.0.1',()=>done(server.address().port));}),
+  // Follow the chain on a timer. A failed pass is logged and tried again at the next turn.
+  follow(every=5000){if(timer)return;const turn=()=>step().catch(e=>log({sync:String(e.message).slice(0,200)}));turn();timer=setInterval(turn,every);timer.unref?.();},
+  close:()=>new Promise(done=>{if(timer)clearInterval(timer);timer=null;server.closeAllConnections?.();server.close(()=>done());})};}
+
+// Everything from command-line style options: used by the command below and by tests.
+export async function startService(o){
+ const owners=readOwners(o.owners),chain=createChain(o.node),network=o.network||'mainnet';
+ const reader=openReader({dir:o.state,chain,network,domain:o.domain,feeAddress:o.feeAddress,owners,start:Number(o.start),startHash:o.startHash||null,checkpointEvery:o.checkpointEvery??720,log:o.log});
+ let relay=null;
+ if(o.carrierBin){const carrier=createCarrier({bin:o.carrierBin,stateDir:o.carrierState,node:o.node,network:o.carrierNetwork||'offline-fakechain',start:Number(o.carrierStart||o.start)});
+  relay=createRelay({dir:join(o.state,'relay'),reader,chain,carrier,network,domain:o.domain,limits:o.limits,...(o.now?{now:o.now}:{}),log:o.log});}
+ const source=o.contentDir?dirContent(o.contentDir):o.contentArchive?archiveContent(o.contentArchive===true?undefined:o.contentArchive):null;
+ const service=createService({reader,relay,owners,transfers:o.transfers?readOwners(o.transfers):[],content:source?createContent({source}):null,views:o.views||(existsSync(VIEWS)?VIEWS:null),origins:o.origins||[],extensions:o.extensions?.length?o.extensions:null,behindProxy:Boolean(o.behindProxy),testHooks:Boolean(o.testHooks),...(o.rate?{rate:o.rate}:{}),log:o.log});
+ const port=await service.listen(o.port==null?18951:Number(o.port));return {...service,port,chain,owners};}
+
+if(process.argv[1]===import.meta.filename){
+ const arg=name=>{const i=process.argv.indexOf('--'+name);return i<0?null:process.argv[i+1];},has=name=>process.argv.includes('--'+name);
+ for(const need of ['owners','domain','fee-address','node','start','state'])if(!arg(need)){console.error('Missing --'+need+'. See the top of this file.');process.exit(2);}
+ const archive=has('content-archive')?(arg('content-archive')?.startsWith('http')?arg('content-archive'):true):null;
+ const s=await startService({owners:arg('owners'),transfers:arg('transfers'),domain:arg('domain'),feeAddress:arg('fee-address'),node:arg('node'),start:arg('start'),startHash:arg('start-hash'),state:arg('state'),network:arg('network'),
+  port:arg('port'),carrierBin:arg('carrier-bin'),carrierState:arg('carrier-state'),carrierNetwork:arg('carrier-network'),contentDir:arg('content-dir'),contentArchive:archive,views:arg('views'),
+  origins:process.argv.flatMap((a,i)=>a==='--allow-origin'?[process.argv[i+1]]:[]),extensions:process.argv.flatMap((a,i)=>a==='--allow-extension'?[process.argv[i+1]]:[]),behindProxy:has('behind-proxy'),testHooks:has('test-hooks'),log:v=>console.log(new Date().toISOString(),JSON.stringify(v))});
+ console.log(`Mordinals reader on http://127.0.0.1:${s.port} (${s.owners.length} Mordinals, block ${s.reader.height}${s.relay?', relay on':', reader only'})`);
+ s.follow(Number(arg('every'))||5000);
+}

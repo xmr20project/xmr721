@@ -1,0 +1,62 @@
+{
+ "execution": "SIMULATED (own offline fakechain; real carrier transactions, real wallet2 signatures, proofs and payments; throwaway wallets)",
+ "date": "2026-11-10T08:51:12.260Z",
+ "steps": [
+  {
+   "name": "relay without coins",
+   "state": "queued",
+   "note": "No coin of this wallet can pay for a transaction now (coins unlock 10 blocks after they arrive)"
+  },
+  {
+   "name": "first record through the relay",
+   "txid": "0cf9b1a7b1975fefdbb6acef2f4d794f9ff57df389ab02f0998ae99d2ad46120",
+   "height": 326,
+   "recordBytes": 361,
+   "extraBytes": 412,
+   "fee": "2251200000"
+  },
+  {
+   "name": "claims",
+   "proofAndMessage": "done",
+   "oneTimeKey": "done",
+   "secondRecordForTheSameMordinal": "429"
+  },
+  {
+   "name": "sale",
+   "price": "2 XMR",
+   "fee": "0.1 XMR",
+   "heldUntilPaymentMined": true,
+   "payments": 1
+  },
+  {
+   "name": "direct record",
+   "refusedInBlock": "This Mordinal belongs to another address."
+  },
+  {
+   "name": "reorganisation",
+   "blocksReplaced": 1,
+   "recordSentAgain": true,
+   "sameTransaction": true
+  },
+  {
+   "name": "check tool",
+   "ok": true,
+   "problems": [],
+   "accepted": 7,
+   "refused": 1,
+   "checkpoints": 8,
+   "checkedOnNode": 8,
+   "scan": "equal"
+  },
+  {
+   "name": "relay cost",
+   "records": 7,
+   "feePerRecordAtomic": [
+    "2022000000",
+    "2251200000"
+   ],
+   "note": "fakechain fee level; on mainnet a transaction of this size costs about the same as a small transfer"
+  }
+ ],
+ "result": "passed"
+}
