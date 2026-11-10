@@ -28,7 +28,7 @@ jobs:
           cache: npm
       - name: Install
         run: npm ci
-      - name: Rule library and reader
+      - name: Rule library, reader and NFT decoder
         run: npm test
       - name: The page bundle is what the rule library builds to
         run: node reader/views/build.mjs --check

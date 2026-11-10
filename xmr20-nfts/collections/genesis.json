@@ -1,0 +1,14 @@
+{
+ "id": "48c2e05b20e3a704f374ed5bbae1c17b45523ed0ad1d0db772c05187a53b87e0",
+ "name": "GENESIS",
+ "max": 100,
+ "meta": "e5b6c436043dc42ba372aa2c0b4b76ca474d83e4f791be875822511f24b95a36",
+ "authority": "4AMg1kDaXkWckE3uyd1YqoBKvn4z8ATxmWQVdtjF6aGU4sT278XoyhUV1Ve88ZMCXNXQJpjW2553NWERfMZcNsBtCkMLiNM",
+ "deployedAt": 3777782,
+ "minted": 100,
+ "format": "XMR20-NFT-V2",
+ "ownersAsOf": {
+  "height": 3803236,
+  "hash": "70b91890ae683ea020cd0d57bf3bc985031c7cb25c597e2e70a693adb14c22b7"
+ }
+}

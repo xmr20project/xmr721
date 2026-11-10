@@ -9,7 +9,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test rules/tests/rules.test.mjs reader/tests/reader.test.mjs",
+    "test": "node --test rules/tests/rules.test.mjs reader/tests/reader.test.mjs xmr20-nfts/tests/nfts.test.mjs",
     "test:views": "node --test reader/tests/views.test.mjs",
     "test:lab": "node --test rules/tests/lab.test.mjs rules/tests/lab-wallet-apps.test.mjs reader/tests/lab.test.mjs",
     "build:views": "node reader/views/build.mjs",
@@ -21,6 +21,7 @@
   },
   "devDependencies": {
     "esbuild": "0.28.2",
-    "playwright": "1.56.1"
+    "playwright": "1.56.1",
+    "sharp": "0.35.4"
   }
 }

@@ -81,6 +81,15 @@ Mordinal. This ledger adds it as one extra entry, number 42,894, after the origi
 are in [`ownership-index/added/`](ownership-index/added). The reader's pages do not play
 video yet.
 
+## XMR20 NFTs: the GENESIS collection
+
+In October 2026 the XMR20 project inscribed GENESIS on Monero: 100 small renderings of
+well-known paintings, each one complete in a single transaction. These NFTs use their own
+format and are owned by Monero addresses from the start, so no coin is ever exposed.
+[`xmr20-nfts/`](xmr20-nfts) holds the collection as rebuilt from the chain, the
+[format](xmr20-nfts/FORMAT.md) and the code that decodes and checks it. It is a legacy
+format; new inscriptions are planned to use a different one.
+
 ## Layout
 
 | Path | What |
@@ -89,6 +98,7 @@ video yet.
 | [`rules/`](rules) | The rule library, its offline tests, and tests against real wallet software on a local test chain |
 | [`reader/`](reader) | Reader, relay, HTTP service, explorer/gallery/market pages, check tools |
 | [`ownership-index/`](ownership-index) | The owner list, how it was made and checked, and the added entry |
+| [`xmr20-nfts/`](xmr20-nfts) | The GENESIS collection of XMR20 NFTs, their format and decoder |
 | [`docs/OPEN-POINTS.md`](docs/OPEN-POINTS.md) | What review has changed so far and what is still open |
 
 ## Try it
@@ -97,7 +107,7 @@ Node.js 22 or newer.
 
 ```
 npm install
-npm test          # rule library and reader, offline, a few seconds
+npm test          # rule library, reader and NFT decoder, offline, a few seconds
 npm run demo      # explorer, gallery and market at http://127.0.0.1:18951/view/ with made-up data
 ```
 
@@ -117,6 +127,8 @@ them and build the relay's wallet first with `sh reader/carrier/build.sh`.
   on mainnet.
 - **Wallets are not in this repository.** Claim, send and sell screens exist for the XMR20
   wallets as test builds and will be published with those wallets.
+- **No new inscriptions yet.** The rules cover Mordinals and NFTs that already exist.
+  Minting through this ledger is planned and not designed.
 - **Anyone can run a competing index.** Ownership here rests on people agreeing to these
   rules. That is why the index, the rules and the reader are public and reproducible.
 
