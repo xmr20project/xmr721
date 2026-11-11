@@ -3,6 +3,7 @@ import {OP,RULES,heldUntil,encodeBody,renderText,recordId,codeOf,amounts,splitOf
 import {el,add,fill,api,service,count,xmr,addr,code,exact,notice,pill,pills,strong,table,when,pictures,terms,running,field,textInput,mordinalLink,draft,kindPill,eventText} from './ui.js';
 import {tutorial} from './xmr721.js';
 import {collectionGrid} from './collection.js';
+import {walletPanel,watchWallet} from './wallet.js';
 import {signPanel,sent,follow} from './sign.js';
 
 const READ_ONLY='Records cannot be sent from here: this service only reads. Use the XMR20 wallet or the command-line tool to buy.';
@@ -32,6 +33,7 @@ export async function market(ctx){
  const [l,s,a,grid]=await Promise.all([api('/listings',{signal:ctx.signal}),api('/sales?limit=10',{signal:ctx.signal}),api('/activity?limit=12',{signal:ctx.signal}),
   show==='genesis'?collectionGrid(ctx,'genesis'):null]);
  const pic=pictures(ctx),height=l.height;ctx.tip(height);
+ const mine=await walletPanel(ctx,pic);watchWallet(ctx,()=>ctx.reload());
  const rows=l.listings.map(x=>{try{return terms(x);}catch{return {unfit:true,id:x.id,number:x.number};}});
  const who=textInput({class:'mono','data-field':'continue',placeholder:'Your Monero address','aria-label':'Your Monero address'}),problem=el('div',{});
  const resume=()=>{try{location.hash='#/address/'+canonical(who.value,info.network);}catch(e){problem.replaceChildren(notice('error',e.message));}};
@@ -67,7 +69,7 @@ export async function market(ctx){
     el('button',{type:'button',class:'btn small','data-action':'tutorial',text:'How it works',onclick:()=>tutorial(ctx,{force:true})}),
     el('a',{class:'btn small',href:'#/xmr721',text:'Claim your Mordinals'}))),
   el('div',{class:'market'},
-   el('div',{class:'market-main'},show==='genesis'?grid:mordinals()),
+   el('div',{class:'market-main'},mine,show==='genesis'?grid:mordinals()),
    history(a.events)));
  tutorial(ctx);}
 

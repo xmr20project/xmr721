@@ -1,5 +1,6 @@
 // What XMR721 is, how a Mordinal becomes an XMR721 NFT, and the short tutorial shown on a first visit to the market.
 import {el,add,service,count,notice} from './ui.js';
+import {walletLink} from './wallet.js';
 
 const SEEN='xmr721-tutorial-seen';
 const seen=()=>{try{return localStorage.getItem(SEEN)==='1';}catch{return false;}};
@@ -13,7 +14,7 @@ const STEPS=[
  {key:'wallet',title:'Open the wallet that holds your Mordinals',
   body:()=>[el('p',{text:'Use the wallet you inscribed with or received them in. In the XMR20 wallet, restore it with that wallet’s recovery phrase. The phrase stays on your device.'}),
    el('p',{class:'dim',text:'Feather and Cake Wallet holders can claim too; it takes one more step, described on the XMR721 page.'}),
-   el('div',{class:'row'},el('button',{type:'button',class:'btn',disabled:true,'data-action':'connect',text:'Connect wallet'}),el('span',{class:'dim',text:'Not connected in this draft.'}))]},
+   connectRow()]},
  {key:'claim',title:'Find and claim them',
   body:()=>[el('p',{text:'Choose “Find my Mordinals”. The wallet checks the public list of all Mordinals on your device and shows the ones your keys hold.'}),
    el('p',{text:'Press Claim. Each one becomes an XMR721 NFT at your Monero address. It keeps its number, its picture and its history. Nothing is spent and no XMR moves.'})]},
@@ -21,6 +22,13 @@ const STEPS=[
   body:()=>[el('p',{text:'Once claimed, a Mordinal can be listed here for XMR or sent to another address. Each step is a message you sign in your wallet.'}),
    el('p',{text:'A buyer pays you directly in XMR. Of each sale 95% goes to the seller and 5% to the protocol fee address.'})]}];
 
+// Connect from the tutorial or the guide. Pages hosted without a wallet link say so.
+function connectRow(){
+ const w=walletLink(),note=el('span',{class:'dim'});
+ if(!w)return el('div',{class:'row'},el('button',{type:'button',class:'btn',disabled:true,'data-action':'connect',text:'Connect wallet'}),el('span',{class:'dim',text:'This copy of the pages has no wallet link.'}));
+ const b=el('button',{type:'button',class:'btn primary','data-action':'connect',text:w.status().connected?'Connected':'Connect wallet',disabled:w.status().connected});
+ b.addEventListener('click',async()=>{b.disabled=true;note.textContent='';remember();try{await w.connect();b.textContent='Connected';}catch(e){note.textContent=e.message||'The wallet did not answer.';b.disabled=false;}});
+ return el('div',{class:'row'},b,note);}
 const steps=()=>el('ol',{class:'steps'},STEPS.slice(1).map(s=>el('li',{'data-step':s.key},el('h3',{text:s.title}),el('div',{class:'stack'},s.body()))));
 
 export async function xmr721(ctx){
