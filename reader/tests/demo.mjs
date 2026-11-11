@@ -84,7 +84,7 @@ export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=
  let paid=0;
  const payment=outs=>{const t=makeTx('demo payment '+paid++ +' '+Date.now(),outs.map(x=>{const a=by.get(x.to)||decodeAddress(x.to,network);return {to:{spend:a.spend,view:a.view,kind:a.kind},amount:BigInt(x.amount)};}));
   // A payment to one of the relay's fee subaddresses is seen by the relay's wallet once it is in a block.
-  for(const x of outs)if(feeAddresses.has(x.to))carrier.paid({index:feeAddresses.get(x.to),amount:BigInt(x.amount),txid:t.txid});
+  outs.forEach((x,out)=>{if(feeAddresses.has(x.to))carrier.paid({index:feeAddresses.get(x.to),amount:BigInt(x.amount),txid:t.txid,out});});
   return t;};
  const block=async(...items)=>{chain.mine(items.map(r=>r.txid?{txid:r.txid,tx:r.tx}:carried(r)));await reader.sync();};
 

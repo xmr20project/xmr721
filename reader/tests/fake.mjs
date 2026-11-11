@@ -14,7 +14,7 @@ export function fakeChain({start=100,time=1700000000}={}){
   trip(what){if(c.fail===what){c.fail=null;throw Error('The Monero node answered HTTP 500');}},
   async info(){c.trip('info');return {height:tip,hash:blocks.get(tip).hash,nettype:'fakechain',offline:true};},
   async header(h){c.trip('header');const b=blocks.get(h);if(!b)throw Error('Monero node: no such block');return {height:b.height,hash:b.hash,prev:b.prev,time:b.time};},
-  async block(h){c.trip('block');const b=blocks.get(h);if(!b)throw Error('Monero node: no such block');return {...b,txids:b.txids.slice()};},
+  async block(h){c.trip('block');const b=blocks.get(h);if(!b)throw Error('Monero node: no such block');return {...b,txids:b.txids.slice(),minerTx:b.minerTx||null};},
   async txs(ids){c.calls++;c.trip('txs');const out=new Map();for(const id of ids){const m=mined.get(id),p=pool.get(id);if(m)out.set(id,{txid:id,inPool:false,height:m.height,tx:m.tx});else if(p)out.set(id,{txid:id,inPool:true,height:null,tx:p});}return out;},
   async pool(){return [...pool.keys()];},
   // Test controls.
@@ -22,9 +22,11 @@ export function fakeChain({start=100,time=1700000000}={}){
   mine(extra=[],{only=null}={}){for(const t of extra)pool.set(t.txid,t.tx);
    const take=[...pool.keys()].filter(id=>!only||only.includes(id)),h=++tip;
    for(const id of take){mined.set(id,{height:h,tx:pool.get(id)});pool.delete(id);}
-   blocks.set(h,{height:h,hash:hashOf(h),prev:blocks.get(h-1).hash,time:time+(h-start)*120,txids:take});return h;},
+   // Each block has a mining reward transaction too; like a node, the block lists it apart from the others.
+   const minerTx=sha(`miner ${h} fork ${fork}`);mined.set(minerTx,{height:h,tx:{version:2,unlock_time:h+60,vin:[{gen:{height:h}}],vout:[],extra:[],rct_signatures:{type:0}}});
+   blocks.set(h,{height:h,hash:hashOf(h),prev:blocks.get(h-1).hash,time:time+(h-start)*120,txids:take,minerTx});return h;},
   // Replace the newest n blocks: their transactions are gone (or back in the pool with keep).
-  pop(n,{keep=false}={}){fork++;for(let i=0;i<n;i++){const b=blocks.get(tip);for(const id of b.txids){if(keep)pool.set(id,mined.get(id).tx);mined.delete(id);}blocks.delete(tip--);}},
+  pop(n,{keep=false}={}){fork++;for(let i=0;i<n;i++){const b=blocks.get(tip);for(const id of b.txids){if(keep)pool.set(id,mined.get(id).tx);mined.delete(id);}if(b.minerTx)mined.delete(b.minerTx);blocks.delete(tip--);}},
   drop(txid){pool.delete(txid);}};
  return c;}
 
@@ -33,9 +35,9 @@ export function fakeChain({start=100,time=1700000000}={}){
 // tells the stand-in about a payment, which it reports once that transaction is in a block.
 export function fakeCarrier(chain,{coins=5,subaddress=n=>'relay subaddress '+n}={}){
  let ready=coins,n=0,subs=0;const made=[],payments=[];
- const settled=async()=>{if(!payments.length)return [];const got=await chain.txs(payments.map(p=>p.txid));return payments.filter(p=>got.get(p.txid)&&!got.get(p.txid).inPool).map(p=>({index:p.index,amount:p.amount,txid:p.txid,height:got.get(p.txid).height}));};
+ const settled=async()=>{if(!payments.length)return [];const got=await chain.txs(payments.map(p=>p.txid));return payments.filter(p=>got.get(p.txid)&&!got.get(p.txid).inPool).map(p=>({index:p.index,amount:p.amount,txid:p.txid,out:p.out,height:got.get(p.txid).height}));};
  const tx=extra=>{const txid=sha('carrier tx '+n++ +randomBytes(8).toString('hex'));return {txid,blob:Buffer.from(JSON.stringify({txid,extra})).toString('hex'),fee:'30000000',extraBytes:extra.length,bytes:2000+extra.length};};
- return {made,get ready(){return ready;},set ready(v){ready=v;},get subs(){return subs;},subaddress,paid:p=>{payments.push({index:p.index,amount:String(p.amount),txid:p.txid});},
+ return {made,get ready(){return ready;},set ready(v){ready=v;},get subs(){return subs;},subaddress,paid:p=>{payments.push({index:p.index,amount:String(p.amount),txid:p.txid,out:p.out??0});},
   address:async k=>{k=Number(k);if(!(k>=1))throw Error('address number');subs=Math.max(subs,k);return {address:subaddress(k),index:k};},
   init:async()=>({address:'carrier'}),
   status:async()=>({address:'carrier',tip:chain.tip,balance:String(ready*10_000_000_000),coins:ready,ready,payments:await settled()}),

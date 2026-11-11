@@ -1,11 +1,11 @@
 {
  "execution": "SIMULATED (own offline fakechain; real wallet2 signatures, payment proofs and view-only wallet; throwaway wallets; Feather and Cake apps not driven)",
- "date": "2026-11-11T05:23:21.531Z",
+ "date": "2026-11-11T12:29:47.373Z",
  "steps": [
   {
    "name": "test Mordinals",
    "count": 5,
-   "startHeight": 235,
+   "startHeight": 239,
    "kinds": [
     "dana sends to herself (the inscriber keeps it)",
     "dana sends to herself again",
@@ -16,7 +16,7 @@
   },
   {
    "name": "claim text",
-   "text": "Mordinals claim: Mordinal #0 (inscription 473d80708a234d1836c84ed4f2f140f5461acdd4448c360bf136174927b1e8bd), held by output 0 of 473d80708a234d1836c84ed4f2f140f5461acdd4448c360bf136174927b1e8bd, now belongs to 47j6HR6M9AQeAMfUc3tVspV9S7PPgPPmK6h2b7BjKYrWZvDYJfEMgRt5pPCmpS2BvvEcfzkTqP3B9UnLVKDWopkRLAEajFY; code f2f944f2aee1c0245eac20a19f7318c3"
+   "text": "Mordinals claim: Mordinal #0 (inscription fe872449f029cf295101af81bad73e3d0dac1760935d3fa9097f913ca3d190d5), held by output 0 of fe872449f029cf295101af81bad73e3d0dac1760935d3fa9097f913ca3d190d5, now belongs to 44NyTdw9ehCN9cXpWicq2JeeDBHuxd2FtQC4z4XCYuZzgSbcvNNTcUfXeNFHaYsn75Ayjow4TgkfTcNHVsa9UiSZ2K1zzJY; code bc0af8174ed9fac9f0c9e18785655f93"
   },
   {
    "name": "way 1: view key",
@@ -44,7 +44,7 @@
   },
   {
    "name": "move text",
-   "text": "Mordinals move: send Mordinal #0 to 43T1DSZ51kxWLjB2dYNDB1KDU9Gv4GSYggiFFAmiaKcX3L8WsDXQEbzc7HLjzPKzWoCvg1eCYK86KBemsaB3rB7U8yyAHM2; move 0; code 97fb1c9173b11f0ea7b6405ff54e2e1b"
+   "text": "Mordinals move: send Mordinal #0 to 453PWDfCosA4CaYGSFnmW9MBY8PbQG6DRZnSKo5yeaYpcasBEUnsRfuSA4epH9UXeGE1nqSMFKxtGKDXsF8ehe3YSRBNjEH; move 0; code f966e178f812fa0ca8e5a0141a4f110e"
   },
   {
    "name": "after the claim",

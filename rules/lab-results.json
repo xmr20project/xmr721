@@ -1,11 +1,11 @@
 {
  "execution": "SIMULATED (own offline fakechain; real wallet2 signatures, claim proofs, payments and transaction keys; buy-record proofs checked by wallet2; throwaway wallets)",
- "date": "2026-11-11T05:23:21.532Z",
+ "date": "2026-11-11T12:29:47.375Z",
  "steps": [
   {
    "name": "test Mordinals",
    "count": 5,
-   "startHeight": 396,
+   "startHeight": 399,
    "kinds": [
     "bob sends to himself (the inscriber keeps it)",
     "alice sends to herself",
@@ -16,7 +16,7 @@
   },
   {
    "name": "claim text",
-   "text": "Mordinals claim: Mordinal #0 (inscription 1ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d), held by output 0 of 1ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d, now belongs to 43WadgJmuyF9LDehuyXBBhRonfoGPPoVGCYmiGrerBDPd32tkEwvRDZBP2oikakTzV2RgJvWFsAfYBCvY6GqEtgaLsi969n; code 4c770a64106f7f039a603ffe0753fbef"
+   "text": "Mordinals claim: Mordinal #0 (inscription ca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8ba), held by output 0 of ca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8ba, now belongs to 47d3dbk9chAKPKArwkKgsmKK9wE8M4WWz9VQwESDUqcdM8jf3ujhCGo3afSRFBHzkzPFiscZQGBHWUpJvhiqGn9sCspJ2Ue; code 057c4fdfd0b6b08350eb21516502038f"
   },
   {
    "name": "claim by payment proof",
@@ -41,17 +41,17 @@
   },
   {
    "name": "listing text",
-   "text": "Mordinals list: sell Mordinal #1 for 0.2 XMR (0.19 XMR to 49vUphtanm3eziq19XPzMmgiTr9xusEBiaucEiWaQzcDC7UnvPT8rPo4LTFi1AY6PWepgAt3WEcVnEZiTyEa1WRK16goDNA, 0.01 XMR protocol fee); valid until block 796; code b887b34310d34505b31aadd361425d0f"
+   "text": "Mordinals list: sell Mordinal #1 for 0.2 XMR (0.19 XMR to 48T8isznTz7G1QdnwNmvHvNh8wm5Hz4F16L9c2p64SHkBpmLNH3dRko16NnBPeFQ8LjirnqTpfRF54zzc9wJZdEjA8T3aE7, 0.01 XMR protocol fee); valid until block 799; code 0824e19f15414abbcbe652dc7c0b565d"
   },
   {
    "name": "reservation text",
-   "text": "Mordinals reserve: buy Mordinal #1 for 0.2 XMR; pay exactly 0.190000452476 XMR to 49vUphtanm3eziq19XPzMmgiTr9xusEBiaucEiWaQzcDC7UnvPT8rPo4LTFi1AY6PWepgAt3WEcVnEZiTyEa1WRK16goDNA and exactly 0.010000452476 XMR to 44K78aijjyfA7rGxMrPPUn7Pd9RKhc6RPf2qQg3KNmKaRjoeVLbdN3iPGbBnAZgwqpDZvEwSoAEyhaJBjPQM1SyyEN8SHap by block 426; Mordinal to 42HUFTKdRjrMoY8hKf6rbJ6fE2hzBMHTiY7AxPhVCUY45H9N1qdUheUGpqTrQbiRnLCFKi3arao9RMcNEk2TC3ZK3Jdv8w7; code 1e2095c26d5d96cbea8e7f2a4d288f57"
+   "text": "Mordinals reserve: buy Mordinal #1 for 0.2 XMR; pay exactly 0.190000223109 XMR to 48T8isznTz7G1QdnwNmvHvNh8wm5Hz4F16L9c2p64SHkBpmLNH3dRko16NnBPeFQ8LjirnqTpfRF54zzc9wJZdEjA8T3aE7 and exactly 0.010000223109 XMR to 44R5XAtxG1mafFNQ4vM2hRWj4axAae8bA1hzdaJsZWWHWeUhvi8xXuqezghAVfL1WuBrq9jUQJuuQh5ajah4kSzp4N87D6G by block 429; Mordinal to 44mPCCm5wvJ4qRgB45bW9QfhVTyhuSwqdhutKwmYMgELDUMdw88ixLTWAmwKyhvaLB3QkY2ZD47jNZMcRrMCviDq4Ku3HHY; code 92b33f279cb39e378b89d1985191773b"
   },
   {
    "name": "sale 1",
    "price": "0.2 XMR",
-   "sellerReceived": "190000452476",
-   "feeAddressReceived": "10000452476",
+   "sellerReceived": "190000223109",
+   "feeAddressReceived": "10000223109",
    "transactions": 1,
    "recordBytes": 296,
    "wallet2CheckTxKeyAgrees": true,
@@ -70,16 +70,16 @@
   },
   {
    "name": "reservation text with a marketplace fee",
-   "text": "Mordinals reserve: buy Mordinal #3 for 0.5 XMR; pay exactly 0.475000494565 XMR to 87tJpr2WMtCNPShqkLbwxJW16nr9PbNE1Nn86nwm96xtRWJWrbsvZ3iRnvYid4PRbgB29kgQfXVnH1iRTGPwq6LM7BVAfEK and exactly 0.025000494565 XMR to 44K78aijjyfA7rGxMrPPUn7Pd9RKhc6RPf2qQg3KNmKaRjoeVLbdN3iPGbBnAZgwqpDZvEwSoAEyhaJBjPQM1SyyEN8SHap and exactly 0.012500494565 XMR to 47xCwi5nwW3UfxTu77boYTf5KdzLgF2xHCoqNckMhJsxNxwgvmWQgLfQxqF5SiFuuj3DDhpjF78s9eHPGGoQonvGTju5NmF by block 429; Mordinal to 42HUFTKdRjrMoY8hKf6rbJ6fE2hzBMHTiY7AxPhVCUY45H9N1qdUheUGpqTrQbiRnLCFKi3arao9RMcNEk2TC3ZK3Jdv8w7; code b2e7206bd6b2f5182b46e41200878611"
+   "text": "Mordinals reserve: buy Mordinal #3 for 0.5 XMR; pay exactly 0.475000389966 XMR to 8BJfDGKoCkB771sCeisPLBa257XfN7REN2wEzDX8BuCYNwGpsgatUDv3zwxpBmH5qFJycbW3P83SDWZoow71iYxe4atsJSP and exactly 0.025000389966 XMR to 44R5XAtxG1mafFNQ4vM2hRWj4axAae8bA1hzdaJsZWWHWeUhvi8xXuqezghAVfL1WuBrq9jUQJuuQh5ajah4kSzp4N87D6G and exactly 0.012500389966 XMR to 49FvDt4kZjLEXQrRjeMCS7hNZhdTgcCRXc99yvqXkVZLVirAY7fohBGCboE6zCKFZrBZoAsP9CrRncEy6ubnbdRN95ndHdH by block 432; Mordinal to 44mPCCm5wvJ4qRgB45bW9QfhVTyhuSwqdhutKwmYMgELDUMdw88ixLTWAmwKyhvaLB3QkY2ZD47jNZMcRrMCviDq4Ku3HHY; code 01c07470256a1b9ab2904d99257e8302"
   },
   {
    "name": "sale 2",
    "price": "0.5 XMR",
    "seller": "subaddress",
    "paid": {
-    "seller": "475000494565",
-    "protocol fee": "25000494565",
-    "marketplace fee": "12500494565"
+    "seller": "475000389966",
+    "protocol fee": "25000389966",
+    "marketplace fee": "12500389966"
    },
    "transactions": 2,
    "recordBytes": 425,

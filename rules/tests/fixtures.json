@@ -3,8 +3,8 @@
  "made": "2026-11-11",
  "network": "mainnet",
  "domain": "4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d",
- "feeAddress": "44K78aijjyfA7rGxMrPPUn7Pd9RKhc6RPf2qQg3KNmKaRjoeVLbdN3iPGbBnAZgwqpDZvEwSoAEyhaJBjPQM1SyyEN8SHap",
- "startHeight": 396,
+ "feeAddress": "44R5XAtxG1mafFNQ4vM2hRWj4axAae8bA1hzdaJsZWWHWeUhvi8xXuqezghAVfL1WuBrq9jUQJuuQh5ajah4kSzp4N87D6G",
+ "startHeight": 399,
  "rules": {
   "feeBps": 500,
   "marketFeeCapBps": 500,
@@ -12,76 +12,77 @@
   "maxReserve": 30,
   "settle": 10,
   "maxPayments": 3,
-  "maxKeys": 17
+  "maxKeys": 17,
+  "maxListing": 21600
  },
  "owners": [
   {
    "number": 0,
    "what": "bob sends to himself (the inscriber keeps it)",
-   "registrationTx": "1ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d",
+   "registrationTx": "ca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8ba",
    "registrationHeight": 391,
-   "ownerTx": "1ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d",
+   "ownerTx": "ca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8ba",
    "ownerHeight": 391,
-   "ownerOutputKey": "9183ea741378cac2e3d6a6b043a8f40d59542d6f7186ddf92282a558980e556f",
-   "ownerViewTag": "21",
+   "ownerOutputKey": "b58a5221edf6955ab004d5c7d4ee2defc845cd96404da285a1a5ed66ee3a89ee",
+   "ownerViewTag": "0b",
    "ownerTxPubKeys": [
-    "d7a241ffa399dea59ed1aba34767b517624cd6240b229c20ebd01ba5bf8ab435"
+    "914e17358ed185b9d8afd4b6a2f40f75bae150eb5982c5fe9dd659cf7b5113db"
    ],
    "ownerAdditionalPubKeys": []
   },
   {
    "number": 1,
    "what": "alice sends to herself",
-   "registrationTx": "93db3cbd6de0d879acad6e65bf44889b09f04fb196b624cae148a04a2269aca6",
+   "registrationTx": "995da26f067d5900cdb1055b8590ee581e81391231c02d31c081c54e952acf34",
    "registrationHeight": 392,
-   "ownerTx": "93db3cbd6de0d879acad6e65bf44889b09f04fb196b624cae148a04a2269aca6",
+   "ownerTx": "995da26f067d5900cdb1055b8590ee581e81391231c02d31c081c54e952acf34",
    "ownerHeight": 392,
-   "ownerOutputKey": "10ea07cdbd6fb9450ddcee8e0cb945c55e82f915b9067bb5a29ee4ac5f1d6eb1",
-   "ownerViewTag": "5d",
+   "ownerOutputKey": "f006468b83f100dac3b7167ff510a53a3905115d07e7c7b12f2d646c107e5dd6",
+   "ownerViewTag": "41",
    "ownerTxPubKeys": [
-    "3d59a71fe4a6ec02b34825d69aeebbbd4bdf305d579be75d9520c00d134a33a3"
+    "120da1b5bdbc0ecd1967ae9f1ae9054ca5c2c7c9215bc81693621c0b9f7398a3"
    ],
    "ownerAdditionalPubKeys": []
   },
   {
    "number": 2,
    "what": "sent to a subaddress of alice",
-   "registrationTx": "5ad1fdc2cc3516f8b224f58c2fe84123703ad73576dcbb1f8d34f112d8d24962",
+   "registrationTx": "45b9ebee504a8f28804052e31fd78ca5ce03240e3d11f61a4b90b6df97a42149",
    "registrationHeight": 393,
-   "ownerTx": "5ad1fdc2cc3516f8b224f58c2fe84123703ad73576dcbb1f8d34f112d8d24962",
+   "ownerTx": "45b9ebee504a8f28804052e31fd78ca5ce03240e3d11f61a4b90b6df97a42149",
    "ownerHeight": 393,
-   "ownerOutputKey": "11d96fe0e475620e574453ca3cc5d554ab3151dc3946180eca00b24c06e54ee8",
-   "ownerViewTag": "77",
+   "ownerOutputKey": "4bc14ea212d6ded4b05ba6591b6563d5bfbd213d0a5d3eb3e07f863052263283",
+   "ownerViewTag": "c6",
    "ownerTxPubKeys": [
-    "8f0449d1f38d9e52e889cee4ab90d160cc1e530991d0ddb6e8834b31e81da4fe"
+    "c5849e181f7e76ce2006c3c9ef6bb3361c134282e7d157da66a2f01c8148b8f9"
    ],
    "ownerAdditionalPubKeys": []
   },
   {
    "number": 3,
    "what": "sent to a subaddress of bob",
-   "registrationTx": "ed33b4740ca11d65e0d83f604ab709b784c19a1ce0669ef246a5acc9d1114a7a",
-   "registrationHeight": 394,
-   "ownerTx": "ed33b4740ca11d65e0d83f604ab709b784c19a1ce0669ef246a5acc9d1114a7a",
-   "ownerHeight": 394,
-   "ownerOutputKey": "5b119102e189c2502f0a3f5dca32e1099f487f636568286ec15b4e9390798dda",
-   "ownerViewTag": "39",
+   "registrationTx": "89761f3e8bc7c5bef637bf857218ac742d42e4b998c9601acdbf204eae242d27",
+   "registrationHeight": 395,
+   "ownerTx": "89761f3e8bc7c5bef637bf857218ac742d42e4b998c9601acdbf204eae242d27",
+   "ownerHeight": 395,
+   "ownerOutputKey": "2d64e0276b00a6d793b8e62f4de3b35785957fc46b30d8c222c58e14769ea623",
+   "ownerViewTag": "a9",
    "ownerTxPubKeys": [
-    "73e0ff118b993ce55d3a2aee5978552e9146a707a103c5afdac28dafca935b77"
+    "2d49859d9dd19bff5fe230cb841510707024fff2a4489426131027249bf40aed"
    ],
    "ownerAdditionalPubKeys": []
   },
   {
    "number": 4,
    "what": "paid to bob, but output 0 is the sender's change",
-   "registrationTx": "8b069c41ea716369ac847894394450a7b8ed3c08bc3d5c73948ff29a86e3633a",
-   "registrationHeight": 396,
-   "ownerTx": "8b069c41ea716369ac847894394450a7b8ed3c08bc3d5c73948ff29a86e3633a",
-   "ownerHeight": 396,
-   "ownerOutputKey": "7a35bcbe6882c7e9265a3b5b6228deb94bd3d1b232a2a103960bf3b94bb2dc50",
-   "ownerViewTag": "5f",
+   "registrationTx": "b1f1338977fec40ec354741887824011cffaac5b277def59f6914d1817f6bee0",
+   "registrationHeight": 399,
+   "ownerTx": "b1f1338977fec40ec354741887824011cffaac5b277def59f6914d1817f6bee0",
+   "ownerHeight": 399,
+   "ownerOutputKey": "fd2bd4e5f02094e4df8c8d9f70e0578b7a5b1db022d85b09d3c464cd51b5c609",
+   "ownerViewTag": "c2",
    "ownerTxPubKeys": [
-    "400d8c47b3a85502bf871901c50c1918455c04a611c34475f4f643e619371224"
+    "bafb133ccf3b48b870ac3669d40588cdd764558d580887ac83924184a3af572e"
    ],
    "ownerAdditionalPubKeys": []
   }
@@ -89,149 +90,149 @@
  "events": [
   {
    "name": "claim: payment proof made with a message",
-   "height": 396,
-   "record": "4d4431fe011ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d1ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d0031ce82b3a9d8de31cf5372f056ef04944f37c78b02ad8f450a252aa01ab90ed7708063eea64c403e0e9ae34b8e00960885ba8f6f0abd8f3d03de80f5d2524bb0010031ce82b3a9d8de31cf5372f056ef04944f37c78b02ad8f450a252aa01ab90ed7708063eea64c403e0e9ae34b8e00960885ba8f6f0abd8f3d03de80f5d2524bb06708f988c735d8455bfd0f04a388222a7590166614ab8be47aa6d75baba114c803910bde92b78b7ec641950dc248a5d091b8553596742275c66e775d78c8de0fa5107512b8bb3d98b2ee19e19313d6653e5cfc12f3527aef26949b66a6d9520400e0eb6036047585ba1a2e61890d66086fdfd44a81406df9d4a365f0976cecee02af68869af0d1fb6fb47505ceded0c28fe4135d7e77964735f2f64b623dd33a0a",
-   "text": "Mordinals claim: Mordinal #0 (inscription 1ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d), held by output 0 of 1ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d, now belongs to 43WadgJmuyF9LDehuyXBBhRonfoGPPoVGCYmiGrerBDPd32tkEwvRDZBP2oikakTzV2RgJvWFsAfYBCvY6GqEtgaLsi969n; code 4c770a64106f7f039a603ffe0753fbef",
+   "height": 399,
+   "record": "4d4431fe01ca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8baca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8ba009e4d3aa7eaf9356dea3e0e210caafc6d7c7cc153697b3732c1f4950afa11aa785e9b0d0ecb1f000f6d5a07a2a96f5b850c0401fe3a84ada64c8e5255adacce6901009e4d3aa7eaf9356dea3e0e210caafc6d7c7cc153697b3732c1f4950afa11aa785e9b0d0ecb1f000f6d5a07a2a96f5b850c0401fe3a84ada64c8e5255adacce697733d9990ca436e1f77052f6dee55e864012d2a99ab740312d5a98e7cbbd20c3ba643c5b354df0bb4444b8217e74d2c858c60edcb59fc76c4716b9acc1245d04ef04742340adade0f42760d3e5986868506423f1dba8cb6df414f68253a00b0e00e9ae26123ab09aa4bf29caba09c8a8dd289903eb0aa914ff3bd7a37c63e8e40d26a9871f4f7abc6f330f52d7ce8e7544544a3fbe64f14e3a8d81cedbd5fce606",
+   "text": "Mordinals claim: Mordinal #0 (inscription ca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8ba), held by output 0 of ca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8ba, now belongs to 47d3dbk9chAKPKArwkKgsmKK9wE8M4WWz9VQwESDUqcdM8jf3ujhCGo3afSRFBHzkzPFiscZQGBHWUpJvhiqGn9sCspJ2Ue; code 057c4fdfd0b6b08350eb21516502038f",
    "accepted": false,
    "error": "The payment proof is not valid for this transaction and address (it must be made with an empty message)."
   },
   {
    "name": "claim: payment proof of another transaction",
-   "height": 396,
-   "record": "4d4431fe011ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d1ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d0031ce82b3a9d8de31cf5372f056ef04944f37c78b02ad8f450a252aa01ab90ed7708063eea64c403e0e9ae34b8e00960885ba8f6f0abd8f3d03de80f5d2524bb0010031ce82b3a9d8de31cf5372f056ef04944f37c78b02ad8f450a252aa01ab90ed7708063eea64c403e0e9ae34b8e00960885ba8f6f0abd8f3d03de80f5d2524bb038faaa867f7bdffe55bec82e4866eb45cd5fe73b9f800773a881d340912e2ae9a7485705159378023347832d0a9c450a6a06b9ddff3e2e2a004e2b849fbf27087bf6a00f845b41472b3e03567fcd8ff9066ccb312fd4cd3ab2513faf7a91610c00baaef71f4a5096044ef18f0dcb2e05107fa772893f13347ceb4ff1810477990cb14bca94e473da0a5790a7eeff961c7077650094fc543514e9e3c3dc0236610d",
-   "text": "Mordinals claim: Mordinal #0 (inscription 1ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d), held by output 0 of 1ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d, now belongs to 43WadgJmuyF9LDehuyXBBhRonfoGPPoVGCYmiGrerBDPd32tkEwvRDZBP2oikakTzV2RgJvWFsAfYBCvY6GqEtgaLsi969n; code 4c770a64106f7f039a603ffe0753fbef",
+   "height": 399,
+   "record": "4d4431fe01ca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8baca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8ba009e4d3aa7eaf9356dea3e0e210caafc6d7c7cc153697b3732c1f4950afa11aa785e9b0d0ecb1f000f6d5a07a2a96f5b850c0401fe3a84ada64c8e5255adacce6901009e4d3aa7eaf9356dea3e0e210caafc6d7c7cc153697b3732c1f4950afa11aa785e9b0d0ecb1f000f6d5a07a2a96f5b850c0401fe3a84ada64c8e5255adacce692880773dc2160bc9ad0a578555a2bc9e5a9c744afec13bfd7d9c1785acb90244094c79508e49e4d6969f046cbd075e1d4ed959e9f1418c97453632917e4fee0d768680a38ea4f3bfced170715670e7947a4d49116a3709495cd860c009e3f004009e0ba22ff6c8fa18fd2f5a00799fae469b4f304405bfed21219a8f9c27b3d80dfad80204e51c7fa83a1722b57e20f50aea4b55222e5ef0956f7f974b2e54160e",
+   "text": "Mordinals claim: Mordinal #0 (inscription ca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8ba), held by output 0 of ca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8ba, now belongs to 47d3dbk9chAKPKArwkKgsmKK9wE8M4WWz9VQwESDUqcdM8jf3ujhCGo3afSRFBHzkzPFiscZQGBHWUpJvhiqGn9sCspJ2Ue; code 057c4fdfd0b6b08350eb21516502038f",
    "accepted": false,
    "error": "The payment proof is not valid for this transaction and address (it must be made with an empty message)."
   },
   {
    "name": "claim #0: payment proof + message, sent to himself",
-   "height": 396,
-   "record": "4d4431fe011ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d1ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d0031ce82b3a9d8de31cf5372f056ef04944f37c78b02ad8f450a252aa01ab90ed7708063eea64c403e0e9ae34b8e00960885ba8f6f0abd8f3d03de80f5d2524bb0010031ce82b3a9d8de31cf5372f056ef04944f37c78b02ad8f450a252aa01ab90ed7708063eea64c403e0e9ae34b8e00960885ba8f6f0abd8f3d03de80f5d2524bb06708f988c735d8455bfd0f04a388222a7590166614ab8be47aa6d75baba114c8cf53a633dc424699910a0ca2381ec1000a5bfc464471ac10cc5cd4dd8dd02e0ecbbd08fc6c989890c708aed396c45af3cb117841b11bcc9271f2d4d9fc25d80b00a0cfe3ace5ba4f04fba7e4b536596a5f62da6bcb8c4026bd8c2c367e0f7a6a049172465cc119d3b89b0d573a7398229e2aeb9d4f688e6888a239abe131ef9307",
-   "text": "Mordinals claim: Mordinal #0 (inscription 1ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d), held by output 0 of 1ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d, now belongs to 43WadgJmuyF9LDehuyXBBhRonfoGPPoVGCYmiGrerBDPd32tkEwvRDZBP2oikakTzV2RgJvWFsAfYBCvY6GqEtgaLsi969n; code 4c770a64106f7f039a603ffe0753fbef",
+   "height": 399,
+   "record": "4d4431fe01ca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8baca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8ba009e4d3aa7eaf9356dea3e0e210caafc6d7c7cc153697b3732c1f4950afa11aa785e9b0d0ecb1f000f6d5a07a2a96f5b850c0401fe3a84ada64c8e5255adacce6901009e4d3aa7eaf9356dea3e0e210caafc6d7c7cc153697b3732c1f4950afa11aa785e9b0d0ecb1f000f6d5a07a2a96f5b850c0401fe3a84ada64c8e5255adacce697733d9990ca436e1f77052f6dee55e864012d2a99ab740312d5a98e7cbbd20c30038cffabd16a13eca91a8f0c70c8b107f788757febbce3e62aac821f72ba3076add76449e4aed4e16005806231aef9d9e36dcb3cadcd892d78516f35837570800350d86e4e39f6dd5192dd5c81c77c39a164cf8c7fce30038331d2a62a73ccd0210b1cef2d5ca1c12bb2722946ba49c06501694c0c1cdfcac3b447d6ba0a41d0f",
+   "text": "Mordinals claim: Mordinal #0 (inscription ca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8ba), held by output 0 of ca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8ba, now belongs to 47d3dbk9chAKPKArwkKgsmKK9wE8M4WWz9VQwESDUqcdM8jf3ujhCGo3afSRFBHzkzPFiscZQGBHWUpJvhiqGn9sCspJ2Ue; code 057c4fdfd0b6b08350eb21516502038f",
    "accepted": true,
-   "id": "4c770a64106f7f039a603ffe0753fbef50c621c8c9879d724ccb08858f8dc8aa"
+   "id": "057c4fdfd0b6b08350eb21516502038fcc04f93aab243ec4eb000531b559c6aa"
   },
   {
    "name": "claim #0 again",
-   "height": 396,
-   "record": "4d4431fe011ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d1ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d0031ce82b3a9d8de31cf5372f056ef04944f37c78b02ad8f450a252aa01ab90ed7708063eea64c403e0e9ae34b8e00960885ba8f6f0abd8f3d03de80f5d2524bb0010031ce82b3a9d8de31cf5372f056ef04944f37c78b02ad8f450a252aa01ab90ed7708063eea64c403e0e9ae34b8e00960885ba8f6f0abd8f3d03de80f5d2524bb06708f988c735d8455bfd0f04a388222a7590166614ab8be47aa6d75baba114c8cf53a633dc424699910a0ca2381ec1000a5bfc464471ac10cc5cd4dd8dd02e0ecbbd08fc6c989890c708aed396c45af3cb117841b11bcc9271f2d4d9fc25d80b00a0cfe3ace5ba4f04fba7e4b536596a5f62da6bcb8c4026bd8c2c367e0f7a6a049172465cc119d3b89b0d573a7398229e2aeb9d4f688e6888a239abe131ef9307",
-   "text": "Mordinals claim: Mordinal #0 (inscription 1ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d), held by output 0 of 1ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d, now belongs to 43WadgJmuyF9LDehuyXBBhRonfoGPPoVGCYmiGrerBDPd32tkEwvRDZBP2oikakTzV2RgJvWFsAfYBCvY6GqEtgaLsi969n; code 4c770a64106f7f039a603ffe0753fbef",
+   "height": 399,
+   "record": "4d4431fe01ca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8baca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8ba009e4d3aa7eaf9356dea3e0e210caafc6d7c7cc153697b3732c1f4950afa11aa785e9b0d0ecb1f000f6d5a07a2a96f5b850c0401fe3a84ada64c8e5255adacce6901009e4d3aa7eaf9356dea3e0e210caafc6d7c7cc153697b3732c1f4950afa11aa785e9b0d0ecb1f000f6d5a07a2a96f5b850c0401fe3a84ada64c8e5255adacce697733d9990ca436e1f77052f6dee55e864012d2a99ab740312d5a98e7cbbd20c30038cffabd16a13eca91a8f0c70c8b107f788757febbce3e62aac821f72ba3076add76449e4aed4e16005806231aef9d9e36dcb3cadcd892d78516f35837570800350d86e4e39f6dd5192dd5c81c77c39a164cf8c7fce30038331d2a62a73ccd0210b1cef2d5ca1c12bb2722946ba49c06501694c0c1cdfcac3b447d6ba0a41d0f",
+   "text": "Mordinals claim: Mordinal #0 (inscription ca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8ba), held by output 0 of ca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8ba, now belongs to 47d3dbk9chAKPKArwkKgsmKK9wE8M4WWz9VQwESDUqcdM8jf3ujhCGo3afSRFBHzkzPFiscZQGBHWUpJvhiqGn9sCspJ2Ue; code 057c4fdfd0b6b08350eb21516502038f",
    "accepted": false,
    "error": "This record is already on the ledger."
   },
   {
    "name": "claim #3: subaddress holder, payment proof + message",
-   "height": 396,
-   "record": "4d4431fe01ed33b4740ca11d65e0d83f604ab709b784c19a1ce0669ef246a5acc9d1114a7aed33b4740ca11d65e0d83f604ab709b784c19a1ce0669ef246a5acc9d1114a7a018f5767e7781ce17fdd3e019c855e7fad63d4992fb4e0568233b5b0913b88dd9281ce827434e185943869ed4ae1411b3be79c5976d8ade204450c281cc67b763601018f5767e7781ce17fdd3e019c855e7fad63d4992fb4e0568233b5b0913b88dd9281ce827434e185943869ed4ae1411b3be79c5976d8ade204450c281cc67b7636e37ae8d14138b79ee7aa14ad6705bdcc3d709dd12baf4040f6d4c7dc0a3b9e6c6e15f3cf8d2423c933209f8a451de5c518bd773e5ae02ddc4e7e9890f6e61008c718ec144a01bf94edd72e44941432e779fab577f06c802cd767d354a88cd0090038558fbcb8e359581aa2af89b313b4323d8aa9eecb52813ea5402620da1594061aa337137b05a0d87c780066bdf668debdded2b542e7213bb718c2e1fa1af80c",
-   "text": "Mordinals claim: Mordinal #3 (inscription ed33b4740ca11d65e0d83f604ab709b784c19a1ce0669ef246a5acc9d1114a7a), held by output 0 of ed33b4740ca11d65e0d83f604ab709b784c19a1ce0669ef246a5acc9d1114a7a, now belongs to 87tJpr2WMtCNPShqkLbwxJW16nr9PbNE1Nn86nwm96xtRWJWrbsvZ3iRnvYid4PRbgB29kgQfXVnH1iRTGPwq6LM7BVAfEK; code 11774e09131cfc8fd78c2b4a9cd04510",
+   "height": 399,
+   "record": "4d4431fe0189761f3e8bc7c5bef637bf857218ac742d42e4b998c9601acdbf204eae242d2789761f3e8bc7c5bef637bf857218ac742d42e4b998c9601acdbf204eae242d2701e995f045cbe804247dde2ba92a1eb0c5678d28abc6dfe70b91dbaa5160c62d83252cb95bb51b2111ee309f498bc83e6b78d9949da7d2f6b0c2eb7ab6836c9f1f0101e995f045cbe804247dde2ba92a1eb0c5678d28abc6dfe70b91dbaa5160c62d83252cb95bb51b2111ee309f498bc83e6b78d9949da7d2f6b0c2eb7ab6836c9f1fd811fc0d8e2545e5227ab1098e8a144f3a0598206ea2103e29faf84cdbba1b50e306e5bda68dfdfcab0ee002a8fbff7438ced09aeef4ddfa9153456253d01601d1522aab9d639fc2495dca5f3e63d7747a74a849508222e1124a87827e7a9d0000320719d072d3568976357af3a0f79ab188469cda12c428892f1e77a8573b91044088a78a5766a5d7ba1771dede7086b304554d57a4e22022b5cb5cb1244b660d",
+   "text": "Mordinals claim: Mordinal #3 (inscription 89761f3e8bc7c5bef637bf857218ac742d42e4b998c9601acdbf204eae242d27), held by output 0 of 89761f3e8bc7c5bef637bf857218ac742d42e4b998c9601acdbf204eae242d27, now belongs to 8BJfDGKoCkB771sCeisPLBa257XfN7REN2wEzDX8BuCYNwGpsgatUDv3zwxpBmH5qFJycbW3P83SDWZoow71iYxe4atsJSP; code e90e6163a9a2be281dc0b5bcf126244b",
    "accepted": true,
-   "id": "11774e09131cfc8fd78c2b4a9cd0451072d269be9f4b5701e11019b9cc7fc3d8"
+   "id": "e90e6163a9a2be281dc0b5bcf126244b83f9feef8f236095a1dfb04f1403a106"
   },
   {
    "name": "claim #4 by the payee of output 1",
-   "height": 396,
-   "record": "4d4431fe018b069c41ea716369ac847894394450a7b8ed3c08bc3d5c73948ff29a86e3633a8b069c41ea716369ac847894394450a7b8ed3c08bc3d5c73948ff29a86e3633a0031ce82b3a9d8de31cf5372f056ef04944f37c78b02ad8f450a252aa01ab90ed7708063eea64c403e0e9ae34b8e00960885ba8f6f0abd8f3d03de80f5d2524bb0010031ce82b3a9d8de31cf5372f056ef04944f37c78b02ad8f450a252aa01ab90ed7708063eea64c403e0e9ae34b8e00960885ba8f6f0abd8f3d03de80f5d2524bb038faaa867f7bdffe55bec82e4866eb45cd5fe73b9f800773a881d340912e2ae9359cf47152b853f04ecc4ee826c886729f87f815f6b8a63f670568e9dd5d3302b5d2c87a47d62b65eca27815a54bfa72e0c73fedeabb5e4cf574e8d3c4e54d0b006800aca577071a4e60181c00cf55df0977811752f1528bd979fdb1aa87057e0944a55d3e50a823811848a6660d40482c26e0c943867cb8a305392036e7c7f406",
-   "text": "Mordinals claim: Mordinal #4 (inscription 8b069c41ea716369ac847894394450a7b8ed3c08bc3d5c73948ff29a86e3633a), held by output 0 of 8b069c41ea716369ac847894394450a7b8ed3c08bc3d5c73948ff29a86e3633a, now belongs to 43WadgJmuyF9LDehuyXBBhRonfoGPPoVGCYmiGrerBDPd32tkEwvRDZBP2oikakTzV2RgJvWFsAfYBCvY6GqEtgaLsi969n; code 653e98f9787ae1328ebc8c632c2db720",
+   "height": 399,
+   "record": "4d4431fe01b1f1338977fec40ec354741887824011cffaac5b277def59f6914d1817f6bee0b1f1338977fec40ec354741887824011cffaac5b277def59f6914d1817f6bee0009e4d3aa7eaf9356dea3e0e210caafc6d7c7cc153697b3732c1f4950afa11aa785e9b0d0ecb1f000f6d5a07a2a96f5b850c0401fe3a84ada64c8e5255adacce6901009e4d3aa7eaf9356dea3e0e210caafc6d7c7cc153697b3732c1f4950afa11aa785e9b0d0ecb1f000f6d5a07a2a96f5b850c0401fe3a84ada64c8e5255adacce692880773dc2160bc9ad0a578555a2bc9e5a9c744afec13bfd7d9c1785acb902444320bdada27cb202f3a406cc80d1597ff603d26375e6495315324fcbee20d5049286736fe0de915de357fdebfd8e805980efd4bc2f541fc367261a2cfacde10d00ca2fbbe787e2a5b0de6e7b6d4a5ca285a483f74808ed51afe88df733bd5e0c003a8017617a2fb523e137f072c7ae5ee66d5d35e0671b2c7cf4da3cca1e56f801",
+   "text": "Mordinals claim: Mordinal #4 (inscription b1f1338977fec40ec354741887824011cffaac5b277def59f6914d1817f6bee0), held by output 0 of b1f1338977fec40ec354741887824011cffaac5b277def59f6914d1817f6bee0, now belongs to 47d3dbk9chAKPKArwkKgsmKK9wE8M4WWz9VQwESDUqcdM8jf3ujhCGo3afSRFBHzkzPFiscZQGBHWUpJvhiqGn9sCspJ2Ue; code 9b2bbf179517c33d41088e53294bee96",
    "accepted": false,
    "error": "This address did not receive output 0 of the owner transaction, so it does not hold this Mordinal."
   },
   {
    "name": "claim #4 by the holder of output 0",
-   "height": 396,
-   "record": "4d4431fe018b069c41ea716369ac847894394450a7b8ed3c08bc3d5c73948ff29a86e3633a8b069c41ea716369ac847894394450a7b8ed3c08bc3d5c73948ff29a86e3633a00a704e92194d414a57023b630b90208e3a1f1e975df306a4697a2d3b94ce78f83513e9df497d5988f435c281cfe67a20d377ceef59ebd28dee5bb0b80b0e305ed0100a704e92194d414a57023b630b90208e3a1f1e975df306a4697a2d3b94ce78f83513e9df497d5988f435c281cfe67a20d377ceef59ebd28dee5bb0b80b0e305ed0c154442d473a796fb0ff77315bc139085b53db2ee63b52e92bf0417f397fa498513b9779630354f37a494f9c77d7bad148f0ab6db1d69207a4efdfb4e5d250d46cbd0b40bcc59b541ad5b1a34d53e01d0925983094689c314e576715f17e80100abadb22cd1a12e53754444b6ab60210979776ea55cd705122baf47a44fc3a50bcf77e0606c34b9b7f438bdd39d4f055914cab210569afabe0faf297fc0edb902",
-   "text": "Mordinals claim: Mordinal #4 (inscription 8b069c41ea716369ac847894394450a7b8ed3c08bc3d5c73948ff29a86e3633a), held by output 0 of 8b069c41ea716369ac847894394450a7b8ed3c08bc3d5c73948ff29a86e3633a, now belongs to 47xCwi5nwW3UfxTu77boYTf5KdzLgF2xHCoqNckMhJsxNxwgvmWQgLfQxqF5SiFuuj3DDhpjF78s9eHPGGoQonvGTju5NmF; code 627261885684ac5eec8b03f754e2a4e2",
+   "height": 399,
+   "record": "4d4431fe01b1f1338977fec40ec354741887824011cffaac5b277def59f6914d1817f6bee0b1f1338977fec40ec354741887824011cffaac5b277def59f6914d1817f6bee000c97741beec0a5f50db507bcf56406cf15dfe340c8a6042d2178875f67f4d1babb6f6671722e0834559ffca70654c493f2aac51af695a79d2b0e9c5e3369275470100c97741beec0a5f50db507bcf56406cf15dfe340c8a6042d2178875f67f4d1babb6f6671722e0834559ffca70654c493f2aac51af695a79d2b0e9c5e336927547bcf4db24560f38c66c4db536fde92babe5725ca68c9b0b442e0fa0cf741b54286954d2632d0f734c81d5818c1288270aee2948afd87a41a80cdb6b6832830d00ba98ed42321b8f9ccd88d437caf63ce7094a1346148e516b9c5d1f7dcc5bff0a0030222fe06882a928770c4679a764f3c6c2b6e6518c0d84fd0bdab061362bcb0ad6dc33e778b410ac3fe958d56c7ddd4eb1c29148ec6d290aa290a1f24fcf5a06",
+   "text": "Mordinals claim: Mordinal #4 (inscription b1f1338977fec40ec354741887824011cffaac5b277def59f6914d1817f6bee0), held by output 0 of b1f1338977fec40ec354741887824011cffaac5b277def59f6914d1817f6bee0, now belongs to 49FvDt4kZjLEXQrRjeMCS7hNZhdTgcCRXc99yvqXkVZLVirAY7fohBGCboE6zCKFZrBZoAsP9CrRncEy6ubnbdRN95ndHdH; code 08e0dd41de5288a6f295ccb1c4b60159",
    "accepted": true,
-   "id": "627261885684ac5eec8b03f754e2a4e258e69c7e7954b146e1c578bbc3fd42c7"
+   "id": "08e0dd41de5288a6f295ccb1c4b601592592d8c5b1c75dd6e20bfa7ae749a1fc"
   },
   {
    "name": "claim #1: signature moved onto another receiving address",
-   "height": 396,
-   "record": "4d4431fe0193db3cbd6de0d879acad6e65bf44889b09f04fb196b624cae148a04a2269aca693db3cbd6de0d879acad6e65bf44889b09f04fb196b624cae148a04a2269aca600117421824d99157c5e8220ec37c29121d54e1be06b382db9f91a70a1acc44d19941d377dba11155e9c2954ea7df8cd433db6571f914c387b37bbf7167772d21400acdf3a212555e3fc7dd1c9f78fb2c1a5f7d2fc74bc3f163fb951c222b125f90f3cf91d05e01784e472c004e5482fe398f1d73ee40509d4717610584c1314e603",
+   "height": 399,
+   "record": "4d4431fe01995da26f067d5900cdb1055b8590ee581e81391231c02d31c081c54e952acf34995da26f067d5900cdb1055b8590ee581e81391231c02d31c081c54e952acf340052ee0baa1a18ab16ed706c2e73696be75c65856be979c4f498818b20c044914a902995a93947dcae6322cf0b3a77440e67c97e71aa2c69c170a75f1e32e1641d0050dd2acb0628a997764d014b84376022f2ba2f37f30547bec7b7cf9bfcbc400f11c3c7db3610159aec1c8d482858ac7086d24c6058be09a7dfc90a98c89e490a",
    "text": null,
    "accepted": false,
    "error": "The signature was not made with the key of the owner coin."
   },
   {
    "name": "claim #0 with the key of #1",
-   "height": 396,
-   "record": "4d4431fe011ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d1ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d00db02af8cb485e6e3288dd1f7cc0508ed7092ab93e0ea31cab784798f088886426ebd0e5569564613f0e529f9d06e75e21f76280ca5cac951181aba51d996c60000acdf3a212555e3fc7dd1c9f78fb2c1a5f7d2fc74bc3f163fb951c222b125f90f3cf91d05e01784e472c004e5482fe398f1d73ee40509d4717610584c1314e603",
+   "height": 399,
+   "record": "4d4431fe01ca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8baca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8ba00b42e245b65c33059b89ce9389d037981b026f165c9fa001fdde9c1ce1a343740b5a9b108556bcc008dd9bc03638b25ff6a954ee58c003017e9eab2585a5f7c500050dd2acb0628a997764d014b84376022f2ba2f37f30547bec7b7cf9bfcbc400f11c3c7db3610159aec1c8d482858ac7086d24c6058be09a7dfc90a98c89e490a",
    "text": null,
    "accepted": false,
    "error": "This Mordinal is already claimed."
   },
   {
    "name": "claim #1: one-time key",
-   "height": 396,
-   "record": "4d4431fe0193db3cbd6de0d879acad6e65bf44889b09f04fb196b624cae148a04a2269aca693db3cbd6de0d879acad6e65bf44889b09f04fb196b624cae148a04a2269aca600db02af8cb485e6e3288dd1f7cc0508ed7092ab93e0ea31cab784798f088886426ebd0e5569564613f0e529f9d06e75e21f76280ca5cac951181aba51d996c60000acdf3a212555e3fc7dd1c9f78fb2c1a5f7d2fc74bc3f163fb951c222b125f90f3cf91d05e01784e472c004e5482fe398f1d73ee40509d4717610584c1314e603",
+   "height": 399,
+   "record": "4d4431fe01995da26f067d5900cdb1055b8590ee581e81391231c02d31c081c54e952acf34995da26f067d5900cdb1055b8590ee581e81391231c02d31c081c54e952acf3400b42e245b65c33059b89ce9389d037981b026f165c9fa001fdde9c1ce1a343740b5a9b108556bcc008dd9bc03638b25ff6a954ee58c003017e9eab2585a5f7c500050dd2acb0628a997764d014b84376022f2ba2f37f30547bec7b7cf9bfcbc400f11c3c7db3610159aec1c8d482858ac7086d24c6058be09a7dfc90a98c89e490a",
    "text": null,
    "accepted": true,
-   "id": "c36f454682bbdd0a950840f9c24aa2753d5de5acadde1d545972b8ef9250623d"
+   "id": "3e183514be2096f65f820dc49e19c80abe676726da7553a0ea3f2f433d60c220"
   },
   {
    "name": "claim #2: one-time key of a subaddress coin, sent to the main address",
-   "height": 396,
-   "record": "4d4431fe015ad1fdc2cc3516f8b224f58c2fe84123703ad73576dcbb1f8d34f112d8d249625ad1fdc2cc3516f8b224f58c2fe84123703ad73576dcbb1f8d34f112d8d2496200db02af8cb485e6e3288dd1f7cc0508ed7092ab93e0ea31cab784798f088886426ebd0e5569564613f0e529f9d06e75e21f76280ca5cac951181aba51d996c600003435613700ad96d385a18176c40b600d98cb9f2dfa457b98d444afc4d3ca870ebf83cfd4471dc25c95fe31b5aaca649beafd9830b2faa898eb49c2d9ff59c606",
+   "height": 399,
+   "record": "4d4431fe0145b9ebee504a8f28804052e31fd78ca5ce03240e3d11f61a4b90b6df97a4214945b9ebee504a8f28804052e31fd78ca5ce03240e3d11f61a4b90b6df97a4214900b42e245b65c33059b89ce9389d037981b026f165c9fa001fdde9c1ce1a343740b5a9b108556bcc008dd9bc03638b25ff6a954ee58c003017e9eab2585a5f7c5000ac26750a9b0d25fc4a63a83c005eec317995b3af253a9a044af8f5a690cb2708a1c329aef54994c89fa3153054a24a1993473e5bfa1424b7d155ffea44b3570e",
    "text": null,
    "accepted": true,
-   "id": "d5b12a1decc078549e0df8e09ab3e83b80302d906265bb493d1fd267ced20f1c"
+   "id": "e028c971f5996bd395560cb2c4689b32b2fed89ab4ccbca2e913fa82bbcecdc5"
   },
   {
    "name": "list #1 for 0.2 XMR",
-   "height": 396,
-   "record": "4d4431fe0393db3cbd6de0d879acad6e65bf44889b09f04fb196b624cae148a04a2269aca6000000001c03000000d0ed902e00000000db02af8cb485e6e3288dd1f7cc0508ed7092ab93e0ea31cab784798f088886426ebd0e5569564613f0e529f9d06e75e21f76280ca5cac951181aba51d996c60000269017e19cd4a5d9f11abcb2025598a1dac897171ad1523afe48be3576bb3807d16f659a25e409764dd4e035f9ce334bb2b2663cf64358b86fa43ac66aa9030a",
-   "text": "Mordinals list: sell Mordinal #1 for 0.2 XMR (0.19 XMR to 49vUphtanm3eziq19XPzMmgiTr9xusEBiaucEiWaQzcDC7UnvPT8rPo4LTFi1AY6PWepgAt3WEcVnEZiTyEa1WRK16goDNA, 0.01 XMR protocol fee); valid until block 796; code b887b34310d34505b31aadd361425d0f",
+   "height": 399,
+   "record": "4d4431fe03995da26f067d5900cdb1055b8590ee581e81391231c02d31c081c54e952acf34000000001f03000000d0ed902e00000000b42e245b65c33059b89ce9389d037981b026f165c9fa001fdde9c1ce1a343740b5a9b108556bcc008dd9bc03638b25ff6a954ee58c003017e9eab2585a5f7c5000964058d31756fcf9643aad26d40ee6a71e2fb29ff2506e09c492b8609cf9e50fa26d0cf8ea4f77f797e03e1729b05f5cc8efe941c7f9766316156af814706305",
+   "text": "Mordinals list: sell Mordinal #1 for 0.2 XMR (0.19 XMR to 48T8isznTz7G1QdnwNmvHvNh8wm5Hz4F16L9c2p64SHkBpmLNH3dRko16NnBPeFQ8LjirnqTpfRF54zzc9wJZdEjA8T3aE7, 0.01 XMR protocol fee); valid until block 799; code 0824e19f15414abbcbe652dc7c0b565d",
    "accepted": true,
-   "id": "b887b34310d34505b31aadd361425d0f107bf7f8b0b416a33966461fb5ef90fe"
+   "id": "0824e19f15414abbcbe652dc7c0b565da6ea7c7ac07a669b0073d991bd5e02ab"
   },
   {
    "name": "reserve own listing",
-   "height": 396,
-   "record": "4d4431fe05b887b34310d34505b31aadd361425d0f107bf7f8b0b416a33966461fb5ef90feaa01000000db02af8cb485e6e3288dd1f7cc0508ed7092ab93e0ea31cab784798f088886426ebd0e5569564613f0e529f9d06e75e21f76280ca5cac951181aba51d996c6000000006c3911f89e5edd3b21a04eb1315efbacf96a9d4b4fd4d6831a73ce50ff24d90e3a86a80bd63052e4c2ea51cca6c67212bdacad6f7418c74c90e07eaf3366070e",
-   "text": "Mordinals reserve: buy Mordinal #1 for 0.2 XMR; pay exactly 0.190000951492 XMR to 49vUphtanm3eziq19XPzMmgiTr9xusEBiaucEiWaQzcDC7UnvPT8rPo4LTFi1AY6PWepgAt3WEcVnEZiTyEa1WRK16goDNA and exactly 0.010000951492 XMR to 44K78aijjyfA7rGxMrPPUn7Pd9RKhc6RPf2qQg3KNmKaRjoeVLbdN3iPGbBnAZgwqpDZvEwSoAEyhaJBjPQM1SyyEN8SHap by block 426; Mordinal to 49vUphtanm3eziq19XPzMmgiTr9xusEBiaucEiWaQzcDC7UnvPT8rPo4LTFi1AY6PWepgAt3WEcVnEZiTyEa1WRK16goDNA; code 51d58e678cbf3381f1e207f478f40d14",
+   "height": 399,
+   "record": "4d4431fe050824e19f15414abbcbe652dc7c0b565da6ea7c7ac07a669b0073d991bd5e02abad01000000b42e245b65c33059b89ce9389d037981b026f165c9fa001fdde9c1ce1a343740b5a9b108556bcc008dd9bc03638b25ff6a954ee58c003017e9eab2585a5f7c500000002ac8fe914f0da0acabb99f03a2f746d5d961d626ab29950b1b256e8adf26170cbdca9d0ba7e0ec789ce17b3a5a8739e21c84ae3c7e8b8734f44491c542d0130f",
+   "text": "Mordinals reserve: buy Mordinal #1 for 0.2 XMR; pay exactly 0.190000256666 XMR to 48T8isznTz7G1QdnwNmvHvNh8wm5Hz4F16L9c2p64SHkBpmLNH3dRko16NnBPeFQ8LjirnqTpfRF54zzc9wJZdEjA8T3aE7 and exactly 0.010000256666 XMR to 44R5XAtxG1mafFNQ4vM2hRWj4axAae8bA1hzdaJsZWWHWeUhvi8xXuqezghAVfL1WuBrq9jUQJuuQh5ajah4kSzp4N87D6G by block 429; Mordinal to 48T8isznTz7G1QdnwNmvHvNh8wm5Hz4F16L9c2p64SHkBpmLNH3dRko16NnBPeFQ8LjirnqTpfRF54zzc9wJZdEjA8T3aE7; code 4a94a476acc9fd59b0c328410526ccc0",
    "accepted": false,
    "error": "The seller cannot reserve their own listing."
   },
   {
    "name": "reserve #1",
-   "height": 396,
-   "record": "4d4431fe05b887b34310d34505b31aadd361425d0f107bf7f8b0b416a33966461fb5ef90feaa01000000117421824d99157c5e8220ec37c29121d54e1be06b382db9f91a70a1acc44d19941d377dba11155e9c2954ea7df8cd433db6571f914c387b37bbf7167772d214000000f418516fd6816ef7ab3d6416947ee88fb27c0c236460c3adfd4f395b5320dd06a8f353104a63b90faa07c28a356ffa2d0e2b9700c86f3d4019d1f1da39729907",
-   "text": "Mordinals reserve: buy Mordinal #1 for 0.2 XMR; pay exactly 0.190000452476 XMR to 49vUphtanm3eziq19XPzMmgiTr9xusEBiaucEiWaQzcDC7UnvPT8rPo4LTFi1AY6PWepgAt3WEcVnEZiTyEa1WRK16goDNA and exactly 0.010000452476 XMR to 44K78aijjyfA7rGxMrPPUn7Pd9RKhc6RPf2qQg3KNmKaRjoeVLbdN3iPGbBnAZgwqpDZvEwSoAEyhaJBjPQM1SyyEN8SHap by block 426; Mordinal to 42HUFTKdRjrMoY8hKf6rbJ6fE2hzBMHTiY7AxPhVCUY45H9N1qdUheUGpqTrQbiRnLCFKi3arao9RMcNEk2TC3ZK3Jdv8w7; code 1e2095c26d5d96cbea8e7f2a4d288f57",
+   "height": 399,
+   "record": "4d4431fe050824e19f15414abbcbe652dc7c0b565da6ea7c7ac07a669b0073d991bd5e02abad0100000052ee0baa1a18ab16ed706c2e73696be75c65856be979c4f498818b20c044914a902995a93947dcae6322cf0b3a77440e67c97e71aa2c69c170a75f1e32e1641d000000ac7e9bca8a71eb9c0df9f4116f71d95d95990f20a30ef33289fc0dbfc2f0f40fe1275f8e898354d93119ebd7e47023f2f607a4a9db210e22ac54c644e74d9f07",
+   "text": "Mordinals reserve: buy Mordinal #1 for 0.2 XMR; pay exactly 0.190000223109 XMR to 48T8isznTz7G1QdnwNmvHvNh8wm5Hz4F16L9c2p64SHkBpmLNH3dRko16NnBPeFQ8LjirnqTpfRF54zzc9wJZdEjA8T3aE7 and exactly 0.010000223109 XMR to 44R5XAtxG1mafFNQ4vM2hRWj4axAae8bA1hzdaJsZWWHWeUhvi8xXuqezghAVfL1WuBrq9jUQJuuQh5ajah4kSzp4N87D6G by block 429; Mordinal to 44mPCCm5wvJ4qRgB45bW9QfhVTyhuSwqdhutKwmYMgELDUMdw88ixLTWAmwKyhvaLB3QkY2ZD47jNZMcRrMCviDq4Ku3HHY; code 92b33f279cb39e378b89d1985191773b",
    "accepted": true,
-   "id": "1e2095c26d5d96cbea8e7f2a4d288f5727795be6dabb8fb9805cfc5205262a50"
+   "id": "92b33f279cb39e378b89d1985191773b6ae05c3defc224596c38074f26dbd76d"
   },
   {
    "name": "reserve while reserved",
-   "height": 396,
-   "record": "4d4431fe05b887b34310d34505b31aadd361425d0f107bf7f8b0b416a33966461fb5ef90feaa01000000a704e92194d414a57023b630b90208e3a1f1e975df306a4697a2d3b94ce78f83513e9df497d5988f435c281cfe67a20d377ceef59ebd28dee5bb0b80b0e305ed0000004616ae0daeca3ab1bcd119497627263c26e8029d1cf3b47f3847993f457e4f06bdca2c21abc2f7a9ee5ad8947f3eea8259d2cd45f0ce6e754b327894cc9c1804",
-   "text": "Mordinals reserve: buy Mordinal #1 for 0.2 XMR; pay exactly 0.190000069878 XMR to 49vUphtanm3eziq19XPzMmgiTr9xusEBiaucEiWaQzcDC7UnvPT8rPo4LTFi1AY6PWepgAt3WEcVnEZiTyEa1WRK16goDNA and exactly 0.010000069878 XMR to 44K78aijjyfA7rGxMrPPUn7Pd9RKhc6RPf2qQg3KNmKaRjoeVLbdN3iPGbBnAZgwqpDZvEwSoAEyhaJBjPQM1SyyEN8SHap by block 426; Mordinal to 47xCwi5nwW3UfxTu77boYTf5KdzLgF2xHCoqNckMhJsxNxwgvmWQgLfQxqF5SiFuuj3DDhpjF78s9eHPGGoQonvGTju5NmF; code 690706938109f1025c1e76725252eb32",
+   "height": 399,
+   "record": "4d4431fe050824e19f15414abbcbe652dc7c0b565da6ea7c7ac07a669b0073d991bd5e02abad01000000c97741beec0a5f50db507bcf56406cf15dfe340c8a6042d2178875f67f4d1babb6f6671722e0834559ffca70654c493f2aac51af695a79d2b0e9c5e33692754700000064a11c28868bb471e18ed70f2c18c5e35b3351837a84e7f34597569477cd3f0d1d1c6655365359dd69d28780dca2b87ae4cec4cc66488e2a19815cbfcb73a502",
+   "text": "Mordinals reserve: buy Mordinal #1 for 0.2 XMR; pay exactly 0.190000631935 XMR to 48T8isznTz7G1QdnwNmvHvNh8wm5Hz4F16L9c2p64SHkBpmLNH3dRko16NnBPeFQ8LjirnqTpfRF54zzc9wJZdEjA8T3aE7 and exactly 0.010000631935 XMR to 44R5XAtxG1mafFNQ4vM2hRWj4axAae8bA1hzdaJsZWWHWeUhvi8xXuqezghAVfL1WuBrq9jUQJuuQh5ajah4kSzp4N87D6G by block 429; Mordinal to 49FvDt4kZjLEXQrRjeMCS7hNZhdTgcCRXc99yvqXkVZLVirAY7fohBGCboE6zCKFZrBZoAsP9CrRncEy6ubnbdRN95ndHdH; code 6839faaab3543dc848d58f5f8c64dd4a",
    "accepted": false,
-   "error": "This listing is reserved by someone else until block 436."
+   "error": "This listing is reserved by someone else until block 439."
   },
   {
    "name": "cancel while reserved",
-   "height": 396,
-   "record": "4d4431fe04b887b34310d34505b31aadd361425d0f107bf7f8b0b416a33966461fb5ef90fe00db02af8cb485e6e3288dd1f7cc0508ed7092ab93e0ea31cab784798f088886426ebd0e5569564613f0e529f9d06e75e21f76280ca5cac951181aba51d996c600003622ad692a19dc36e1a9d17bd79356f8e8676f89e9667812667972ba8e6cd7007f28606172f771b117e801c0c3a07d3b05b397e366c1bfa8a62374e68664bb0a",
-   "text": "Mordinals cancel: stop selling Mordinal #1; listing b887b34310d34505b31aadd361425d0f; code 299e4c890ceea6ccb9f1279f1db0a112",
+   "height": 399,
+   "record": "4d4431fe040824e19f15414abbcbe652dc7c0b565da6ea7c7ac07a669b0073d991bd5e02ab00b42e245b65c33059b89ce9389d037981b026f165c9fa001fdde9c1ce1a343740b5a9b108556bcc008dd9bc03638b25ff6a954ee58c003017e9eab2585a5f7c500091e64b91780f5c07e0241c335ddb35d42989045563ef46b0c4fa34282d4a7200c0086726ac164ef393b9228347c468251dce7b1c25cdef8ace65b9c1e424a106",
+   "text": "Mordinals cancel: stop selling Mordinal #1; listing 0824e19f15414abbcbe652dc7c0b565d; code b20e9441d67b63a9b1d4af32caa18f18",
    "accepted": false,
-   "error": "This listing is reserved until block 436; it can be cancelled after that."
+   "error": "This listing is reserved until block 439; it can be cancelled after that."
   },
   {
    "name": "move while listed",
-   "height": 396,
-   "record": "4d4431fe0293db3cbd6de0d879acad6e65bf44889b09f04fb196b624cae148a04a2269aca60000000000db02af8cb485e6e3288dd1f7cc0508ed7092ab93e0ea31cab784798f088886426ebd0e5569564613f0e529f9d06e75e21f76280ca5cac951181aba51d996c6000031ce82b3a9d8de31cf5372f056ef04944f37c78b02ad8f450a252aa01ab90ed7708063eea64c403e0e9ae34b8e00960885ba8f6f0abd8f3d03de80f5d2524bb000d8e174461a711a0a43ba803bc0da64589ba1e8223403ee80f4bb42f52b8fe00b25d8b778e7b650bc28ba834c17a8eea5b1b7d0e979bde79e14983804530f5f02",
-   "text": "Mordinals move: send Mordinal #1 to 43WadgJmuyF9LDehuyXBBhRonfoGPPoVGCYmiGrerBDPd32tkEwvRDZBP2oikakTzV2RgJvWFsAfYBCvY6GqEtgaLsi969n; move 0; code d14b1993346dde33f9356e55aebd58d8",
+   "height": 399,
+   "record": "4d4431fe02995da26f067d5900cdb1055b8590ee581e81391231c02d31c081c54e952acf340000000000b42e245b65c33059b89ce9389d037981b026f165c9fa001fdde9c1ce1a343740b5a9b108556bcc008dd9bc03638b25ff6a954ee58c003017e9eab2585a5f7c50009e4d3aa7eaf9356dea3e0e210caafc6d7c7cc153697b3732c1f4950afa11aa785e9b0d0ecb1f000f6d5a07a2a96f5b850c0401fe3a84ada64c8e5255adacce690069185eb4a89ffbe4fbff69786bf459029fa62906d4b6a0bfe84ce8806134ce0b6206d1b74fd2abab7b331ce8a432fc230dee6f5a49e5a2c0559d7caa2828a803",
+   "text": "Mordinals move: send Mordinal #1 to 47d3dbk9chAKPKArwkKgsmKK9wE8M4WWz9VQwESDUqcdM8jf3ujhCGo3afSRFBHzkzPFiscZQGBHWUpJvhiqGn9sCspJ2Ue; move 0; code 2bb0c6fcb844c0df4382f91e020c515e",
    "accepted": false,
    "error": "This Mordinal is listed for sale; cancel the listing first."
   },
   {
    "name": "buy #1: amounts without the reservation's last digits",
-   "height": 397,
-   "record": "4d4431fe06b887b34310d34505b31aadd361425d0f107bf7f8b0b416a33966461fb5ef90fe021d4b1d5cdcdee5e237165e040bea97e33b524830ad6e6b90bcd02d048c5f775800a3a53ca46ff552212f757b1b8ea8434986459f7bee1da135cf466b15578ff1febc8a68bb1d2f6af589129ca793ddc321aaf17de52798a9f616114cdbcce4f207a52376ea21a4b74935d815ba05a5d57062c4d010fb715542bd7f4e2415c97a031d4b1d5cdcdee5e237165e040bea97e33b524830ad6e6b90bcd02d048c5f77580132414dddce1d6979e613696048d0112b7565e2be947f7dd87fdadec1871b180c16c63d7ec917984f73f72ebcee8018f9830c894981deda2765291fe6257e70098ff141638f20c19a3dace869ee74ce498259beeba7a44bf951f7a9497c979302",
+   "height": 400,
+   "record": "4d4431fe060824e19f15414abbcbe652dc7c0b565da6ea7c7ac07a669b0073d991bd5e02ab022f666d55766bb59f61f02159677691239e92926f3e97d93add0abca7e0a8699f002931e6dc4d7478cea16a5628312397acfd80ceac0e7fcc5787f4179220d56d51ff1559018eadb775aca09427644041caf31057e153019aed5f09f23e01037c067615dd7ad76fb207b2093072043ae29ad81073617d43fc2fdc5c0e3ab426f90f2f666d55766bb59f61f02159677691239e92926f3e97d93add0abca7e0a8699f017de309f60d0165646112ad1d80896e14b636f773e4e6fb3d7802fa8a6376cc0095405acd65878939fc6d775540796e3abacbb9b91b40892efb137599f7e55f0037e70103ff864902d64eb604613161bb2823b28db942a579feb6130edc0cf004",
    "text": null,
    "facts": [
     {
-     "txid": "1d4b1d5cdcdee5e237165e040bea97e33b524830ad6e6b90bcd02d048c5f7758",
-     "height": 397,
+     "txid": "2f666d55766bb59f61f02159677691239e92926f3e97d93add0abca7e0a8699f",
+     "height": 400,
      "tx": {
       "version": 2,
       "unlock_time": 0,
@@ -240,8 +241,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "46c04fee23abcf19926a543cd945ad77fc7f93bff0a01b9794eb7979efc36fc8",
-          "view_tag": "b0"
+          "key": "c7ef0842ff795a8728d0c8d10b58cae23e27de8e5835147ff082e4567875ca32",
+          "view_tag": "28"
          }
         }
        },
@@ -249,8 +250,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "db9f06216a26fc9f988f89ea6ae1aa0cd49952d37bf1262fb743d045481163ad",
-          "view_tag": "0c"
+          "key": "665cef166ee7d50ea5581b086437144f9a03dddbabad2304ff300657ef87db19",
+          "view_tag": "7a"
          }
         }
        },
@@ -258,81 +259,81 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "c50b570343726c48dbe599e1bc1b5d8bb424effa327985bfe8c404bf49918cc5",
-          "view_tag": "ea"
+          "key": "846d246ab6ce01015cb3b33178c01651952ad5a27cbe548f51f82a19f09e2d08",
+          "view_tag": "39"
          }
         }
        }
       ],
       "extra": [
        1,
-       122,
-       144,
-       185,
-       150,
-       253,
-       207,
-       191,
-       215,
-       191,
-       27,
-       139,
-       211,
-       48,
-       156,
-       62,
-       228,
-       198,
-       215,
-       77,
-       35,
-       36,
-       227,
-       136,
+       78,
+       78,
+       76,
+       167,
+       160,
+       154,
+       153,
+       2,
+       129,
+       135,
+       213,
+       133,
+       196,
+       209,
+       199,
+       165,
+       95,
+       91,
+       99,
+       90,
+       133,
+       113,
+       171,
+       179,
+       239,
+       153,
+       165,
+       16,
+       145,
+       63,
        43,
-       103,
-       67,
-       57,
-       248,
-       233,
-       10,
-       42,
-       229
+       17
       ],
       "rct_signatures": {
        "type": 6,
        "ecdhInfo": [
         {
-         "amount": "e239bd37cf0e4631"
+         "amount": "3a824d51d0e63b00"
         },
         {
-         "amount": "b2db7c395af56c3b"
+         "amount": "6908de4974d55f24"
         },
         {
-         "amount": "e24e3d9407bbb258"
+         "amount": "c729e621b6b1d586"
         }
        ],
        "outPk": [
-        "a58ba2ca39efc26d5c251b5d406d707aa7318ab782ecce51522e180c2506393e",
-        "d4943898e4ae452828747849192ba1774345948938d1ed54eac860b1c25152a1",
-        "ea1f2d1afe699ab92829c8419699d5fe76c4c8fd057c67159b17ab0352e6d764"
+        "24f484c349cc2c6c816430e612affaf9223446ea7f14bf392d852fbefbb25f05",
+        "31f4f0000d3be722500472e773445666f397321c157c58c9f424768392496f44",
+        "52be61d7ff434600a64b669d6c0d2c00b911722a3d8d682640087c3fb9499ebf"
        ]
       }
      }
     }
    ],
    "accepted": false,
-   "error": "The seller payment is 0.19 XMR; this reservation needs exactly 0.190000452476 XMR."
+   "error": "The seller payment is 0.19 XMR; this reservation needs exactly 0.190000223109 XMR."
   },
   {
    "name": "buy #1: seller paid, fee paid without the last digits",
-   "height": 398,
-   "record": "4d4431fe06b887b34310d34505b31aadd361425d0f107bf7f8b0b416a33966461fb5ef90fe021fe97858c2bc01adc1d3faaf34b376b0d6bfbdc2d353c981e535e51697ed9dda012a6d620ecab1245d46ec3d4ca378ad13c0bdd75f0047aa4177054bbc12d57218810dac547cfee5c2d070e37c7ab7ba7c1e02e813bb1683ce222144310d29b60a20adb0d8b21d26b8771d9697b5241d3550cdde19077e480ae66363c573a9b50c1d4b1d5cdcdee5e237165e040bea97e33b524830ad6e6b90bcd02d048c5f77580132414dddce1d6979e613696048d0112b7565e2be947f7dd87fdadec1871b180cf26ec1922b3b9e4b32a78da08d6056c067fd156eb9fc081330f9ef53040b3104437459ca0998b91a7872490cf3dd1b16d278788b1cade8d21052453c03659b0b",
+   "height": 401,
+   "record": "4d4431fe060824e19f15414abbcbe652dc7c0b565da6ea7c7ac07a669b0073d991bd5e02ab02dbfd33ab27e4a1bdd0365d67cf9e0448efa1360a3c70dd17956d63e5baa116ad01dbaa00f184094284381abfa9cd4b3d3883c618330d6b5340c3273414de6a70bf0be83088a91093597c38d48dcc9bd614ea1700cf739c6b652cc9f8d7aab0f305e32945bb4f223ab6ef631f1afbc9b8a526f47ef0ce79e9e96e98de53112a23072f666d55766bb59f61f02159677691239e92926f3e97d93add0abca7e0a8699f017de309f60d0165646112ad1d80896e14b636f773e4e6fb3d7802fa8a6376cc006f18665c45c6533725d978e9c3f2bf5bf845c7d3290c89e465dde93114ca0109b7cd234a9117b72d623fd59183c31ad434a82122a91c2786521a04059ba2830c",
    "text": null,
    "facts": [
     {
-     "txid": "1fe97858c2bc01adc1d3faaf34b376b0d6bfbdc2d353c981e535e51697ed9dda",
-     "height": 398,
+     "txid": "dbfd33ab27e4a1bdd0365d67cf9e0448efa1360a3c70dd17956d63e5baa116ad",
+     "height": 401,
      "tx": {
       "version": 2,
       "unlock_time": 0,
@@ -341,8 +342,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "6787830ff55b0183edcfe7426b128e17844cf88ec237dddbf4e1ecb74b8f1cbc",
-          "view_tag": "0b"
+          "key": "2fdd1048691143c2bd2454aa553ec65cd9bb7bc91cf909ac3c31f65b0137cec4",
+          "view_tag": "a4"
          }
         }
        },
@@ -350,78 +351,78 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "60377f3bf97bcd1d12bfb2f4798bf809cdb78feacf13c48dccdfa47803b329a9",
-          "view_tag": "c1"
+          "key": "4029dd15dd40a1da1cfe6eeb88937a08491201c33e2169e0faee67ab9369f334",
+          "view_tag": "05"
          }
         }
        }
       ],
       "extra": [
        1,
-       170,
-       230,
-       49,
-       129,
-       129,
-       228,
-       143,
-       70,
-       186,
-       168,
-       7,
-       221,
-       50,
-       50,
-       133,
-       159,
-       96,
-       143,
+       74,
+       185,
        51,
-       141,
-       245,
+       10,
+       207,
+       65,
+       231,
+       242,
+       114,
+       1,
+       99,
+       109,
        59,
-       147,
-       128,
+       154,
+       165,
+       218,
+       122,
+       48,
+       196,
+       162,
+       77,
+       134,
+       188,
        63,
-       60,
-       31,
-       213,
-       169,
-       31,
-       36,
-       239,
+       23,
+       147,
+       160,
+       149,
+       133,
+       83,
+       156,
+       204,
        2,
        9,
        1,
-       150,
-       43,
-       44,
-       140,
-       51,
-       120,
-       2,
-       25
+       145,
+       74,
+       24,
+       124,
+       172,
+       241,
+       55,
+       95
       ],
       "rct_signatures": {
        "type": 6,
        "ecdhInfo": [
         {
-         "amount": "4dfd8706298d17f2"
+         "amount": "3058d7cda648c824"
         },
         {
-         "amount": "391a72028e6e27ab"
+         "amount": "885611d3a4fc809a"
         }
        ],
        "outPk": [
-        "d0b686d80ec1cb6af922d09997a20a09130079408ba3e2312d8c3fb611187e91",
-        "32968b6b081fdfd983e6bd924dbff918bb57c6ffa30513b4fcd585b9ce3a2cb1"
+        "07d8cc37229aa3f4468f1ee022f8d449419ef706fa09169c1d2b7139f97c8f29",
+        "e27aab93863dd79bacddaea170e3a5b0bf8f25433bda4181c6bfb9a836d85718"
        ]
       }
      }
     },
     {
-     "txid": "1d4b1d5cdcdee5e237165e040bea97e33b524830ad6e6b90bcd02d048c5f7758",
-     "height": 397,
+     "txid": "2f666d55766bb59f61f02159677691239e92926f3e97d93add0abca7e0a8699f",
+     "height": 400,
      "tx": {
       "version": 2,
       "unlock_time": 0,
@@ -430,8 +431,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "46c04fee23abcf19926a543cd945ad77fc7f93bff0a01b9794eb7979efc36fc8",
-          "view_tag": "b0"
+          "key": "c7ef0842ff795a8728d0c8d10b58cae23e27de8e5835147ff082e4567875ca32",
+          "view_tag": "28"
          }
         }
        },
@@ -439,8 +440,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "db9f06216a26fc9f988f89ea6ae1aa0cd49952d37bf1262fb743d045481163ad",
-          "view_tag": "0c"
+          "key": "665cef166ee7d50ea5581b086437144f9a03dddbabad2304ff300657ef87db19",
+          "view_tag": "7a"
          }
         }
        },
@@ -448,81 +449,81 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "c50b570343726c48dbe599e1bc1b5d8bb424effa327985bfe8c404bf49918cc5",
-          "view_tag": "ea"
+          "key": "846d246ab6ce01015cb3b33178c01651952ad5a27cbe548f51f82a19f09e2d08",
+          "view_tag": "39"
          }
         }
        }
       ],
       "extra": [
        1,
-       122,
-       144,
-       185,
-       150,
-       253,
-       207,
-       191,
-       215,
-       191,
-       27,
-       139,
-       211,
-       48,
-       156,
-       62,
-       228,
-       198,
-       215,
-       77,
-       35,
-       36,
-       227,
-       136,
+       78,
+       78,
+       76,
+       167,
+       160,
+       154,
+       153,
+       2,
+       129,
+       135,
+       213,
+       133,
+       196,
+       209,
+       199,
+       165,
+       95,
+       91,
+       99,
+       90,
+       133,
+       113,
+       171,
+       179,
+       239,
+       153,
+       165,
+       16,
+       145,
+       63,
        43,
-       103,
-       67,
-       57,
-       248,
-       233,
-       10,
-       42,
-       229
+       17
       ],
       "rct_signatures": {
        "type": 6,
        "ecdhInfo": [
         {
-         "amount": "e239bd37cf0e4631"
+         "amount": "3a824d51d0e63b00"
         },
         {
-         "amount": "b2db7c395af56c3b"
+         "amount": "6908de4974d55f24"
         },
         {
-         "amount": "e24e3d9407bbb258"
+         "amount": "c729e621b6b1d586"
         }
        ],
        "outPk": [
-        "a58ba2ca39efc26d5c251b5d406d707aa7318ab782ecce51522e180c2506393e",
-        "d4943898e4ae452828747849192ba1774345948938d1ed54eac860b1c25152a1",
-        "ea1f2d1afe699ab92829c8419699d5fe76c4c8fd057c67159b17ab0352e6d764"
+        "24f484c349cc2c6c816430e612affaf9223446ea7f14bf392d852fbefbb25f05",
+        "31f4f0000d3be722500472e773445666f397321c157c58c9f424768392496f44",
+        "52be61d7ff434600a64b669d6c0d2c00b911722a3d8d682640087c3fb9499ebf"
        ]
       }
      }
     }
    ],
    "accepted": false,
-   "error": "The protocol fee payment is 0.01 XMR; this reservation needs exactly 0.010000452476 XMR."
+   "error": "The protocol fee payment is 0.01 XMR; this reservation needs exactly 0.010000223109 XMR."
   },
   {
    "name": "buy #1: proofs made with another transaction key",
-   "height": 399,
-   "record": "4d4431fe06b887b34310d34505b31aadd361425d0f107bf7f8b0b416a33966461fb5ef90fe023387ea78bf166ccbb3bdbbe35a3af01f646ed0c3b9ff6bbe01f859b6dc2931be022a6d620ecab1245d46ec3d4ca378ad13c0bdd75f0047aa4177054bbc12d572188570916d52ab3f502b373e84a3bb2cb42153b75071a9a08caadf1faab64579045d69674a964b92b1ed9c3bb853f17c91f1b354f577e13031cef800d06246f10c3387ea78bf166ccbb3bdbbe35a3af01f646ed0c3b9ff6bbe01f859b6dc2931be01d66971178b5987af716f0b63d496fabdd1ba7045bd206f24dc0da81e841f0bc95b64b1a646a4ad9b193a046949cf75397aa3f6b51a9ca7678c03eb32a4641b0fb7ca4dfc49d8998044aa03813f5e09c9725b9d15337c6ec774621dcb2691f30c",
+   "height": 402,
+   "record": "4d4431fe060824e19f15414abbcbe652dc7c0b565da6ea7c7ac07a669b0073d991bd5e02ab020a14b2c14109897bc0a6f680add13e85cc0e43bc939c1ef50578fc3e8dd17a3002dbaa00f184094284381abfa9cd4b3d3883c618330d6b5340c3273414de6a70bf17dd1aabd878e7d2bebf5441b164a6aeb681607c9e07fa2fa1cf256638b8f6058efa36ca87c95e17aa26af576cee8a0565a7dcacadfb8e5154098262a8b720060a14b2c14109897bc0a6f680add13e85cc0e43bc939c1ef50578fc3e8dd17a3000287f1d56c6e5d829b7154704705affce95b332b8143d589955253de16a518df41a9fa981aab9c0712b19bbc042f825a4d6a3a2e1625fec95ffb9fd0e87b0000d917c14a9fd0adaf7eb49f2c6f3e0a7a5b9254f1e3786495b93370be567a80f0d",
    "text": null,
    "facts": [
     {
-     "txid": "3387ea78bf166ccbb3bdbbe35a3af01f646ed0c3b9ff6bbe01f859b6dc2931be",
-     "height": 399,
+     "txid": "0a14b2c14109897bc0a6f680add13e85cc0e43bc939c1ef50578fc3e8dd17a30",
+     "height": 402,
      "tx": {
       "version": 2,
       "unlock_time": 0,
@@ -531,8 +532,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "70a7e7fce723261236919d2a2a6c2bd53691143e50a5003965a3cbadc54ce0de",
-          "view_tag": "4f"
+          "key": "eb6f1e72ba00423a597dab93ad293b1a1c575a9b9aef62b12f620710bc0415d0",
+          "view_tag": "d2"
          }
         }
        },
@@ -540,8 +541,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "7392ee584f36914a9137a2517539c3c6aae886d25fa2b178a16f537a4cf040ba",
-          "view_tag": "8a"
+          "key": "e03c8036a2d9da61d0ee21cc63ddc752234ba91a2e816479c4e7616f42bf72a8",
+          "view_tag": "55"
          }
         }
        },
@@ -549,64 +550,64 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "9d5ff278cc2015e776932e6d8858c0bc90b0be07f7e524a962a15752fe6c217a",
-          "view_tag": "45"
+          "key": "b27b7d1a93f29dbe16e04efa1de181ae8805b9018dd6ca009047828bfb8b3d09",
+          "view_tag": "53"
          }
         }
        }
       ],
       "extra": [
        1,
-       35,
-       123,
-       232,
-       176,
-       59,
-       255,
-       93,
-       27,
-       244,
-       109,
-       219,
-       87,
-       207,
-       192,
-       111,
-       145,
-       64,
-       48,
-       73,
-       69,
-       87,
-       35,
-       44,
-       112,
-       13,
-       253,
-       7,
-       17,
-       80,
+       250,
+       0,
+       31,
+       210,
+       199,
+       62,
+       186,
        134,
-       53,
-       91
+       202,
+       133,
+       204,
+       8,
+       54,
+       27,
+       215,
+       74,
+       191,
+       194,
+       101,
+       83,
+       63,
+       88,
+       27,
+       115,
+       103,
+       62,
+       234,
+       219,
+       109,
+       78,
+       250,
+       24
       ],
       "rct_signatures": {
        "type": 6,
        "ecdhInfo": [
         {
-         "amount": "4c9f2366fcbbd6db"
+         "amount": "881ded1bcea872e0"
         },
         {
-         "amount": "d3bc51c8b3d4f8a6"
+         "amount": "2dab06bc49fcad43"
         },
         {
-         "amount": "de681da9a8f579b5"
+         "amount": "8cbb70b3b2bbe0e2"
         }
        ],
        "outPk": [
-        "a486c237e16d0d026ecc9d8cace5a25bcf06d8bcf41010a4aa486e9407bf8189",
-        "5269d049f8d5ee9aca10697e63470ee18eef3f262a34233609d183e4219a7164",
-        "0fadef54880b8970779842aab4b3e210756bac52bac65d591e3b4058fef0681f"
+        "795a22516e53340a0f2efc6477221fd59ced38984334c9f57930bb76c9fa6492",
+        "93dc498f1fb1bdd1fb687138fc4d3c2014780b29f714fe79777da163f8c7f8b6",
+        "268ac81389b505050b3fe9987f7ca87d6d440d3ec2905b760aed07044efc215e"
        ]
       }
      }
@@ -617,13 +618,13 @@
   },
   {
    "name": "buy #1: proofs made for another listing",
-   "height": 399,
-   "record": "4d4431fe06b887b34310d34505b31aadd361425d0f107bf7f8b0b416a33966461fb5ef90fe023387ea78bf166ccbb3bdbbe35a3af01f646ed0c3b9ff6bbe01f859b6dc2931be025370b1e0e1d96848e05cc3914ff7192a8040f9dfc22c728efaccfe561853b0ad41d01e0c4399a6fce5a8ece1d9d62ee4ac77d94064c96476a4b15f7696c355035d4086dead363742cd9e81ecf35ed3981f0dcc363dd42e7a257f17dec0b79f0b3387ea78bf166ccbb3bdbbe35a3af01f646ed0c3b9ff6bbe01f859b6dc2931be01cfe7fde4f36e1266b76cfe05f3a73f5a7b2437da184e01aa95ec09abf0e34a95e956011c97991965846f8967f5aee764f448d8863640f143a69832b160a536063b9e60b294d0775c7864e1fe929cca7259fd75fd852369d008858b50b48ead01",
+   "height": 402,
+   "record": "4d4431fe060824e19f15414abbcbe652dc7c0b565da6ea7c7ac07a669b0073d991bd5e02ab020a14b2c14109897bc0a6f680add13e85cc0e43bc939c1ef50578fc3e8dd17a3002e040b7e88c878fd0ffed8c346ee906bde4221a1539c523b604c738a2256f3d09c0866b6916f63a61ccd2064a1e14e9ca3f21eb776f439ebb1706d20601b7140c56d4d1785b547d083b47b68b2536c9f8f30fef8f22115bcc6fc43a879e7beb0b0a14b2c14109897bc0a6f680add13e85cc0e43bc939c1ef50578fc3e8dd17a3000b668662387161fc6c49ec404b08c13bec8f81e774a1f9bb221f4997fc585ae4055faeccf2940b2dcdf45d0384bc5679b290fd185e5984621c6c7d4e96817b30df2e4b36a86f7c9d07e7cc4029a5c44eddb0df5926b36b04450d11c117bb5310b",
    "text": null,
    "facts": [
     {
-     "txid": "3387ea78bf166ccbb3bdbbe35a3af01f646ed0c3b9ff6bbe01f859b6dc2931be",
-     "height": 399,
+     "txid": "0a14b2c14109897bc0a6f680add13e85cc0e43bc939c1ef50578fc3e8dd17a30",
+     "height": 402,
      "tx": {
       "version": 2,
       "unlock_time": 0,
@@ -632,8 +633,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "70a7e7fce723261236919d2a2a6c2bd53691143e50a5003965a3cbadc54ce0de",
-          "view_tag": "4f"
+          "key": "eb6f1e72ba00423a597dab93ad293b1a1c575a9b9aef62b12f620710bc0415d0",
+          "view_tag": "d2"
          }
         }
        },
@@ -641,8 +642,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "7392ee584f36914a9137a2517539c3c6aae886d25fa2b178a16f537a4cf040ba",
-          "view_tag": "8a"
+          "key": "e03c8036a2d9da61d0ee21cc63ddc752234ba91a2e816479c4e7616f42bf72a8",
+          "view_tag": "55"
          }
         }
        },
@@ -650,64 +651,64 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "9d5ff278cc2015e776932e6d8858c0bc90b0be07f7e524a962a15752fe6c217a",
-          "view_tag": "45"
+          "key": "b27b7d1a93f29dbe16e04efa1de181ae8805b9018dd6ca009047828bfb8b3d09",
+          "view_tag": "53"
          }
         }
        }
       ],
       "extra": [
        1,
-       35,
-       123,
-       232,
-       176,
-       59,
-       255,
-       93,
-       27,
-       244,
-       109,
-       219,
-       87,
-       207,
-       192,
-       111,
-       145,
-       64,
-       48,
-       73,
-       69,
-       87,
-       35,
-       44,
-       112,
-       13,
-       253,
-       7,
-       17,
-       80,
+       250,
+       0,
+       31,
+       210,
+       199,
+       62,
+       186,
        134,
-       53,
-       91
+       202,
+       133,
+       204,
+       8,
+       54,
+       27,
+       215,
+       74,
+       191,
+       194,
+       101,
+       83,
+       63,
+       88,
+       27,
+       115,
+       103,
+       62,
+       234,
+       219,
+       109,
+       78,
+       250,
+       24
       ],
       "rct_signatures": {
        "type": 6,
        "ecdhInfo": [
         {
-         "amount": "4c9f2366fcbbd6db"
+         "amount": "881ded1bcea872e0"
         },
         {
-         "amount": "d3bc51c8b3d4f8a6"
+         "amount": "2dab06bc49fcad43"
         },
         {
-         "amount": "de681da9a8f579b5"
+         "amount": "8cbb70b3b2bbe0e2"
         }
        ],
        "outPk": [
-        "a486c237e16d0d026ecc9d8cace5a25bcf06d8bcf41010a4aa486e9407bf8189",
-        "5269d049f8d5ee9aca10697e63470ee18eef3f262a34233609d183e4219a7164",
-        "0fadef54880b8970779842aab4b3e210756bac52bac65d591e3b4058fef0681f"
+        "795a22516e53340a0f2efc6477221fd59ced38984334c9f57930bb76c9fa6492",
+        "93dc498f1fb1bdd1fb687138fc4d3c2014780b29f714fe79777da163f8c7f8b6",
+        "268ac81389b505050b3fe9987f7ca87d6d440d3ec2905b760aed07044efc215e"
        ]
       }
      }
@@ -718,13 +719,13 @@
   },
   {
    "name": "buy #1: one transaction paying seller and fee",
-   "height": 399,
-   "record": "4d4431fe06b887b34310d34505b31aadd361425d0f107bf7f8b0b416a33966461fb5ef90fe023387ea78bf166ccbb3bdbbe35a3af01f646ed0c3b9ff6bbe01f859b6dc2931be025370b1e0e1d96848e05cc3914ff7192a8040f9dfc22c728efaccfe561853b0adb4407d94ea176c7efe644a1834a0b060095339a6821ca4e417d1fd7fb8070d0a515ffd347a13a81ce4baea4f9ece279efe0502080702adc7111f9cd5a129ce013387ea78bf166ccbb3bdbbe35a3af01f646ed0c3b9ff6bbe01f859b6dc2931be01cfe7fde4f36e1266b76cfe05f3a73f5a7b2437da184e01aa95ec09abf0e34a9532f08c917742640d3c9409b5037985820fec78168d38399cb505108f03b3e409f2fbf0eb392a8669c0d251babeb20864acc55c65155eb596be94cb73c97b1f03",
+   "height": 402,
+   "record": "4d4431fe060824e19f15414abbcbe652dc7c0b565da6ea7c7ac07a669b0073d991bd5e02ab020a14b2c14109897bc0a6f680add13e85cc0e43bc939c1ef50578fc3e8dd17a3002e040b7e88c878fd0ffed8c346ee906bde4221a1539c523b604c738a2256f3d097bd304374c977b1c2cb9c7db396b1916384dc85be31a46a2273ad1352bf7af0f91ab0705ced288c778c0e1a5373d4a7de608c5f52c2a2bd7109545233b2ba40a0a14b2c14109897bc0a6f680add13e85cc0e43bc939c1ef50578fc3e8dd17a3000b668662387161fc6c49ec404b08c13bec8f81e774a1f9bb221f4997fc585ae40c4801e45eaead7d0df3fc9cb47bfa7e6a29c4bb2a5d364c39d4f54cb2c780707f2fe1b62cd77242f4c29597e62ebcb537e593473327ad00a9b538eb854830a0a",
    "text": null,
    "facts": [
     {
-     "txid": "3387ea78bf166ccbb3bdbbe35a3af01f646ed0c3b9ff6bbe01f859b6dc2931be",
-     "height": 399,
+     "txid": "0a14b2c14109897bc0a6f680add13e85cc0e43bc939c1ef50578fc3e8dd17a30",
+     "height": 402,
      "tx": {
       "version": 2,
       "unlock_time": 0,
@@ -733,8 +734,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "70a7e7fce723261236919d2a2a6c2bd53691143e50a5003965a3cbadc54ce0de",
-          "view_tag": "4f"
+          "key": "eb6f1e72ba00423a597dab93ad293b1a1c575a9b9aef62b12f620710bc0415d0",
+          "view_tag": "d2"
          }
         }
        },
@@ -742,8 +743,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "7392ee584f36914a9137a2517539c3c6aae886d25fa2b178a16f537a4cf040ba",
-          "view_tag": "8a"
+          "key": "e03c8036a2d9da61d0ee21cc63ddc752234ba91a2e816479c4e7616f42bf72a8",
+          "view_tag": "55"
          }
         }
        },
@@ -751,81 +752,81 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "9d5ff278cc2015e776932e6d8858c0bc90b0be07f7e524a962a15752fe6c217a",
-          "view_tag": "45"
+          "key": "b27b7d1a93f29dbe16e04efa1de181ae8805b9018dd6ca009047828bfb8b3d09",
+          "view_tag": "53"
          }
         }
        }
       ],
       "extra": [
        1,
-       35,
-       123,
-       232,
-       176,
-       59,
-       255,
-       93,
-       27,
-       244,
-       109,
-       219,
-       87,
-       207,
-       192,
-       111,
-       145,
-       64,
-       48,
-       73,
-       69,
-       87,
-       35,
-       44,
-       112,
-       13,
-       253,
-       7,
-       17,
-       80,
+       250,
+       0,
+       31,
+       210,
+       199,
+       62,
+       186,
        134,
-       53,
-       91
+       202,
+       133,
+       204,
+       8,
+       54,
+       27,
+       215,
+       74,
+       191,
+       194,
+       101,
+       83,
+       63,
+       88,
+       27,
+       115,
+       103,
+       62,
+       234,
+       219,
+       109,
+       78,
+       250,
+       24
       ],
       "rct_signatures": {
        "type": 6,
        "ecdhInfo": [
         {
-         "amount": "4c9f2366fcbbd6db"
+         "amount": "881ded1bcea872e0"
         },
         {
-         "amount": "d3bc51c8b3d4f8a6"
+         "amount": "2dab06bc49fcad43"
         },
         {
-         "amount": "de681da9a8f579b5"
+         "amount": "8cbb70b3b2bbe0e2"
         }
        ],
        "outPk": [
-        "a486c237e16d0d026ecc9d8cace5a25bcf06d8bcf41010a4aa486e9407bf8189",
-        "5269d049f8d5ee9aca10697e63470ee18eef3f262a34233609d183e4219a7164",
-        "0fadef54880b8970779842aab4b3e210756bac52bac65d591e3b4058fef0681f"
+        "795a22516e53340a0f2efc6477221fd59ced38984334c9f57930bb76c9fa6492",
+        "93dc498f1fb1bdd1fb687138fc4d3c2014780b29f714fe79777da163f8c7f8b6",
+        "268ac81389b505050b3fe9987f7ca87d6d440d3ec2905b760aed07044efc215e"
        ]
       }
      }
     }
    ],
    "accepted": true,
-   "id": "ccac228ed0560c332bd7c0429efa36c5252e0268b678c9edbe5e3f7973eb4670"
+   "id": "143fa0470ad6ce331a2dec8edef830f9c53bf16c99bd714183f10e39bbf36724"
   },
   {
    "name": "buy #1 again, same record",
-   "height": 399,
-   "record": "4d4431fe06b887b34310d34505b31aadd361425d0f107bf7f8b0b416a33966461fb5ef90fe023387ea78bf166ccbb3bdbbe35a3af01f646ed0c3b9ff6bbe01f859b6dc2931be025370b1e0e1d96848e05cc3914ff7192a8040f9dfc22c728efaccfe561853b0adb4407d94ea176c7efe644a1834a0b060095339a6821ca4e417d1fd7fb8070d0a515ffd347a13a81ce4baea4f9ece279efe0502080702adc7111f9cd5a129ce013387ea78bf166ccbb3bdbbe35a3af01f646ed0c3b9ff6bbe01f859b6dc2931be01cfe7fde4f36e1266b76cfe05f3a73f5a7b2437da184e01aa95ec09abf0e34a9532f08c917742640d3c9409b5037985820fec78168d38399cb505108f03b3e409f2fbf0eb392a8669c0d251babeb20864acc55c65155eb596be94cb73c97b1f03",
+   "height": 402,
+   "record": "4d4431fe060824e19f15414abbcbe652dc7c0b565da6ea7c7ac07a669b0073d991bd5e02ab020a14b2c14109897bc0a6f680add13e85cc0e43bc939c1ef50578fc3e8dd17a3002e040b7e88c878fd0ffed8c346ee906bde4221a1539c523b604c738a2256f3d097bd304374c977b1c2cb9c7db396b1916384dc85be31a46a2273ad1352bf7af0f91ab0705ced288c778c0e1a5373d4a7de608c5f52c2a2bd7109545233b2ba40a0a14b2c14109897bc0a6f680add13e85cc0e43bc939c1ef50578fc3e8dd17a3000b668662387161fc6c49ec404b08c13bec8f81e774a1f9bb221f4997fc585ae40c4801e45eaead7d0df3fc9cb47bfa7e6a29c4bb2a5d364c39d4f54cb2c780707f2fe1b62cd77242f4c29597e62ebcb537e593473327ad00a9b538eb854830a0a",
    "text": null,
    "facts": [
     {
-     "txid": "3387ea78bf166ccbb3bdbbe35a3af01f646ed0c3b9ff6bbe01f859b6dc2931be",
-     "height": 399,
+     "txid": "0a14b2c14109897bc0a6f680add13e85cc0e43bc939c1ef50578fc3e8dd17a30",
+     "height": 402,
      "tx": {
       "version": 2,
       "unlock_time": 0,
@@ -834,8 +835,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "70a7e7fce723261236919d2a2a6c2bd53691143e50a5003965a3cbadc54ce0de",
-          "view_tag": "4f"
+          "key": "eb6f1e72ba00423a597dab93ad293b1a1c575a9b9aef62b12f620710bc0415d0",
+          "view_tag": "d2"
          }
         }
        },
@@ -843,8 +844,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "7392ee584f36914a9137a2517539c3c6aae886d25fa2b178a16f537a4cf040ba",
-          "view_tag": "8a"
+          "key": "e03c8036a2d9da61d0ee21cc63ddc752234ba91a2e816479c4e7616f42bf72a8",
+          "view_tag": "55"
          }
         }
        },
@@ -852,64 +853,64 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "9d5ff278cc2015e776932e6d8858c0bc90b0be07f7e524a962a15752fe6c217a",
-          "view_tag": "45"
+          "key": "b27b7d1a93f29dbe16e04efa1de181ae8805b9018dd6ca009047828bfb8b3d09",
+          "view_tag": "53"
          }
         }
        }
       ],
       "extra": [
        1,
-       35,
-       123,
-       232,
-       176,
-       59,
-       255,
-       93,
-       27,
-       244,
-       109,
-       219,
-       87,
-       207,
-       192,
-       111,
-       145,
-       64,
-       48,
-       73,
-       69,
-       87,
-       35,
-       44,
-       112,
-       13,
-       253,
-       7,
-       17,
-       80,
+       250,
+       0,
+       31,
+       210,
+       199,
+       62,
+       186,
        134,
-       53,
-       91
+       202,
+       133,
+       204,
+       8,
+       54,
+       27,
+       215,
+       74,
+       191,
+       194,
+       101,
+       83,
+       63,
+       88,
+       27,
+       115,
+       103,
+       62,
+       234,
+       219,
+       109,
+       78,
+       250,
+       24
       ],
       "rct_signatures": {
        "type": 6,
        "ecdhInfo": [
         {
-         "amount": "4c9f2366fcbbd6db"
+         "amount": "881ded1bcea872e0"
         },
         {
-         "amount": "d3bc51c8b3d4f8a6"
+         "amount": "2dab06bc49fcad43"
         },
         {
-         "amount": "de681da9a8f579b5"
+         "amount": "8cbb70b3b2bbe0e2"
         }
        ],
        "outPk": [
-        "a486c237e16d0d026ecc9d8cace5a25bcf06d8bcf41010a4aa486e9407bf8189",
-        "5269d049f8d5ee9aca10697e63470ee18eef3f262a34233609d183e4219a7164",
-        "0fadef54880b8970779842aab4b3e210756bac52bac65d591e3b4058fef0681f"
+        "795a22516e53340a0f2efc6477221fd59ced38984334c9f57930bb76c9fa6492",
+        "93dc498f1fb1bdd1fb687138fc4d3c2014780b29f714fe79777da163f8c7f8b6",
+        "268ac81389b505050b3fe9987f7ca87d6d440d3ec2905b760aed07044efc215e"
        ]
       }
      }
@@ -920,13 +921,13 @@
   },
   {
    "name": "buy #1 again, new proofs of the same payment",
-   "height": 399,
-   "record": "4d4431fe06b887b34310d34505b31aadd361425d0f107bf7f8b0b416a33966461fb5ef90fe023387ea78bf166ccbb3bdbbe35a3af01f646ed0c3b9ff6bbe01f859b6dc2931be025370b1e0e1d96848e05cc3914ff7192a8040f9dfc22c728efaccfe561853b0ad72fab8c36dd811eec872847fbbb2f81887ec0c495de5d37de608612daed5b1089d53f210a2bd287e2a84795a460b8a09e5f13d35e528f264a86400a32632dd0f3387ea78bf166ccbb3bdbbe35a3af01f646ed0c3b9ff6bbe01f859b6dc2931be01cfe7fde4f36e1266b76cfe05f3a73f5a7b2437da184e01aa95ec09abf0e34a95c57e506238b5d03a28dd68c8e66d1885b7a8081580f1ee44b644774fa8e40807b768563940d88da5633ea80c1f3f1d24bfb270bc9f639a0db385f179a46c900e",
+   "height": 402,
+   "record": "4d4431fe060824e19f15414abbcbe652dc7c0b565da6ea7c7ac07a669b0073d991bd5e02ab020a14b2c14109897bc0a6f680add13e85cc0e43bc939c1ef50578fc3e8dd17a3002e040b7e88c878fd0ffed8c346ee906bde4221a1539c523b604c738a2256f3d095fa78523d37103ccf675c5dc7c51716f60a6304e00b8a2f309f170e758a7ff0144ab098c1f4474d9f7ea83ac6b1485ca87467eb77d278fee814654343cab10060a14b2c14109897bc0a6f680add13e85cc0e43bc939c1ef50578fc3e8dd17a3000b668662387161fc6c49ec404b08c13bec8f81e774a1f9bb221f4997fc585ae40834cc20c0a8156f480b2548cb2a172905674296765d99258664a29f94fafac01780eb5edb983e632f0c3432917e5d5dcd522826602846359065ff69a9d2c9504",
    "text": null,
    "facts": [
     {
-     "txid": "3387ea78bf166ccbb3bdbbe35a3af01f646ed0c3b9ff6bbe01f859b6dc2931be",
-     "height": 399,
+     "txid": "0a14b2c14109897bc0a6f680add13e85cc0e43bc939c1ef50578fc3e8dd17a30",
+     "height": 402,
      "tx": {
       "version": 2,
       "unlock_time": 0,
@@ -935,8 +936,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "70a7e7fce723261236919d2a2a6c2bd53691143e50a5003965a3cbadc54ce0de",
-          "view_tag": "4f"
+          "key": "eb6f1e72ba00423a597dab93ad293b1a1c575a9b9aef62b12f620710bc0415d0",
+          "view_tag": "d2"
          }
         }
        },
@@ -944,8 +945,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "7392ee584f36914a9137a2517539c3c6aae886d25fa2b178a16f537a4cf040ba",
-          "view_tag": "8a"
+          "key": "e03c8036a2d9da61d0ee21cc63ddc752234ba91a2e816479c4e7616f42bf72a8",
+          "view_tag": "55"
          }
         }
        },
@@ -953,64 +954,64 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "9d5ff278cc2015e776932e6d8858c0bc90b0be07f7e524a962a15752fe6c217a",
-          "view_tag": "45"
+          "key": "b27b7d1a93f29dbe16e04efa1de181ae8805b9018dd6ca009047828bfb8b3d09",
+          "view_tag": "53"
          }
         }
        }
       ],
       "extra": [
        1,
-       35,
-       123,
-       232,
-       176,
-       59,
-       255,
-       93,
-       27,
-       244,
-       109,
-       219,
-       87,
-       207,
-       192,
-       111,
-       145,
-       64,
-       48,
-       73,
-       69,
-       87,
-       35,
-       44,
-       112,
-       13,
-       253,
-       7,
-       17,
-       80,
+       250,
+       0,
+       31,
+       210,
+       199,
+       62,
+       186,
        134,
-       53,
-       91
+       202,
+       133,
+       204,
+       8,
+       54,
+       27,
+       215,
+       74,
+       191,
+       194,
+       101,
+       83,
+       63,
+       88,
+       27,
+       115,
+       103,
+       62,
+       234,
+       219,
+       109,
+       78,
+       250,
+       24
       ],
       "rct_signatures": {
        "type": 6,
        "ecdhInfo": [
         {
-         "amount": "4c9f2366fcbbd6db"
+         "amount": "881ded1bcea872e0"
         },
         {
-         "amount": "d3bc51c8b3d4f8a6"
+         "amount": "2dab06bc49fcad43"
         },
         {
-         "amount": "de681da9a8f579b5"
+         "amount": "8cbb70b3b2bbe0e2"
         }
        ],
        "outPk": [
-        "a486c237e16d0d026ecc9d8cace5a25bcf06d8bcf41010a4aa486e9407bf8189",
-        "5269d049f8d5ee9aca10697e63470ee18eef3f262a34233609d183e4219a7164",
-        "0fadef54880b8970779842aab4b3e210756bac52bac65d591e3b4058fef0681f"
+        "795a22516e53340a0f2efc6477221fd59ced38984334c9f57930bb76c9fa6492",
+        "93dc498f1fb1bdd1fb687138fc4d3c2014780b29f714fe79777da163f8c7f8b6",
+        "268ac81389b505050b3fe9987f7ca87d6d440d3ec2905b760aed07044efc215e"
        ]
       }
      }
@@ -1021,13 +1022,13 @@
   },
   {
    "name": "buy #1 again with other payments",
-   "height": 399,
-   "record": "4d4431fe06b887b34310d34505b31aadd361425d0f107bf7f8b0b416a33966461fb5ef90fe021d4b1d5cdcdee5e237165e040bea97e33b524830ad6e6b90bcd02d048c5f775800a3a53ca46ff552212f757b1b8ea8434986459f7bee1da135cf466b15578ff1fea54bd770bfb799054ce9f30cd5d2e1de676be7ca674a61a4333d60987e61f800d4e3f869b916a7a491cc83b996b337e8e54a74ec9a9d1f57f21defa4bb1228021d4b1d5cdcdee5e237165e040bea97e33b524830ad6e6b90bcd02d048c5f77580132414dddce1d6979e613696048d0112b7565e2be947f7dd87fdadec1871b180cea303a67e334141b786a2a5fb83c20eefafd151fcba5be5860e6cdd7be02d10c9073c47d1c7552e34544f15e093ed40cfff2e76eeffbc067e64c35792ac2750b",
+   "height": 402,
+   "record": "4d4431fe060824e19f15414abbcbe652dc7c0b565da6ea7c7ac07a669b0073d991bd5e02ab022f666d55766bb59f61f02159677691239e92926f3e97d93add0abca7e0a8699f002931e6dc4d7478cea16a5628312397acfd80ceac0e7fcc5787f4179220d56d51c7b97063d212cdad31ccfb52e319cb546888838217b320e6c2cb3d7201524a02f21f6d05590837e756b8dbd27d6345f6633b62b184e1b36901887b0d0dd4c5092f666d55766bb59f61f02159677691239e92926f3e97d93add0abca7e0a8699f017de309f60d0165646112ad1d80896e14b636f773e4e6fb3d7802fa8a6376cc0015b21706576217fe0f148f54c77ce6ddf54ac09f41ae6f9be44e7db25bd65c0cc148f2d15e3b73f2dd1ed68481a3132c670bc2778e53472cc6ee5eaa318ac905",
    "text": null,
    "facts": [
     {
-     "txid": "1d4b1d5cdcdee5e237165e040bea97e33b524830ad6e6b90bcd02d048c5f7758",
-     "height": 397,
+     "txid": "2f666d55766bb59f61f02159677691239e92926f3e97d93add0abca7e0a8699f",
+     "height": 400,
      "tx": {
       "version": 2,
       "unlock_time": 0,
@@ -1036,8 +1037,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "46c04fee23abcf19926a543cd945ad77fc7f93bff0a01b9794eb7979efc36fc8",
-          "view_tag": "b0"
+          "key": "c7ef0842ff795a8728d0c8d10b58cae23e27de8e5835147ff082e4567875ca32",
+          "view_tag": "28"
          }
         }
        },
@@ -1045,8 +1046,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "db9f06216a26fc9f988f89ea6ae1aa0cd49952d37bf1262fb743d045481163ad",
-          "view_tag": "0c"
+          "key": "665cef166ee7d50ea5581b086437144f9a03dddbabad2304ff300657ef87db19",
+          "view_tag": "7a"
          }
         }
        },
@@ -1054,64 +1055,64 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "c50b570343726c48dbe599e1bc1b5d8bb424effa327985bfe8c404bf49918cc5",
-          "view_tag": "ea"
+          "key": "846d246ab6ce01015cb3b33178c01651952ad5a27cbe548f51f82a19f09e2d08",
+          "view_tag": "39"
          }
         }
        }
       ],
       "extra": [
        1,
-       122,
-       144,
-       185,
-       150,
-       253,
-       207,
-       191,
-       215,
-       191,
-       27,
-       139,
-       211,
-       48,
-       156,
-       62,
-       228,
-       198,
-       215,
-       77,
-       35,
-       36,
-       227,
-       136,
+       78,
+       78,
+       76,
+       167,
+       160,
+       154,
+       153,
+       2,
+       129,
+       135,
+       213,
+       133,
+       196,
+       209,
+       199,
+       165,
+       95,
+       91,
+       99,
+       90,
+       133,
+       113,
+       171,
+       179,
+       239,
+       153,
+       165,
+       16,
+       145,
+       63,
        43,
-       103,
-       67,
-       57,
-       248,
-       233,
-       10,
-       42,
-       229
+       17
       ],
       "rct_signatures": {
        "type": 6,
        "ecdhInfo": [
         {
-         "amount": "e239bd37cf0e4631"
+         "amount": "3a824d51d0e63b00"
         },
         {
-         "amount": "b2db7c395af56c3b"
+         "amount": "6908de4974d55f24"
         },
         {
-         "amount": "e24e3d9407bbb258"
+         "amount": "c729e621b6b1d586"
         }
        ],
        "outPk": [
-        "a58ba2ca39efc26d5c251b5d406d707aa7318ab782ecce51522e180c2506393e",
-        "d4943898e4ae452828747849192ba1774345948938d1ed54eac860b1c25152a1",
-        "ea1f2d1afe699ab92829c8419699d5fe76c4c8fd057c67159b17ab0352e6d764"
+        "24f484c349cc2c6c816430e612affaf9223446ea7f14bf392d852fbefbb25f05",
+        "31f4f0000d3be722500472e773445666f397321c157c58c9f424768392496f44",
+        "52be61d7ff434600a64b669d6c0d2c00b911722a3d8d682640087c3fb9499ebf"
        ]
       }
      }
@@ -1122,37 +1123,37 @@
   },
   {
    "name": "list #3 for 0.5 XMR from a subaddress",
-   "height": 399,
-   "record": "4d4431fe03ed33b4740ca11d65e0d83f604ab709b784c19a1ce0669ef246a5acc9d1114a7a000000001f0300000088526a74000000018f5767e7781ce17fdd3e019c855e7fad63d4992fb4e0568233b5b0913b88dd9281ce827434e185943869ed4ae1411b3be79c5976d8ade204450c281cc67b7636008dfaf8ef770e6be49086c6b42cf8ede4c03f5a4f2473bf5e7e282602c542f906630f43bf7ab58c5697509a3848012b31f1525096d14cc74c1a5fd9d02a429908",
-   "text": "Mordinals list: sell Mordinal #3 for 0.5 XMR (0.475 XMR to 87tJpr2WMtCNPShqkLbwxJW16nr9PbNE1Nn86nwm96xtRWJWrbsvZ3iRnvYid4PRbgB29kgQfXVnH1iRTGPwq6LM7BVAfEK, 0.025 XMR protocol fee); valid until block 799; code e0f0b96ecdafb463819bdc7b9232311f",
+   "height": 402,
+   "record": "4d4431fe0389761f3e8bc7c5bef637bf857218ac742d42e4b998c9601acdbf204eae242d2700000000220300000088526a7400000001e995f045cbe804247dde2ba92a1eb0c5678d28abc6dfe70b91dbaa5160c62d83252cb95bb51b2111ee309f498bc83e6b78d9949da7d2f6b0c2eb7ab6836c9f1f004e02b2a91713cff3f356961a70feb4e98698eaeb0f066307bff63249e207bf056ec1bb05df2168cf282f3d9cd78ede39086a0d66008ca2a08c02c23b22a66b0b",
+   "text": "Mordinals list: sell Mordinal #3 for 0.5 XMR (0.475 XMR to 8BJfDGKoCkB771sCeisPLBa257XfN7REN2wEzDX8BuCYNwGpsgatUDv3zwxpBmH5qFJycbW3P83SDWZoow71iYxe4atsJSP, 0.025 XMR protocol fee); valid until block 802; code 20a33cf813a63e3b3fbdc157fc8df67a",
    "accepted": true,
-   "id": "e0f0b96ecdafb463819bdc7b9232311f0f2fa29a49cb547d1a482ca623c3968c"
+   "id": "20a33cf813a63e3b3fbdc157fc8df67a3678455caec1dfe370b2b18ef8600e33"
   },
   {
    "name": "reserve with a marketplace fee above the cap",
-   "height": 399,
-   "record": "4d4431fe05e0f0b96ecdafb463819bdc7b9232311f0f2fa29a49cb547d1a482ca623c3968c9901000000117421824d99157c5e8220ec37c29121d54e1be06b382db9f91a70a1acc44d19941d377dba11155e9c2954ea7df8cd433db6571f914c387b37bbf7167772d214f50100a704e92194d414a57023b630b90208e3a1f1e975df306a4697a2d3b94ce78f83513e9df497d5988f435c281cfe67a20d377ceef59ebd28dee5bb0b80b0e305ed00b2116182c36c5753dc719243d0478866284ae658c8bf92cf4f4239b14ab11800cca97b5e85b35230a440ad9174c5fe781582b5ae8b4d2888ae6db85a53d8e506",
-   "text": "Mordinals reserve: buy Mordinal #3 for 0.5 XMR; pay exactly 0.475000407317 XMR to 87tJpr2WMtCNPShqkLbwxJW16nr9PbNE1Nn86nwm96xtRWJWrbsvZ3iRnvYid4PRbgB29kgQfXVnH1iRTGPwq6LM7BVAfEK and exactly 0.025000407317 XMR to 44K78aijjyfA7rGxMrPPUn7Pd9RKhc6RPf2qQg3KNmKaRjoeVLbdN3iPGbBnAZgwqpDZvEwSoAEyhaJBjPQM1SyyEN8SHap and exactly 0.025050407317 XMR to 47xCwi5nwW3UfxTu77boYTf5KdzLgF2xHCoqNckMhJsxNxwgvmWQgLfQxqF5SiFuuj3DDhpjF78s9eHPGGoQonvGTju5NmF by block 409; Mordinal to 42HUFTKdRjrMoY8hKf6rbJ6fE2hzBMHTiY7AxPhVCUY45H9N1qdUheUGpqTrQbiRnLCFKi3arao9RMcNEk2TC3ZK3Jdv8w7; code 42e68f326b8848574129f3ede1eb0547",
+   "height": 402,
+   "record": "4d4431fe0520a33cf813a63e3b3fbdc157fc8df67a3678455caec1dfe370b2b18ef8600e339c0100000052ee0baa1a18ab16ed706c2e73696be75c65856be979c4f498818b20c044914a902995a93947dcae6322cf0b3a77440e67c97e71aa2c69c170a75f1e32e1641df50100c97741beec0a5f50db507bcf56406cf15dfe340c8a6042d2178875f67f4d1babb6f6671722e0834559ffca70654c493f2aac51af695a79d2b0e9c5e33692754700d3d13424849f035575c7ea2cbceb463688da7e4da59ae344eb528386e25d8a06249620ca397be091b219254802a7871941bbe0285ab927cd3793226e9c174f0b",
+   "text": "Mordinals reserve: buy Mordinal #3 for 0.5 XMR; pay exactly 0.475000245962 XMR to 8BJfDGKoCkB771sCeisPLBa257XfN7REN2wEzDX8BuCYNwGpsgatUDv3zwxpBmH5qFJycbW3P83SDWZoow71iYxe4atsJSP and exactly 0.025000245962 XMR to 44R5XAtxG1mafFNQ4vM2hRWj4axAae8bA1hzdaJsZWWHWeUhvi8xXuqezghAVfL1WuBrq9jUQJuuQh5ajah4kSzp4N87D6G and exactly 0.025050245962 XMR to 49FvDt4kZjLEXQrRjeMCS7hNZhdTgcCRXc99yvqXkVZLVirAY7fohBGCboE6zCKFZrBZoAsP9CrRncEy6ubnbdRN95ndHdH by block 412; Mordinal to 44mPCCm5wvJ4qRgB45bW9QfhVTyhuSwqdhutKwmYMgELDUMdw88ixLTWAmwKyhvaLB3QkY2ZD47jNZMcRrMCviDq4Ku3HHY; code 098d28292772547caad5848515109e9a",
    "accepted": false,
    "error": "A marketplace fee is at most 5%."
   },
   {
    "name": "reserve #3 with a 2.5% marketplace fee",
-   "height": 399,
-   "record": "4d4431fe05e0f0b96ecdafb463819bdc7b9232311f0f2fa29a49cb547d1a482ca623c3968cad01000000117421824d99157c5e8220ec37c29121d54e1be06b382db9f91a70a1acc44d19941d377dba11155e9c2954ea7df8cd433db6571f914c387b37bbf7167772d214fa0000a704e92194d414a57023b630b90208e3a1f1e975df306a4697a2d3b94ce78f83513e9df497d5988f435c281cfe67a20d377ceef59ebd28dee5bb0b80b0e305ed00047f14ec59ae274e368138e795202f8b1d53a605f9980afc086cbb4caec2e10df895e660136b7794f215fa47f483b97374ae0d40de5c8ba31a0ac8d198e50a09",
-   "text": "Mordinals reserve: buy Mordinal #3 for 0.5 XMR; pay exactly 0.475000494565 XMR to 87tJpr2WMtCNPShqkLbwxJW16nr9PbNE1Nn86nwm96xtRWJWrbsvZ3iRnvYid4PRbgB29kgQfXVnH1iRTGPwq6LM7BVAfEK and exactly 0.025000494565 XMR to 44K78aijjyfA7rGxMrPPUn7Pd9RKhc6RPf2qQg3KNmKaRjoeVLbdN3iPGbBnAZgwqpDZvEwSoAEyhaJBjPQM1SyyEN8SHap and exactly 0.012500494565 XMR to 47xCwi5nwW3UfxTu77boYTf5KdzLgF2xHCoqNckMhJsxNxwgvmWQgLfQxqF5SiFuuj3DDhpjF78s9eHPGGoQonvGTju5NmF by block 429; Mordinal to 42HUFTKdRjrMoY8hKf6rbJ6fE2hzBMHTiY7AxPhVCUY45H9N1qdUheUGpqTrQbiRnLCFKi3arao9RMcNEk2TC3ZK3Jdv8w7; code b2e7206bd6b2f5182b46e41200878611",
+   "height": 402,
+   "record": "4d4431fe0520a33cf813a63e3b3fbdc157fc8df67a3678455caec1dfe370b2b18ef8600e33b00100000052ee0baa1a18ab16ed706c2e73696be75c65856be979c4f498818b20c044914a902995a93947dcae6322cf0b3a77440e67c97e71aa2c69c170a75f1e32e1641dfa0000c97741beec0a5f50db507bcf56406cf15dfe340c8a6042d2178875f67f4d1babb6f6671722e0834559ffca70654c493f2aac51af695a79d2b0e9c5e3369275470072a6e231a4b353d1e4490229473bce3349b53ce2bfb225e8dacf4d0eae472002c63459d0be5602110d742712c967056db7faaef8ca075ece24b8ac4604983409",
+   "text": "Mordinals reserve: buy Mordinal #3 for 0.5 XMR; pay exactly 0.475000389966 XMR to 8BJfDGKoCkB771sCeisPLBa257XfN7REN2wEzDX8BuCYNwGpsgatUDv3zwxpBmH5qFJycbW3P83SDWZoow71iYxe4atsJSP and exactly 0.025000389966 XMR to 44R5XAtxG1mafFNQ4vM2hRWj4axAae8bA1hzdaJsZWWHWeUhvi8xXuqezghAVfL1WuBrq9jUQJuuQh5ajah4kSzp4N87D6G and exactly 0.012500389966 XMR to 49FvDt4kZjLEXQrRjeMCS7hNZhdTgcCRXc99yvqXkVZLVirAY7fohBGCboE6zCKFZrBZoAsP9CrRncEy6ubnbdRN95ndHdH by block 432; Mordinal to 44mPCCm5wvJ4qRgB45bW9QfhVTyhuSwqdhutKwmYMgELDUMdw88ixLTWAmwKyhvaLB3QkY2ZD47jNZMcRrMCviDq4Ku3HHY; code 01c07470256a1b9ab2904d99257e8302",
    "accepted": true,
-   "id": "b2e7206bd6b2f5182b46e41200878611727b8b56e3b3ef81c74304444275dced"
+   "id": "01c07470256a1b9ab2904d99257e8302fd050b5448c095aa80fa1218626a705c"
   },
   {
    "name": "buy #3: no entry for the marketplace fee",
-   "height": 401,
-   "record": "4d4431fe06e0f0b96ecdafb463819bdc7b9232311f0f2fa29a49cb547d1a482ca623c3968c0291657b8cbf3d7ae044bf00b087b79116f37d9ea62db33fead84d89e80d609f450174e5ec4461d8c76e1ff12bf657e16acbff911bb2f96b66aeb5135f143c618af8eaea2fb6c0e6e26ff770004d387d96e38352db9c26e0919cb611cc4723e72c0236fefce4d26d0de90cf0555ab3270006e0ef26370b5189bee914c22e3347950b734dc38f994a568f3d343cf8923fbdd9652a0b2edf06becc011216d7a443fd1c0166927f1c383a13d39bc5012de85edb61d56e860c66309a5b30e8a24140e335d7a42f51ddae53872d3c743dd48e820e49bb4b1e3640fa2a82ef11871e02b333001eefa022e5f69a2f25da4a4882659c958e80249738112af4ba7b66d52f1b1505",
+   "height": 404,
+   "record": "4d4431fe0620a33cf813a63e3b3fbdc157fc8df67a3678455caec1dfe370b2b18ef8600e3302beb0a4a365ab6230e53bcfaa48072393a61a9794ca203279753025024f6a41b1015c61b0962543a30b8484a22ee67b6ec5af99241e251c93b3e1af0c160be802e44e2dcd93cf0077c5956a84372a155a3cad32facf5e99e4168ab6ebc388fa070ba36f7b4a8ebb7fac003b8a2b0be166a238e90f18b2e5567b8d64477829b9350236758f12b741f6cd9758474f67f2922f5fe014ec1d783c2a8b0e2c69ac5ad90a0037437a01de2d94ce4c800952846872d6d9553e87d9ab49877b4de20bf6e964263b205a03fa01d86a2315ea229f840d5cc01a91bb8fa010308b6718bd6efbc3057b38b957be9d5fa391c6ab4faae35b25a70e52ac2a752b17d2a860a104bbbd0c",
    "text": null,
    "facts": [
     {
-     "txid": "91657b8cbf3d7ae044bf00b087b79116f37d9ea62db33fead84d89e80d609f45",
-     "height": 400,
+     "txid": "beb0a4a365ab6230e53bcfaa48072393a61a9794ca203279753025024f6a41b1",
+     "height": 403,
      "tx": {
       "version": 2,
       "unlock_time": 0,
@@ -1161,8 +1162,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "c51beac4f17c0223c20ea58ccf76488252464ccb4050cd059793fd3ffd6a97f8",
-          "view_tag": "1b"
+          "key": "2afe60ee883d9a26a847ca47bf328432ca04cf1396124b143a2c9b328dbbd740",
+          "view_tag": "ba"
          }
         }
        },
@@ -1170,78 +1171,78 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "4b41b86dc87423faae39434253fb5dfe6e7b121af79efb285893392e6c7bcc72",
-          "view_tag": "7a"
+          "key": "0cd0044cddbfca0b4a33e1194e3f346e54438e5ce076246cb32d7b5ff798961d",
+          "view_tag": "59"
          }
         }
        }
       ],
       "extra": [
        1,
-       62,
-       101,
-       52,
-       134,
-       62,
-       246,
-       102,
-       248,
-       143,
-       114,
-       72,
-       253,
+       245,
+       244,
+       177,
+       29,
+       87,
+       196,
+       222,
+       216,
+       51,
+       225,
+       204,
+       5,
+       254,
+       226,
+       220,
+       17,
        45,
-       72,
-       230,
-       154,
-       164,
-       237,
-       219,
-       107,
-       209,
-       44,
-       250,
+       126,
+       11,
+       195,
+       182,
+       228,
+       34,
+       101,
+       30,
        46,
-       15,
-       206,
-       18,
-       223,
-       103,
-       140,
-       253,
-       105,
+       10,
+       69,
+       5,
+       238,
+       134,
+       221,
        2,
        9,
        1,
-       52,
-       99,
-       204,
-       237,
-       168,
-       53,
-       0,
-       136
+       147,
+       15,
+       9,
+       156,
+       133,
+       29,
+       31,
+       239
       ],
       "rct_signatures": {
        "type": 6,
        "ecdhInfo": [
         {
-         "amount": "5ef86dc836b8bf78"
+         "amount": "0576510f5629b27c"
         },
         {
-         "amount": "9e9a92d6aa1a33ee"
+         "amount": "327d46385e67d956"
         }
        ],
        "outPk": [
-        "5a33166f087456738588c94f5a14067dfffedde62835b96a35b5cb67a44fba68",
-        "369563a277e2761683cea6467c73703d5dbf5b437a254c66ef1022a17c039c30"
+        "9ed1b21db95267c814d4c07c863eb67f13f0c926edb420ca15478b13451a9a05",
+        "49f8421e3bb1a9b8e6014f306404d0a932885fa161bb2525df40a756ae26ae2f"
        ]
       }
      }
     },
     {
-     "txid": "734dc38f994a568f3d343cf8923fbdd9652a0b2edf06becc011216d7a443fd1c",
-     "height": 401,
+     "txid": "36758f12b741f6cd9758474f67f2922f5fe014ec1d783c2a8b0e2c69ac5ad90a",
+     "height": 404,
      "tx": {
       "version": 2,
       "unlock_time": 0,
@@ -1250,8 +1251,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "8157d45c913b8cbcf598be72c341c8a2ea1e1f624f63b6d59eb8405a492facea",
-          "view_tag": "fd"
+          "key": "31afab5d42f6cfb4f555ebfd4024c4787dc6114bb88a85aede6013884cf1c81e",
+          "view_tag": "13"
          }
         }
        },
@@ -1259,8 +1260,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "8341e6de42593a49868e90a22c76ce7a79f30185edf9fdd8b752aca91db9e0a3",
-          "view_tag": "94"
+          "key": "428bf05f3ed8fd769133159a653040e556b1944b059b7f474632113a6f82f022",
+          "view_tag": "8e"
          }
         }
        },
@@ -1268,81 +1269,81 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "1e946933a3bcfdb76c31eb04281b5ea798dc6282809b4db1c8ac1d5108440775",
-          "view_tag": "33"
+          "key": "d672717fe6f2f19796985546ccac12b8ed28dd189bd2e06b04ebc44ecd7941f1",
+          "view_tag": "cd"
          }
         }
        }
       ],
       "extra": [
        1,
-       109,
-       239,
-       74,
-       135,
-       211,
-       208,
-       70,
-       52,
-       145,
-       180,
-       196,
-       137,
-       252,
-       12,
-       174,
-       26,
-       136,
-       48,
-       171,
-       68,
-       82,
-       195,
-       128,
-       189,
-       170,
-       40,
-       52,
-       145,
-       217,
+       127,
+       120,
+       207,
+       118,
+       111,
+       233,
+       123,
        220,
-       2,
-       254
+       10,
+       55,
+       117,
+       86,
+       124,
+       66,
+       226,
+       36,
+       36,
+       164,
+       45,
+       243,
+       102,
+       233,
+       32,
+       55,
+       134,
+       146,
+       74,
+       231,
+       151,
+       27,
+       12,
+       171
       ],
       "rct_signatures": {
        "type": 6,
        "ecdhInfo": [
         {
-         "amount": "32e995ff84e6b1aa"
+         "amount": "7279dbede614d941"
         },
         {
-         "amount": "620220839c392d00"
+         "amount": "ae2029b07fc19d55"
         },
         {
-         "amount": "9c892979dd59162c"
+         "amount": "160691f2c641f92b"
         }
        ],
        "outPk": [
-        "218051c71011699f9d54badf4bb890581a5ba81c36bc8f9c4570e2f3d23137b0",
-        "418533af5e77cb23fd292d96249be1009cd0c933cc8aefc43d01236d66fd0239",
-        "aac0c5e37cde27eb0c941119d4c3ec7280865a036942122a438f38015d508998"
+        "832a08c0ae11730acc12c28c1906894866e991ebdaff193af9e2af1a06d4c870",
+        "678880958c2a4125a20ddbc20364013da45c4d5079f0311a7691ea8f85f32d10",
+        "d3cf2cc649fe7c0d0ea7a66da2cb835eb98e6dc2e50bf4dddbfbfa9c053f4b89"
        ]
       }
      }
     }
    ],
    "accepted": false,
-   "error": "The marketplace fee payment is missing; this reservation needs exactly 0.012500494565 XMR for it."
+   "error": "The marketplace fee payment is missing; this reservation needs exactly 0.012500389966 XMR for it."
   },
   {
    "name": "buy #1 payment reused for #3",
-   "height": 401,
-   "record": "4d4431fe06e0f0b96ecdafb463819bdc7b9232311f0f2fa29a49cb547d1a482ca623c3968c0391657b8cbf3d7ae044bf00b087b79116f37d9ea62db33fead84d89e80d609f450174e5ec4461d8c76e1ff12bf657e16acbff911bb2f96b66aeb5135f143c618af8e144e711abccd3a36eaf2445d4f664b58b0ed661f50490ec2909c65fc326610752642b83658c990809eb018cbb5984a65e86476c579fbbc06346699bc7af8e003387ea78bf166ccbb3bdbbe35a3af01f646ed0c3b9ff6bbe01f859b6dc2931be01cfe7fde4f36e1266b76cfe05f3a73f5a7b2437da184e01aa95ec09abf0e34a95186f392fcb14acf2fb7121dee1045de7fd025df6286d8a263d536830fb58f204dc7033108499a3762589fb9a01aa186f41f80c7c621c1e12e4b99cfd47c9180c734dc38f994a568f3d343cf8923fbdd9652a0b2edf06becc011216d7a443fd1c028411363df4e4645d1bd0fef20600909344d38a0de25e0f9d527cc4167077d653ab09b79e074b51100e820fa2271297ca55feb9a367ac11ee20cec67b980dc30329306a40e7a49da48fca0a8974f611d972ce5e2bf5945c95a4babce20f58440f",
+   "height": 404,
+   "record": "4d4431fe0620a33cf813a63e3b3fbdc157fc8df67a3678455caec1dfe370b2b18ef8600e3303beb0a4a365ab6230e53bcfaa48072393a61a9794ca203279753025024f6a41b1015c61b0962543a30b8484a22ee67b6ec5af99241e251c93b3e1af0c160be802e455ddf534d0d4dd97dbccb70a8348cda002333bdda8213682f46208193df7e10d0dab1ac4e808f24009287396b2266451a7c1913fa2e07d4870692c6676a3c7000a14b2c14109897bc0a6f680add13e85cc0e43bc939c1ef50578fc3e8dd17a3000b668662387161fc6c49ec404b08c13bec8f81e774a1f9bb221f4997fc585ae400b8f41a37d620f8d13f7cefb4046c31f2b78339a4f69e2e8f13cb150357ee606c74b4bf165d0cf5280e64f76b4013d126b2601106d9166a91f00873f5caa130f36758f12b741f6cd9758474f67f2922f5fe014ec1d783c2a8b0e2c69ac5ad90a017a655b1d4c091a3878c421553d79a0ce5913d31d5c4838bf1e9c42fd201eaaedd9a6fdb439d10c24cbaf67c7f55e3ad5a133c1a5a2213fe153bc1c39f266200a03d5137e773094f7512c271c85f0e753f11a0f92cbe54e9ec245ffa2d1276f00",
    "text": null,
    "facts": [
     {
-     "txid": "91657b8cbf3d7ae044bf00b087b79116f37d9ea62db33fead84d89e80d609f45",
-     "height": 400,
+     "txid": "beb0a4a365ab6230e53bcfaa48072393a61a9794ca203279753025024f6a41b1",
+     "height": 403,
      "tx": {
       "version": 2,
       "unlock_time": 0,
@@ -1351,8 +1352,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "c51beac4f17c0223c20ea58ccf76488252464ccb4050cd059793fd3ffd6a97f8",
-          "view_tag": "1b"
+          "key": "2afe60ee883d9a26a847ca47bf328432ca04cf1396124b143a2c9b328dbbd740",
+          "view_tag": "ba"
          }
         }
        },
@@ -1360,169 +1361,169 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "4b41b86dc87423faae39434253fb5dfe6e7b121af79efb285893392e6c7bcc72",
-          "view_tag": "7a"
+          "key": "0cd0044cddbfca0b4a33e1194e3f346e54438e5ce076246cb32d7b5ff798961d",
+          "view_tag": "59"
          }
         }
        }
       ],
       "extra": [
        1,
-       62,
-       101,
-       52,
-       134,
-       62,
-       246,
-       102,
-       248,
-       143,
-       114,
-       72,
-       253,
+       245,
+       244,
+       177,
+       29,
+       87,
+       196,
+       222,
+       216,
+       51,
+       225,
+       204,
+       5,
+       254,
+       226,
+       220,
+       17,
        45,
-       72,
-       230,
-       154,
-       164,
-       237,
-       219,
-       107,
-       209,
-       44,
-       250,
+       126,
+       11,
+       195,
+       182,
+       228,
+       34,
+       101,
+       30,
        46,
-       15,
-       206,
-       18,
-       223,
-       103,
-       140,
-       253,
-       105,
+       10,
+       69,
+       5,
+       238,
+       134,
+       221,
        2,
        9,
        1,
-       52,
-       99,
-       204,
-       237,
-       168,
-       53,
+       147,
+       15,
+       9,
+       156,
+       133,
+       29,
+       31,
+       239
+      ],
+      "rct_signatures": {
+       "type": 6,
+       "ecdhInfo": [
+        {
+         "amount": "0576510f5629b27c"
+        },
+        {
+         "amount": "327d46385e67d956"
+        }
+       ],
+       "outPk": [
+        "9ed1b21db95267c814d4c07c863eb67f13f0c926edb420ca15478b13451a9a05",
+        "49f8421e3bb1a9b8e6014f306404d0a932885fa161bb2525df40a756ae26ae2f"
+       ]
+      }
+     }
+    },
+    {
+     "txid": "0a14b2c14109897bc0a6f680add13e85cc0e43bc939c1ef50578fc3e8dd17a30",
+     "height": 402,
+     "tx": {
+      "version": 2,
+      "unlock_time": 0,
+      "vout": [
+       {
+        "amount": 0,
+        "target": {
+         "tagged_key": {
+          "key": "eb6f1e72ba00423a597dab93ad293b1a1c575a9b9aef62b12f620710bc0415d0",
+          "view_tag": "d2"
+         }
+        }
+       },
+       {
+        "amount": 0,
+        "target": {
+         "tagged_key": {
+          "key": "e03c8036a2d9da61d0ee21cc63ddc752234ba91a2e816479c4e7616f42bf72a8",
+          "view_tag": "55"
+         }
+        }
+       },
+       {
+        "amount": 0,
+        "target": {
+         "tagged_key": {
+          "key": "b27b7d1a93f29dbe16e04efa1de181ae8805b9018dd6ca009047828bfb8b3d09",
+          "view_tag": "53"
+         }
+        }
+       }
+      ],
+      "extra": [
+       1,
+       250,
        0,
-       136
-      ],
-      "rct_signatures": {
-       "type": 6,
-       "ecdhInfo": [
-        {
-         "amount": "5ef86dc836b8bf78"
-        },
-        {
-         "amount": "9e9a92d6aa1a33ee"
-        }
-       ],
-       "outPk": [
-        "5a33166f087456738588c94f5a14067dfffedde62835b96a35b5cb67a44fba68",
-        "369563a277e2761683cea6467c73703d5dbf5b437a254c66ef1022a17c039c30"
-       ]
-      }
-     }
-    },
-    {
-     "txid": "3387ea78bf166ccbb3bdbbe35a3af01f646ed0c3b9ff6bbe01f859b6dc2931be",
-     "height": 399,
-     "tx": {
-      "version": 2,
-      "unlock_time": 0,
-      "vout": [
-       {
-        "amount": 0,
-        "target": {
-         "tagged_key": {
-          "key": "70a7e7fce723261236919d2a2a6c2bd53691143e50a5003965a3cbadc54ce0de",
-          "view_tag": "4f"
-         }
-        }
-       },
-       {
-        "amount": 0,
-        "target": {
-         "tagged_key": {
-          "key": "7392ee584f36914a9137a2517539c3c6aae886d25fa2b178a16f537a4cf040ba",
-          "view_tag": "8a"
-         }
-        }
-       },
-       {
-        "amount": 0,
-        "target": {
-         "tagged_key": {
-          "key": "9d5ff278cc2015e776932e6d8858c0bc90b0be07f7e524a962a15752fe6c217a",
-          "view_tag": "45"
-         }
-        }
-       }
-      ],
-      "extra": [
-       1,
-       35,
-       123,
-       232,
-       176,
-       59,
-       255,
-       93,
-       27,
-       244,
-       109,
-       219,
-       87,
-       207,
-       192,
-       111,
-       145,
-       64,
-       48,
-       73,
-       69,
-       87,
-       35,
-       44,
-       112,
-       13,
-       253,
-       7,
-       17,
-       80,
+       31,
+       210,
+       199,
+       62,
+       186,
        134,
-       53,
-       91
+       202,
+       133,
+       204,
+       8,
+       54,
+       27,
+       215,
+       74,
+       191,
+       194,
+       101,
+       83,
+       63,
+       88,
+       27,
+       115,
+       103,
+       62,
+       234,
+       219,
+       109,
+       78,
+       250,
+       24
       ],
       "rct_signatures": {
        "type": 6,
        "ecdhInfo": [
         {
-         "amount": "4c9f2366fcbbd6db"
+         "amount": "881ded1bcea872e0"
         },
         {
-         "amount": "d3bc51c8b3d4f8a6"
+         "amount": "2dab06bc49fcad43"
         },
         {
-         "amount": "de681da9a8f579b5"
+         "amount": "8cbb70b3b2bbe0e2"
         }
        ],
        "outPk": [
-        "a486c237e16d0d026ecc9d8cace5a25bcf06d8bcf41010a4aa486e9407bf8189",
-        "5269d049f8d5ee9aca10697e63470ee18eef3f262a34233609d183e4219a7164",
-        "0fadef54880b8970779842aab4b3e210756bac52bac65d591e3b4058fef0681f"
+        "795a22516e53340a0f2efc6477221fd59ced38984334c9f57930bb76c9fa6492",
+        "93dc498f1fb1bdd1fb687138fc4d3c2014780b29f714fe79777da163f8c7f8b6",
+        "268ac81389b505050b3fe9987f7ca87d6d440d3ec2905b760aed07044efc215e"
        ]
       }
      }
     },
     {
-     "txid": "734dc38f994a568f3d343cf8923fbdd9652a0b2edf06becc011216d7a443fd1c",
-     "height": 401,
+     "txid": "36758f12b741f6cd9758474f67f2922f5fe014ec1d783c2a8b0e2c69ac5ad90a",
+     "height": 404,
      "tx": {
       "version": 2,
       "unlock_time": 0,
@@ -1531,8 +1532,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "8157d45c913b8cbcf598be72c341c8a2ea1e1f624f63b6d59eb8405a492facea",
-          "view_tag": "fd"
+          "key": "31afab5d42f6cfb4f555ebfd4024c4787dc6114bb88a85aede6013884cf1c81e",
+          "view_tag": "13"
          }
         }
        },
@@ -1540,8 +1541,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "8341e6de42593a49868e90a22c76ce7a79f30185edf9fdd8b752aca91db9e0a3",
-          "view_tag": "94"
+          "key": "428bf05f3ed8fd769133159a653040e556b1944b059b7f474632113a6f82f022",
+          "view_tag": "8e"
          }
         }
        },
@@ -1549,64 +1550,64 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "1e946933a3bcfdb76c31eb04281b5ea798dc6282809b4db1c8ac1d5108440775",
-          "view_tag": "33"
+          "key": "d672717fe6f2f19796985546ccac12b8ed28dd189bd2e06b04ebc44ecd7941f1",
+          "view_tag": "cd"
          }
         }
        }
       ],
       "extra": [
        1,
-       109,
-       239,
-       74,
-       135,
-       211,
-       208,
-       70,
-       52,
-       145,
-       180,
-       196,
-       137,
-       252,
-       12,
-       174,
-       26,
-       136,
-       48,
-       171,
-       68,
-       82,
-       195,
-       128,
-       189,
-       170,
-       40,
-       52,
-       145,
-       217,
+       127,
+       120,
+       207,
+       118,
+       111,
+       233,
+       123,
        220,
-       2,
-       254
+       10,
+       55,
+       117,
+       86,
+       124,
+       66,
+       226,
+       36,
+       36,
+       164,
+       45,
+       243,
+       102,
+       233,
+       32,
+       55,
+       134,
+       146,
+       74,
+       231,
+       151,
+       27,
+       12,
+       171
       ],
       "rct_signatures": {
        "type": 6,
        "ecdhInfo": [
         {
-         "amount": "32e995ff84e6b1aa"
+         "amount": "7279dbede614d941"
         },
         {
-         "amount": "620220839c392d00"
+         "amount": "ae2029b07fc19d55"
         },
         {
-         "amount": "9c892979dd59162c"
+         "amount": "160691f2c641f92b"
         }
        ],
        "outPk": [
-        "218051c71011699f9d54badf4bb890581a5ba81c36bc8f9c4570e2f3d23137b0",
-        "418533af5e77cb23fd292d96249be1009cd0c933cc8aefc43d01236d66fd0239",
-        "aac0c5e37cde27eb0c941119d4c3ec7280865a036942122a438f38015d508998"
+        "832a08c0ae11730acc12c28c1906894866e991ebdaff193af9e2af1a06d4c870",
+        "678880958c2a4125a20ddbc20364013da45c4d5079f0311a7691ea8f85f32d10",
+        "d3cf2cc649fe7c0d0ea7a66da2cb835eb98e6dc2e50bf4dddbfbfa9c053f4b89"
        ]
       }
      }
@@ -1617,13 +1618,13 @@
   },
   {
    "name": "buy #3: seller in one transaction, both fees in another",
-   "height": 401,
-   "record": "4d4431fe06e0f0b96ecdafb463819bdc7b9232311f0f2fa29a49cb547d1a482ca623c3968c0391657b8cbf3d7ae044bf00b087b79116f37d9ea62db33fead84d89e80d609f450174e5ec4461d8c76e1ff12bf657e16acbff911bb2f96b66aeb5135f143c618af84611ea04360d0621cca423d0e0cf0c4f4bcf690468fdb9e85d3ccdfc753794061de7cbbcd699f39181d128e6eb7a82cd2334d573fb079c64b011979ca30db20c734dc38f994a568f3d343cf8923fbdd9652a0b2edf06becc011216d7a443fd1c0166927f1c383a13d39bc5012de85edb61d56e860c66309a5b30e8a24140e335d7626cdc22cb6ef9d752d98070ebfdaa6566493cf17df9eb2adff235908c96e405f1429b10ca87ca97eda407bb2f18de673ff4fc0a1b35187db1bd7db3e3a49807734dc38f994a568f3d343cf8923fbdd9652a0b2edf06becc011216d7a443fd1c028411363df4e4645d1bd0fef20600909344d38a0de25e0f9d527cc4167077d653a5893aca0974e8ce59f5a8a52098f1a34196217a4f8207297b1eef13a88a1f0e39058cbb1c57c6db3e4cafd0b26f71d373de586b62f4548e1c2f061518a8a100",
+   "height": 404,
+   "record": "4d4431fe0620a33cf813a63e3b3fbdc157fc8df67a3678455caec1dfe370b2b18ef8600e3303beb0a4a365ab6230e53bcfaa48072393a61a9794ca203279753025024f6a41b1015c61b0962543a30b8484a22ee67b6ec5af99241e251c93b3e1af0c160be802e4c9e919cc32ba2b00cca8fb6d1dce15d1d88b20c9a4c9bb4f7d25c73fc814fb0603c7d865c9b195a65986c061825961c655bf117ee576e8871b30ffe2d19b300e36758f12b741f6cd9758474f67f2922f5fe014ec1d783c2a8b0e2c69ac5ad90a0037437a01de2d94ce4c800952846872d6d9553e87d9ab49877b4de20bf6e96426786ef8395afd26d5b0f75b634fcf3ceb5a64e43171a8f675fbd35b4e9c51cc0b5428ec95c4a83cc50fa41a476da7e35e59a2dd678dd70baf25a1f6c3be1ebc0736758f12b741f6cd9758474f67f2922f5fe014ec1d783c2a8b0e2c69ac5ad90a017a655b1d4c091a3878c421553d79a0ce5913d31d5c4838bf1e9c42fd201eaaed86f9e9166701abe6f0b7549221c636f2eba3d61bd32bc4e2b13aa2193fde740ebbcae04ea322a6fa61466ee70066ab817169f85c7b1fe1dbb58da1d88a978905",
    "text": null,
    "facts": [
     {
-     "txid": "91657b8cbf3d7ae044bf00b087b79116f37d9ea62db33fead84d89e80d609f45",
-     "height": 400,
+     "txid": "beb0a4a365ab6230e53bcfaa48072393a61a9794ca203279753025024f6a41b1",
+     "height": 403,
      "tx": {
       "version": 2,
       "unlock_time": 0,
@@ -1632,8 +1633,8 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "c51beac4f17c0223c20ea58ccf76488252464ccb4050cd059793fd3ffd6a97f8",
-          "view_tag": "1b"
+          "key": "2afe60ee883d9a26a847ca47bf328432ca04cf1396124b143a2c9b328dbbd740",
+          "view_tag": "ba"
          }
         }
        },
@@ -1641,78 +1642,78 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "4b41b86dc87423faae39434253fb5dfe6e7b121af79efb285893392e6c7bcc72",
-          "view_tag": "7a"
+          "key": "0cd0044cddbfca0b4a33e1194e3f346e54438e5ce076246cb32d7b5ff798961d",
+          "view_tag": "59"
          }
         }
        }
       ],
       "extra": [
        1,
-       62,
-       101,
-       52,
-       134,
-       62,
-       246,
-       102,
-       248,
-       143,
-       114,
-       72,
-       253,
+       245,
+       244,
+       177,
+       29,
+       87,
+       196,
+       222,
+       216,
+       51,
+       225,
+       204,
+       5,
+       254,
+       226,
+       220,
+       17,
        45,
-       72,
-       230,
-       154,
-       164,
-       237,
-       219,
-       107,
-       209,
-       44,
-       250,
+       126,
+       11,
+       195,
+       182,
+       228,
+       34,
+       101,
+       30,
        46,
-       15,
-       206,
-       18,
-       223,
-       103,
-       140,
-       253,
-       105,
+       10,
+       69,
+       5,
+       238,
+       134,
+       221,
        2,
        9,
        1,
-       52,
-       99,
-       204,
-       237,
-       168,
-       53,
-       0,
-       136
+       147,
+       15,
+       9,
+       156,
+       133,
+       29,
+       31,
+       239
       ],
       "rct_signatures": {
        "type": 6,
        "ecdhInfo": [
         {
-         "amount": "5ef86dc836b8bf78"
+         "amount": "0576510f5629b27c"
         },
         {
-         "amount": "9e9a92d6aa1a33ee"
+         "amount": "327d46385e67d956"
         }
        ],
        "outPk": [
-        "5a33166f087456738588c94f5a14067dfffedde62835b96a35b5cb67a44fba68",
-        "369563a277e2761683cea6467c73703d5dbf5b437a254c66ef1022a17c039c30"
+        "9ed1b21db95267c814d4c07c863eb67f13f0c926edb420ca15478b13451a9a05",
+        "49f8421e3bb1a9b8e6014f306404d0a932885fa161bb2525df40a756ae26ae2f"
        ]
       }
      }
     },
     {
-     "txid": "734dc38f994a568f3d343cf8923fbdd9652a0b2edf06becc011216d7a443fd1c",
-     "height": 401,
+     "txid": "36758f12b741f6cd9758474f67f2922f5fe014ec1d783c2a8b0e2c69ac5ad90a",
+     "height": 404,
      "tx": {
       "version": 2,
       "unlock_time": 0,
@@ -1721,618 +1722,618 @@
         "amount": 0,
         "target": {
          "tagged_key": {
-          "key": "8157d45c913b8cbcf598be72c341c8a2ea1e1f624f63b6d59eb8405a492facea",
-          "view_tag": "fd"
-         }
-        }
-       },
-       {
-        "amount": 0,
-        "target": {
-         "tagged_key": {
-          "key": "8341e6de42593a49868e90a22c76ce7a79f30185edf9fdd8b752aca91db9e0a3",
-          "view_tag": "94"
-         }
-        }
-       },
-       {
-        "amount": 0,
-        "target": {
-         "tagged_key": {
-          "key": "1e946933a3bcfdb76c31eb04281b5ea798dc6282809b4db1c8ac1d5108440775",
-          "view_tag": "33"
-         }
-        }
-       }
-      ],
-      "extra": [
-       1,
-       109,
-       239,
-       74,
-       135,
-       211,
-       208,
-       70,
-       52,
-       145,
-       180,
-       196,
-       137,
-       252,
-       12,
-       174,
-       26,
-       136,
-       48,
-       171,
-       68,
-       82,
-       195,
-       128,
-       189,
-       170,
-       40,
-       52,
-       145,
-       217,
-       220,
-       2,
-       254
-      ],
-      "rct_signatures": {
-       "type": 6,
-       "ecdhInfo": [
-        {
-         "amount": "32e995ff84e6b1aa"
-        },
-        {
-         "amount": "620220839c392d00"
-        },
-        {
-         "amount": "9c892979dd59162c"
-        }
-       ],
-       "outPk": [
-        "218051c71011699f9d54badf4bb890581a5ba81c36bc8f9c4570e2f3d23137b0",
-        "418533af5e77cb23fd292d96249be1009cd0c933cc8aefc43d01236d66fd0239",
-        "aac0c5e37cde27eb0c941119d4c3ec7280865a036942122a438f38015d508998"
-       ]
-      }
-     }
-    }
-   ],
-   "accepted": true,
-   "id": "d34ee12fbeaee4680b1f4bb6cf8735d58a9706d19c54b22ac30a26c6449bb2fe"
-  },
-  {
-   "name": "list #0 for 0.1 XMR",
-   "height": 401,
-   "record": "4d4431fe031ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d000000002103000000e87648170000000031ce82b3a9d8de31cf5372f056ef04944f37c78b02ad8f450a252aa01ab90ed7708063eea64c403e0e9ae34b8e00960885ba8f6f0abd8f3d03de80f5d2524bb00007fbe8e8d16cec6dc6ad3a6d9d2d7e59dcfca7181d3abae4def3cb1316d8a60f55116b472e9bbbcfd7173599d275d9a9a4422cecf5a4587e51cd318493828506",
-   "text": "Mordinals list: sell Mordinal #0 for 0.1 XMR (0.095 XMR to 43WadgJmuyF9LDehuyXBBhRonfoGPPoVGCYmiGrerBDPd32tkEwvRDZBP2oikakTzV2RgJvWFsAfYBCvY6GqEtgaLsi969n, 0.005 XMR protocol fee); valid until block 801; code 00ba892bdce966812c00d9eaf49ba923",
-   "accepted": true,
-   "id": "00ba892bdce966812c00d9eaf49ba923ec628ad8e504351c6852b0434bfa7a84"
-  },
-  {
-   "name": "reserve #0 for 2 blocks",
-   "height": 401,
-   "record": "4d4431fe0500ba892bdce966812c00d9eaf49ba923ec628ad8e504351c6852b0434bfa7a849301000000117421824d99157c5e8220ec37c29121d54e1be06b382db9f91a70a1acc44d19941d377dba11155e9c2954ea7df8cd433db6571f914c387b37bbf7167772d214000000af8992c1d5efb95179da71706858ae56884658541387961dd61d075b8b1a77054a9181655006bbebc70aa42c47bab7f66f42e7a20a888eed4e49c34fd52ec104",
-   "text": "Mordinals reserve: buy Mordinal #0 for 0.1 XMR; pay exactly 0.095000482237 XMR to 43WadgJmuyF9LDehuyXBBhRonfoGPPoVGCYmiGrerBDPd32tkEwvRDZBP2oikakTzV2RgJvWFsAfYBCvY6GqEtgaLsi969n and exactly 0.005000482237 XMR to 44K78aijjyfA7rGxMrPPUn7Pd9RKhc6RPf2qQg3KNmKaRjoeVLbdN3iPGbBnAZgwqpDZvEwSoAEyhaJBjPQM1SyyEN8SHap by block 403; Mordinal to 42HUFTKdRjrMoY8hKf6rbJ6fE2hzBMHTiY7AxPhVCUY45H9N1qdUheUGpqTrQbiRnLCFKi3arao9RMcNEk2TC3ZK3Jdv8w7; code 49a3f1a99696845da7a75aabd114c264",
-   "accepted": true,
-   "id": "49a3f1a99696845da7a75aabd114c264c70ab70e173d3e17b2bb535fd21addfe"
-  },
-  {
-   "name": "reserve #0 right after the first ran out",
-   "height": 404,
-   "record": "4d4431fe0500ba892bdce966812c00d9eaf49ba923ec628ad8e504351c6852b0434bfa7a84af0100000134b4330a418c17c24dd5cba6b0039602c41975071765a39482afb6c5907cca25d196d789a78e096df788678280e8844506a1cc5f8d01c58574122d5ce9960d6d00000049d710dbe35dc6ffa695a71b6594deb9ce1620785008dcdc7ed858bf1f170302a6d8fd21e7710f0fd53363ee5a5099b5b9e25ee9ef2cdf6d0770c688893b2c07",
-   "text": "Mordinals reserve: buy Mordinal #0 for 0.1 XMR; pay exactly 0.095000656268 XMR to 43WadgJmuyF9LDehuyXBBhRonfoGPPoVGCYmiGrerBDPd32tkEwvRDZBP2oikakTzV2RgJvWFsAfYBCvY6GqEtgaLsi969n and exactly 0.005000656268 XMR to 44K78aijjyfA7rGxMrPPUn7Pd9RKhc6RPf2qQg3KNmKaRjoeVLbdN3iPGbBnAZgwqpDZvEwSoAEyhaJBjPQM1SyyEN8SHap by block 431; Mordinal to 84T6JjbvxJSZVzaAXRprwX1TqMtToZ2GzRqjo2dxbNFj7KtZ4S2trfaKPpP8diaiWwCYdzR2hZAJ8PKfaeKXVhrLDJv6cLm; code c00686369d8ea701572cbe1d3fddb965",
-   "accepted": false,
-   "error": "This listing is reserved by someone else until block 413."
-  },
-  {
-   "name": "reserve #0 after the first ran out",
-   "height": 414,
-   "record": "4d4431fe0500ba892bdce966812c00d9eaf49ba923ec628ad8e504351c6852b0434bfa7a84b20100000134b4330a418c17c24dd5cba6b0039602c41975071765a39482afb6c5907cca25d196d789a78e096df788678280e8844506a1cc5f8d01c58574122d5ce9960d6d0000000fed4230e9d390caa4711a7f42351061291ff27974f27f7b62e0604b646f130770fbd49cfd0d93dea0ab519318ea1a2cb98dc2a96a858cddc4e246d281cb9f00",
-   "text": "Mordinals reserve: buy Mordinal #0 for 0.1 XMR; pay exactly 0.095000592947 XMR to 43WadgJmuyF9LDehuyXBBhRonfoGPPoVGCYmiGrerBDPd32tkEwvRDZBP2oikakTzV2RgJvWFsAfYBCvY6GqEtgaLsi969n and exactly 0.005000592947 XMR to 44K78aijjyfA7rGxMrPPUn7Pd9RKhc6RPf2qQg3KNmKaRjoeVLbdN3iPGbBnAZgwqpDZvEwSoAEyhaJBjPQM1SyyEN8SHap by block 434; Mordinal to 84T6JjbvxJSZVzaAXRprwX1TqMtToZ2GzRqjo2dxbNFj7KtZ4S2trfaKPpP8diaiWwCYdzR2hZAJ8PKfaeKXVhrLDJv6cLm; code 32947ce203f4fac448b6b1b5762465bb",
-   "accepted": true,
-   "id": "32947ce203f4fac448b6b1b5762465bbc1d7e8eb171ceaa14e94a4ff03823c07"
-  },
-  {
-   "name": "buy #0: late payment for the reservation that ran out",
-   "height": 415,
-   "record": "4d4431fe0600ba892bdce966812c00d9eaf49ba923ec628ad8e504351c6852b0434bfa7a8402bc9003e76b6accb1b8bd281ce3cb788f511edc98ac4472dbbb75dec2f1dfbe4901d17757282575daa508926af7ac3e46f48c691f44304c33a26ac147f8f22254ec6e61ab48e850d93b99c175d09005cc8caed22be7f60ad4ba00e6b8a081173e0fa206ad3a90210e2a06ffb05ebd212eed5c07f8f19c74459425276f5f4f838e01bc9003e76b6accb1b8bd281ce3cb788f511edc98ac4472dbbb75dec2f1dfbe490249ac9ef76a2b5211eeaace1391657deb0c627a0dbd54a71cbf961a11f0eb89e04570d57b58c7020ce747c93d940622afc73ebd961a156d85abde52d797f27002b710ac8424b6af4289926ab995f4e1a38d08f3743d7f030cbaac46d191da4105",
-   "text": null,
-   "facts": [
-    {
-     "txid": "bc9003e76b6accb1b8bd281ce3cb788f511edc98ac4472dbbb75dec2f1dfbe49",
-     "height": 415,
-     "tx": {
-      "version": 2,
-      "unlock_time": 0,
-      "vout": [
-       {
-        "amount": 0,
-        "target": {
-         "tagged_key": {
-          "key": "284e1e3933dd19b75ac77451efc6b5c0ae65562d2bb3cb46509f7d224f879a5f",
-          "view_tag": "21"
-         }
-        }
-       },
-       {
-        "amount": 0,
-        "target": {
-         "tagged_key": {
-          "key": "582bbddcdba548022c4f795bc91ff8894b2546c3e72dd7140c80b05b4fd4bd1f",
-          "view_tag": "cd"
-         }
-        }
-       },
-       {
-        "amount": 0,
-        "target": {
-         "tagged_key": {
-          "key": "4f7860b0891334d9a980ca0ef81c5eb315af153b007a5d060aa1c86272257b36",
-          "view_tag": "dd"
-         }
-        }
-       }
-      ],
-      "extra": [
-       1,
-       159,
-       120,
-       60,
-       218,
-       23,
-       13,
-       51,
-       217,
-       4,
-       78,
-       103,
-       201,
-       10,
-       12,
-       218,
-       183,
-       26,
-       177,
-       95,
-       23,
-       211,
-       233,
-       83,
-       237,
-       77,
-       137,
-       169,
-       19,
-       46,
-       60,
-       69,
-       88
-      ],
-      "rct_signatures": {
-       "type": 6,
-       "ecdhInfo": [
-        {
-         "amount": "a8fd663417a976f3"
-        },
-        {
-         "amount": "454a2a4f532cb87b"
-        },
-        {
-         "amount": "d7d13026a01009dd"
-        }
-       ],
-       "outPk": [
-        "3989a8c373ac30bbb08288bbdb8680e5b07cc501c746dcffa42a88261010b6d4",
-        "8d942204d4b2e2c18909d317700067866fe3fade419bad5174cdd3b5733b6660",
-        "0421142e1cbe0f8902ea7082a1296e1ef6c2411fcc664c58bcb2bf301a8f9b68"
-       ]
-      }
-     }
-    }
-   ],
-   "accepted": false,
-   "error": "The seller payment is 0.095000482237 XMR; this reservation needs exactly 0.095000592947 XMR."
-  },
-  {
-   "name": "buy #0 by the newer reservation",
-   "height": 416,
-   "record": "4d4431fe0600ba892bdce966812c00d9eaf49ba923ec628ad8e504351c6852b0434bfa7a8402c5381140b396835fa241b73029f5fbf7d4f960dab2b2dd3f12e84d5c1a22403a00ce74f1125bcb17f293b8d98910a914002c74bca2a7f492bf446b9655b0a3440e7f99607064f5ab7eea271b9a430f01261334cc61c95961f72cc37a0a3daaee01878fa430adfbe37d839080c32f6ea35bbcb1ac2102094b5170ff8190417b5000c5381140b396835fa241b73029f5fbf7d4f960dab2b2dd3f12e84d5c1a22403a011c8c05d8d1cb300e153eeaf2ec631268df1efa2046df9447f7c99e29a4c7d08203fe20563b5b9173d0a5eb55ebc2f79a311b680c055a035342465c168d7847046c8e72eb9a453473dc0c68ab03625b13661d7762b31af07d28cc0b2d4c619809",
-   "text": null,
-   "facts": [
-    {
-     "txid": "c5381140b396835fa241b73029f5fbf7d4f960dab2b2dd3f12e84d5c1a22403a",
-     "height": 416,
-     "tx": {
-      "version": 2,
-      "unlock_time": 0,
-      "vout": [
-       {
-        "amount": 0,
-        "target": {
-         "tagged_key": {
-          "key": "6a4de7c02e849c7fa5fb6cd65c47e65f053f148d53e896bb1ef3dbcf0bac30d8",
-          "view_tag": "d2"
-         }
-        }
-       },
-       {
-        "amount": 0,
-        "target": {
-         "tagged_key": {
-          "key": "04e6aae8baa3cb6a93d175280fdb9a7c4fde98db6917fa8c2893d086be8703b7",
-          "view_tag": "6d"
-         }
-        }
-       },
-       {
-        "amount": 0,
-        "target": {
-         "tagged_key": {
-          "key": "df55cb91af5daa0e8eb0cb53b985aab806694ef2bf3c9f939506a67ef5e30723",
+          "key": "31afab5d42f6cfb4f555ebfd4024c4787dc6114bb88a85aede6013884cf1c81e",
           "view_tag": "13"
          }
         }
+       },
+       {
+        "amount": 0,
+        "target": {
+         "tagged_key": {
+          "key": "428bf05f3ed8fd769133159a653040e556b1944b059b7f474632113a6f82f022",
+          "view_tag": "8e"
+         }
+        }
+       },
+       {
+        "amount": 0,
+        "target": {
+         "tagged_key": {
+          "key": "d672717fe6f2f19796985546ccac12b8ed28dd189bd2e06b04ebc44ecd7941f1",
+          "view_tag": "cd"
+         }
+        }
        }
       ],
       "extra": [
        1,
-       148,
-       8,
-       165,
-       219,
-       102,
-       246,
-       194,
-       162,
-       108,
-       116,
-       63,
-       236,
-       228,
+       127,
+       120,
+       207,
+       118,
+       111,
        233,
-       212,
-       161,
-       213,
-       128,
-       27,
-       103,
-       14,
-       56,
-       212,
-       70,
-       201,
-       158,
-       62,
+       123,
+       220,
+       10,
+       55,
        117,
-       19,
-       176,
+       86,
+       124,
+       66,
+       226,
+       36,
+       36,
+       164,
+       45,
+       243,
+       102,
+       233,
+       32,
+       55,
+       134,
+       146,
+       74,
+       231,
+       151,
+       27,
+       12,
+       171
+      ],
+      "rct_signatures": {
+       "type": 6,
+       "ecdhInfo": [
+        {
+         "amount": "7279dbede614d941"
+        },
+        {
+         "amount": "ae2029b07fc19d55"
+        },
+        {
+         "amount": "160691f2c641f92b"
+        }
+       ],
+       "outPk": [
+        "832a08c0ae11730acc12c28c1906894866e991ebdaff193af9e2af1a06d4c870",
+        "678880958c2a4125a20ddbc20364013da45c4d5079f0311a7691ea8f85f32d10",
+        "d3cf2cc649fe7c0d0ea7a66da2cb835eb98e6dc2e50bf4dddbfbfa9c053f4b89"
+       ]
+      }
+     }
+    }
+   ],
+   "accepted": true,
+   "id": "d1b8dd27a1c7347b3a3f6bdd72186ee54d3c30c5120bcf4bff75130bacd54a41"
+  },
+  {
+   "name": "list #0 for 0.1 XMR",
+   "height": 404,
+   "record": "4d4431fe03ca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8ba000000002403000000e8764817000000009e4d3aa7eaf9356dea3e0e210caafc6d7c7cc153697b3732c1f4950afa11aa785e9b0d0ecb1f000f6d5a07a2a96f5b850c0401fe3a84ada64c8e5255adacce69007ab3d4fb2269bca37fc07be0424f015ef0a8b648af3456c3b30eebc7a29dd508bef844821943035b96f1fce97155b73a8be18b7b78431d639ecf8297eb6fa70c",
+   "text": "Mordinals list: sell Mordinal #0 for 0.1 XMR (0.095 XMR to 47d3dbk9chAKPKArwkKgsmKK9wE8M4WWz9VQwESDUqcdM8jf3ujhCGo3afSRFBHzkzPFiscZQGBHWUpJvhiqGn9sCspJ2Ue, 0.005 XMR protocol fee); valid until block 804; code 35bbdb09904bbea427cccb28afee9996",
+   "accepted": true,
+   "id": "35bbdb09904bbea427cccb28afee999627faa9d28873020f560483d95ccf708a"
+  },
+  {
+   "name": "reserve #0 for 2 blocks",
+   "height": 404,
+   "record": "4d4431fe0535bbdb09904bbea427cccb28afee999627faa9d28873020f560483d95ccf708a960100000052ee0baa1a18ab16ed706c2e73696be75c65856be979c4f498818b20c044914a902995a93947dcae6322cf0b3a77440e67c97e71aa2c69c170a75f1e32e1641d000000f0d4c84e7541104770c1e0e6ab2877b36a0fb4ab52b91f8236faaa03d833150f6c125de31ba26d0d674b17389c332e9e3de8fbc46ae3d1ac46bdb8fc7a6f0203",
+   "text": "Mordinals reserve: buy Mordinal #0 for 0.1 XMR; pay exactly 0.095000695474 XMR to 47d3dbk9chAKPKArwkKgsmKK9wE8M4WWz9VQwESDUqcdM8jf3ujhCGo3afSRFBHzkzPFiscZQGBHWUpJvhiqGn9sCspJ2Ue and exactly 0.005000695474 XMR to 44R5XAtxG1mafFNQ4vM2hRWj4axAae8bA1hzdaJsZWWHWeUhvi8xXuqezghAVfL1WuBrq9jUQJuuQh5ajah4kSzp4N87D6G by block 406; Mordinal to 44mPCCm5wvJ4qRgB45bW9QfhVTyhuSwqdhutKwmYMgELDUMdw88ixLTWAmwKyhvaLB3QkY2ZD47jNZMcRrMCviDq4Ku3HHY; code eb00b2cb48b3de2f77e9b70f7f33bbe8",
+   "accepted": true,
+   "id": "eb00b2cb48b3de2f77e9b70f7f33bbe83fee5d1009d10b02c630b333f0fd5627"
+  },
+  {
+   "name": "reserve #0 right after the first ran out",
+   "height": 407,
+   "record": "4d4431fe0535bbdb09904bbea427cccb28afee999627faa9d28873020f560483d95ccf708ab201000001629f070d93a7e8fe7f051d9935df83edf2a841c213749d0b37096450fe9053f3b2e6975291815611b402664b91e69400a1c3b42943822017a0cd4dc2bcc4d50a0000005a19e14fc9786354f8b4c0a9f4faf9481591127001e5d9be3e5969082fc50a028d33a82add8fcb0a196fd8802834f16587703d1607329940eb3138e0cd72770c",
+   "text": "Mordinals reserve: buy Mordinal #0 for 0.1 XMR; pay exactly 0.095000387414 XMR to 47d3dbk9chAKPKArwkKgsmKK9wE8M4WWz9VQwESDUqcdM8jf3ujhCGo3afSRFBHzkzPFiscZQGBHWUpJvhiqGn9sCspJ2Ue and exactly 0.005000387414 XMR to 44R5XAtxG1mafFNQ4vM2hRWj4axAae8bA1hzdaJsZWWHWeUhvi8xXuqezghAVfL1WuBrq9jUQJuuQh5ajah4kSzp4N87D6G by block 434; Mordinal to 86C1sHBqoSfjZw37KU9ZrzgoPmNaf7cC42soNG1Po3FGhmBfk5YQD4q3xk5vh1W2H9178YpW2y33u4xDuSU43N6Y29rD58a; code a4c5298962997664f493090218c0e61b",
+   "accepted": false,
+   "error": "This listing is reserved by someone else until block 416."
+  },
+  {
+   "name": "reserve #0 after the first ran out",
+   "height": 417,
+   "record": "4d4431fe0535bbdb09904bbea427cccb28afee999627faa9d28873020f560483d95ccf708ab501000001629f070d93a7e8fe7f051d9935df83edf2a841c213749d0b37096450fe9053f3b2e6975291815611b402664b91e69400a1c3b42943822017a0cd4dc2bcc4d50a000000dbf7d685bb5d8fd76ce262d9ee630b14460ec0500d4f723a5ad6f0c4a0b74a0759bca61df6f9ddc0bcb62d40fa6275d31995b15eb64efc7caf8e71492cb65508",
+   "text": "Mordinals reserve: buy Mordinal #0 for 0.1 XMR; pay exactly 0.095000350223 XMR to 47d3dbk9chAKPKArwkKgsmKK9wE8M4WWz9VQwESDUqcdM8jf3ujhCGo3afSRFBHzkzPFiscZQGBHWUpJvhiqGn9sCspJ2Ue and exactly 0.005000350223 XMR to 44R5XAtxG1mafFNQ4vM2hRWj4axAae8bA1hzdaJsZWWHWeUhvi8xXuqezghAVfL1WuBrq9jUQJuuQh5ajah4kSzp4N87D6G by block 437; Mordinal to 86C1sHBqoSfjZw37KU9ZrzgoPmNaf7cC42soNG1Po3FGhmBfk5YQD4q3xk5vh1W2H9178YpW2y33u4xDuSU43N6Y29rD58a; code b3ab49c81361099bd02ac50d4bffb2ef",
+   "accepted": true,
+   "id": "b3ab49c81361099bd02ac50d4bffb2efa8b8079c5d8bb76b1e95cac1b176721f"
+  },
+  {
+   "name": "buy #0: late payment for the reservation that ran out",
+   "height": 418,
+   "record": "4d4431fe0635bbdb09904bbea427cccb28afee999627faa9d28873020f560483d95ccf708a02f30f88cd5c7b1bec579b53e54c572e91b18d571e954d2d665105d5e24b1b586901123a215391d070a09aa2418820d56bd7d7211ab65cb907151e0344e4d2d1288945bdaf84ef4836589c58d76bcdb02bb790f465740cdfbc8d99b1afec9a50850b3da5469333249b42fa1fdde1952c880a9e16922fdb6ed33eecaa97edd91cf309f30f88cd5c7b1bec579b53e54c572e91b18d571e954d2d665105d5e24b1b5869004ab44814323015c025c31eb98335477d9db44cc8528e1659f790400a0ec72bbddaeb73752f60d0f60e4985ab4bbf7f26c25334e53a42335980c089846601b4044b0b86b59c44d87083bc94852130285fe2781b54c79e1c06bc241c823e33b80d",
+   "text": null,
+   "facts": [
+    {
+     "txid": "f30f88cd5c7b1bec579b53e54c572e91b18d571e954d2d665105d5e24b1b5869",
+     "height": 418,
+     "tx": {
+      "version": 2,
+      "unlock_time": 0,
+      "vout": [
+       {
+        "amount": 0,
+        "target": {
+         "tagged_key": {
+          "key": "cc56cbe6c27809eaa881de41d3e3c06ee9da52251367dec1739a97e677dcde92",
+          "view_tag": "b2"
+         }
+        }
+       },
+       {
+        "amount": 0,
+        "target": {
+         "tagged_key": {
+          "key": "643f0a1048a21cd48028fb6393c753dfc8e61c434f693fdad51c8f18e2c2497b",
+          "view_tag": "5e"
+         }
+        }
+       },
+       {
+        "amount": 0,
+        "target": {
+         "tagged_key": {
+          "key": "63a831e389ed00aa46c086abfa9aa8f2f7c757207d0262952e9031267ee9a916",
+          "view_tag": "08"
+         }
+        }
+       }
+      ],
+      "extra": [
+       1,
+       83,
+       188,
+       45,
+       117,
+       155,
+       181,
+       7,
+       194,
+       53,
+       124,
+       174,
+       131,
+       197,
+       93,
+       160,
+       67,
+       157,
+       55,
+       225,
+       196,
+       93,
+       13,
+       159,
+       115,
+       125,
+       70,
+       53,
+       210,
+       159,
+       144,
+       134,
+       94
+      ],
+      "rct_signatures": {
+       "type": 6,
+       "ecdhInfo": [
+        {
+         "amount": "a344467c922e917a"
+        },
+        {
+         "amount": "5b07bde08684affd"
+        },
+        {
+         "amount": "a201510b3a18c72d"
+        }
+       ],
+       "outPk": [
+        "19d098691661b056b6fbbf60ec569507c8b67b8f0ed5d9eb3565c4fd506ecc26",
+        "951914285bb4a0d2c30e55d7248376cfbed6d748646fcbddc6b5ad00f1057466",
+        "f81903b61aa65cbdfbcd4911d160150034354c451aca7905bfb9a155c4781f63"
+       ]
+      }
+     }
+    }
+   ],
+   "accepted": false,
+   "error": "The seller payment is 0.095000695474 XMR; this reservation needs exactly 0.095000350223 XMR."
+  },
+  {
+   "name": "buy #0 by the newer reservation",
+   "height": 419,
+   "record": "4d4431fe0635bbdb09904bbea427cccb28afee999627faa9d28873020f560483d95ccf708a02163a0271647d16715acdfc84a3e95d5192fc0ed4e40a9333d89204e8961f9daa00068626b1e10e3d4a983b488c67f9b6c5ebfd9011b6558483cf06cc99e8d9e19d2bc3282ab83abf3859c6cc75d107bc32db22078144d426a1f63a3a0c0021ee0b36bb712ea0cee58999bf9f908eba4be8849af985feb7354f519aef8d304bdd02163a0271647d16715acdfc84a3e95d5192fc0ed4e40a9333d89204e8961f9daa01924a3ec6c75c33af7b6c2208719ceb05f717d8a44d9d6cf6a90918db0df69aefb69a79605330389b6396338d1570557058ab884e13a2ad9e568be540fa719c07df30bb64747671f367ff4019f0285d65a656bab2c46d5743530c29ef1739100e",
+   "text": null,
+   "facts": [
+    {
+     "txid": "163a0271647d16715acdfc84a3e95d5192fc0ed4e40a9333d89204e8961f9daa",
+     "height": 419,
+     "tx": {
+      "version": 2,
+      "unlock_time": 0,
+      "vout": [
+       {
+        "amount": 0,
+        "target": {
+         "tagged_key": {
+          "key": "d3d4360356c46635e4a3af6cadeb923062045ccc413646c39dc4c79c16a49622",
+          "view_tag": "57"
+         }
+        }
+       },
+       {
+        "amount": 0,
+        "target": {
+         "tagged_key": {
+          "key": "fd693b692ed3b241dc07c0942975d4376a019f641259422280a8ad895b619007",
+          "view_tag": "f6"
+         }
+        }
+       },
+       {
+        "amount": 0,
+        "target": {
+         "tagged_key": {
+          "key": "23e14e9a39ffbe04f68429ddcb97faf0defb6394e8c4203063b37097814747eb",
+          "view_tag": "3d"
+         }
+        }
+       }
+      ],
+      "extra": [
+       1,
+       67,
+       122,
+       74,
+       171,
+       59,
+       101,
+       126,
+       123,
+       36,
+       63,
+       234,
+       223,
+       156,
+       201,
+       220,
+       112,
+       205,
+       62,
+       4,
+       74,
+       203,
+       93,
+       107,
+       11,
+       174,
+       193,
+       172,
+       47,
+       88,
+       148,
+       209,
+       241
+      ],
+      "rct_signatures": {
+       "type": 6,
+       "ecdhInfo": [
+        {
+         "amount": "45f7c1f653a46d75"
+        },
+        {
+         "amount": "12f96bd0e8d38d0d"
+        },
+        {
+         "amount": "af6786e390dfdd80"
+        }
+       ],
+       "outPk": [
+        "e3c1483f4a681cd8ab96ea1865f900f49748c1912da6314eb0bb6f6d0824234d",
+        "1a889ab183b8ab87e9f94cae606a6a1c9149e9ce35a867a909caae2818afbddf",
+        "4aa665a5e5e43285c0cbe94e298e9fc71476f4e9b69052579da8e89af86d2bf3"
+       ]
+      }
+     }
+    }
+   ],
+   "accepted": true,
+   "id": "20a01320b323b44b6179f67e8b8b4b77b2663107989bc19e9e4b80e29948501d"
+  },
+  {
+   "name": "list #0 from a subaddress",
+   "height": 419,
+   "record": "4d4431fe03ca1fe1a9e24839f602e0f490b4f55b1e26e064293c23f459df7e6d9995eba8ba010000003303000000e876481700000001629f070d93a7e8fe7f051d9935df83edf2a841c213749d0b37096450fe9053f3b2e6975291815611b402664b91e69400a1c3b42943822017a0cd4dc2bcc4d50a002eee313b781cf8b4e3fb1740386fca301d9197d4f6bae6135ed8af51444dbf0bbe903f6736cb4e64d0e534eb82be65cecded37633c2ab301375358c52e3b9d02",
+   "text": "Mordinals list: sell Mordinal #0 for 0.1 XMR (0.095 XMR to 86C1sHBqoSfjZw37KU9ZrzgoPmNaf7cC42soNG1Po3FGhmBfk5YQD4q3xk5vh1W2H9178YpW2y33u4xDuSU43N6Y29rD58a, 0.005 XMR protocol fee); valid until block 819; code af7ef7e55bf48e54b4e7ad62ba017dcb",
+   "accepted": true,
+   "id": "af7ef7e55bf48e54b4e7ad62ba017dcbbec2ebb31e5dd3467dc41d1323cb1a92"
+  },
+  {
+   "name": "reserve #0",
+   "height": 419,
+   "record": "4d4431fe05af7ef7e55bf48e54b4e7ad62ba017dcbbec2ebb31e5dd3467dc41d1323cb1a92c1010000009e4d3aa7eaf9356dea3e0e210caafc6d7c7cc153697b3732c1f4950afa11aa785e9b0d0ecb1f000f6d5a07a2a96f5b850c0401fe3a84ada64c8e5255adacce69000000a5de3cffe00eca8ca19c0a7843860169d67b0279d3a85119d2feb14c194e4705c3c44ba107381ceb6cf631ec6971b1c8457a6982c4ddd36a9283c6da9f982506",
+   "text": "Mordinals reserve: buy Mordinal #0 for 0.1 XMR; pay exactly 0.095000981232 XMR to 86C1sHBqoSfjZw37KU9ZrzgoPmNaf7cC42soNG1Po3FGhmBfk5YQD4q3xk5vh1W2H9178YpW2y33u4xDuSU43N6Y29rD58a and exactly 0.005000981232 XMR to 44R5XAtxG1mafFNQ4vM2hRWj4axAae8bA1hzdaJsZWWHWeUhvi8xXuqezghAVfL1WuBrq9jUQJuuQh5ajah4kSzp4N87D6G by block 449; Mordinal to 47d3dbk9chAKPKArwkKgsmKK9wE8M4WWz9VQwESDUqcdM8jf3ujhCGo3afSRFBHzkzPFiscZQGBHWUpJvhiqGn9sCspJ2Ue; code 1b3cf9271ec78566d4464b5fed76b8db",
+   "accepted": true,
+   "id": "1b3cf9271ec78566d4464b5fed76b8db0bd362040e374c20114a16197bb86b33"
+  },
+  {
+   "name": "buy #0: subaddress seller, several transaction keys",
+   "height": 420,
+   "record": "4d4431fe06af7ef7e55bf48e54b4e7ad62ba017dcbbec2ebb31e5dd3467dc41d1323cb1a9202a69a517a60cc18fc9ab712d320e9e81fb8f3418a2621c0443562e831fdcff399021fa08032676f89e380929f72bf45dd4ade736cf86750086c6110a6682a9578ae66efa63f04dc34085397bb862f0ce4d7a909873fee15410452a859ee57c88c0cbc6bb4b7583e617f673a7a2dcd1c230f52aa954da57593b7ffc94e29e0d6d003a69a517a60cc18fc9ab712d320e9e81fb8f3418a2621c0443562e831fdcff39900948d0e71cc5c159698421d53460f1e7814acb5f6e441d8ab32c1e0cbafb79acc8c9981b8a6645d5c796be933f731ec2d795e6f91e303a037c017531390919f0a80519070bccf377453a9c234663cca13b2eef47682086cd33cc4b55e2fb29b0c",
+   "text": null,
+   "facts": [
+    {
+     "txid": "a69a517a60cc18fc9ab712d320e9e81fb8f3418a2621c0443562e831fdcff399",
+     "height": 420,
+     "tx": {
+      "version": 2,
+      "unlock_time": 0,
+      "vout": [
+       {
+        "amount": 0,
+        "target": {
+         "tagged_key": {
+          "key": "6b7b730a0d7bc202d24dfd1b0448ec54fcb532ffc4f57cc23193c4a71cd5ed2c",
+          "view_tag": "ba"
+         }
+        }
+       },
+       {
+        "amount": 0,
+        "target": {
+         "tagged_key": {
+          "key": "5ebbb304672d4ee7f501fd63b2ba4d810f9c0c3c5cffd866ecf1b67d36dc2392",
+          "view_tag": "2c"
+         }
+        }
+       },
+       {
+        "amount": 0,
+        "target": {
+         "tagged_key": {
+          "key": "2707d3fb699ca2feffaa3aa245c2fe493d52a8012146d59669f0af7819b5fd4a",
+          "view_tag": "ad"
+         }
+        }
+       }
+      ],
+      "extra": [
+       1,
+       223,
+       52,
+       94,
+       57,
+       171,
+       154,
+       156,
+       123,
+       31,
+       159,
+       205,
+       77,
+       203,
+       26,
+       199,
+       101,
+       22,
+       130,
+       141,
+       100,
+       243,
+       69,
+       10,
+       58,
+       12,
+       116,
+       1,
+       200,
+       162,
+       173,
+       198,
+       216,
+       4,
+       3,
+       31,
+       20,
+       109,
+       23,
+       223,
+       238,
+       44,
+       32,
+       2,
+       247,
+       98,
+       159,
+       100,
+       59,
+       90,
+       45,
+       75,
+       184,
+       83,
+       67,
+       222,
        142,
+       104,
+       91,
+       246,
+       31,
+       69,
+       29,
+       117,
+       171,
+       190,
+       253,
+       197,
+       81,
+       3,
+       213,
+       48,
+       119,
+       143,
+       227,
+       150,
+       202,
+       50,
+       96,
+       6,
+       37,
+       174,
+       66,
+       139,
+       101,
+       54,
+       23,
+       50,
+       67,
+       168,
+       12,
+       38,
+       160,
+       73,
+       44,
+       164,
+       190,
+       145,
+       104,
+       228,
+       210,
+       201,
+       145,
+       231,
+       250,
+       172,
+       16,
+       129,
+       236,
+       207,
+       134,
+       150,
+       171,
+       5,
+       83,
+       225,
+       30,
+       208,
+       87,
+       41,
+       22,
+       65,
+       188,
+       17,
+       146,
+       125,
+       3,
+       119,
+       139,
+       41,
        12
       ],
       "rct_signatures": {
        "type": 6,
        "ecdhInfo": [
         {
-         "amount": "f986bce53b5ebbe1"
+         "amount": "b046a3d6ddb0557a"
         },
         {
-         "amount": "12ee8004a1ce2224"
+         "amount": "bfcefa6a2f8e4956"
         },
         {
-         "amount": "212dce43391e13a5"
+         "amount": "d02a2fa28a8c849e"
         }
        ],
        "outPk": [
-        "1edda8b7bf35d4322110b8d0ca88e28845d9b0d6678bf8981055ddb375949d88",
-        "1f654f2b6e7ce21aecc429374b3eccf1abfdae2c4abef8e4f8f1a4006e9dce40",
-        "b12bad59797917a0acaf62aab65cf1c1100208f30a7293be93b10af9aaa91530"
+        "ce7a50ea4106c0553bd299b4a44d7d865b989ce0f412bd77b35fce442c159e39",
+        "24d9bdaa38caa604a37aca7e8a5fcb6351d8f4be1c7574bdf60148156dd65f44",
+        "e2576bd82bff909607796dc863e226ec59c375e1f9657e381bd9f199ee250a84"
        ]
       }
      }
     }
    ],
    "accepted": true,
-   "id": "aa3e772c83518ab8965aa1637e53eab72d640b82ad395b49544c835cb6a66005"
-  },
-  {
-   "name": "list #0 from a subaddress",
-   "height": 416,
-   "record": "4d4431fe031ac5b0a60f8c506d2ed641cf1f88345811a820c66635412bc1a7eef186af095d010000003003000000e87648170000000134b4330a418c17c24dd5cba6b0039602c41975071765a39482afb6c5907cca25d196d789a78e096df788678280e8844506a1cc5f8d01c58574122d5ce9960d6d00d159c29fb50d4b0b63d09e18d044143953e8a4dcd6d4d780c67a040514f56f085ebe07032164f036ff66df378aba682a753a806be91145ce80d0279c10c3090b",
-   "text": "Mordinals list: sell Mordinal #0 for 0.1 XMR (0.095 XMR to 84T6JjbvxJSZVzaAXRprwX1TqMtToZ2GzRqjo2dxbNFj7KtZ4S2trfaKPpP8diaiWwCYdzR2hZAJ8PKfaeKXVhrLDJv6cLm, 0.005 XMR protocol fee); valid until block 816; code c2fff71ac0d309dae317f3fc37286762",
-   "accepted": true,
-   "id": "c2fff71ac0d309dae317f3fc37286762e9292c954b3448ee308e749b498f7e06"
-  },
-  {
-   "name": "reserve #0",
-   "height": 416,
-   "record": "4d4431fe05c2fff71ac0d309dae317f3fc37286762e9292c954b3448ee308e749b498f7e06be0100000031ce82b3a9d8de31cf5372f056ef04944f37c78b02ad8f450a252aa01ab90ed7708063eea64c403e0e9ae34b8e00960885ba8f6f0abd8f3d03de80f5d2524bb000000026f66254ab1077e58e506fad01b198d25c4379da36244597552536c448ad4603776da8285421dcfdca8b6d79a8625735b2e083284b73d4926550148997f9b001",
-   "text": "Mordinals reserve: buy Mordinal #0 for 0.1 XMR; pay exactly 0.09500008774 XMR to 84T6JjbvxJSZVzaAXRprwX1TqMtToZ2GzRqjo2dxbNFj7KtZ4S2trfaKPpP8diaiWwCYdzR2hZAJ8PKfaeKXVhrLDJv6cLm and exactly 0.00500008774 XMR to 44K78aijjyfA7rGxMrPPUn7Pd9RKhc6RPf2qQg3KNmKaRjoeVLbdN3iPGbBnAZgwqpDZvEwSoAEyhaJBjPQM1SyyEN8SHap by block 446; Mordinal to 43WadgJmuyF9LDehuyXBBhRonfoGPPoVGCYmiGrerBDPd32tkEwvRDZBP2oikakTzV2RgJvWFsAfYBCvY6GqEtgaLsi969n; code 64ea715e932362e91e7dce9893ebcb5d",
-   "accepted": true,
-   "id": "64ea715e932362e91e7dce9893ebcb5d5d14eb10dc683fef2b1b83f8d980a9a8"
-  },
-  {
-   "name": "buy #0: subaddress seller, several transaction keys",
-   "height": 417,
-   "record": "4d4431fe06c2fff71ac0d309dae317f3fc37286762e9292c954b3448ee308e749b498f7e060275b578c392e6b5a5ffdf81b608987c168ff991cd2a826dc70f5b318aa77777d0017365d6ea20528c2879def99b683458a0b8b8e5cc328d451996e40a63dae7a3819cd91e7a7b510f569f6903e357c740f56ca6b715fc866e3ccfc2ed63bf4ab2066d5ada18a7f14485891522462219767eca2714422fb4eb47fd4836e656d1300375b578c392e6b5a5ffdf81b608987c168ff991cd2a826dc70f5b318aa77777d00061f91ec2aa4343e1d6e71ed4e5532450e4468f9a10e56e75f6bb482909d4ac169374f201ef9c72eb1c422e6f7d3bf0ac91d52da9dc735e36e07cee7f722b5e054760ed9e80bf56ad3cac9fb9f955a04c9bf405a860804f2eae37533393400c09",
-   "text": null,
-   "facts": [
-    {
-     "txid": "75b578c392e6b5a5ffdf81b608987c168ff991cd2a826dc70f5b318aa77777d0",
-     "height": 417,
-     "tx": {
-      "version": 2,
-      "unlock_time": 0,
-      "vout": [
-       {
-        "amount": 0,
-        "target": {
-         "tagged_key": {
-          "key": "1a4af4d9fe298c002778bcd855bdf005f30d580d85285471364e83a9ee3b411d",
-          "view_tag": "63"
-         }
-        }
-       },
-       {
-        "amount": 0,
-        "target": {
-         "tagged_key": {
-          "key": "6fe014ff8c88ce8474db0d1a7cd4c8010149bd9bdb5cf366dd67fc74fd0baddc",
-          "view_tag": "fa"
-         }
-        }
-       },
-       {
-        "amount": 0,
-        "target": {
-         "tagged_key": {
-          "key": "1ba993a9aebaa706cc7f35efd0c44bfd49b8ac26bb9a9d1326dd6e7279a1349f",
-          "view_tag": "66"
-         }
-        }
-       }
-      ],
-      "extra": [
-       1,
-       90,
-       52,
-       90,
-       24,
-       213,
-       77,
-       212,
-       250,
-       219,
-       66,
-       84,
-       141,
-       7,
-       117,
-       169,
-       5,
-       34,
-       227,
-       41,
-       147,
-       16,
-       157,
-       251,
-       204,
-       57,
-       63,
-       163,
-       97,
-       100,
-       15,
-       230,
-       54,
-       4,
-       3,
-       201,
-       39,
-       76,
-       183,
-       184,
-       226,
-       59,
-       92,
-       136,
-       18,
-       101,
-       194,
-       22,
-       253,
-       217,
-       60,
-       140,
-       77,
-       42,
-       111,
-       81,
-       29,
-       199,
-       188,
-       226,
-       45,
-       128,
-       53,
-       200,
-       106,
-       118,
-       138,
-       78,
-       195,
-       137,
-       62,
-       115,
-       87,
-       114,
-       2,
-       201,
-       116,
-       108,
-       89,
-       119,
-       82,
-       42,
-       5,
-       180,
-       233,
-       173,
-       79,
-       14,
-       26,
-       47,
-       227,
-       172,
-       20,
-       226,
-       26,
-       248,
-       206,
-       139,
-       45,
-       3,
-       205,
-       76,
-       169,
-       132,
-       113,
-       31,
-       84,
-       234,
-       235,
-       114,
-       82,
-       254,
-       218,
-       213,
-       91,
-       132,
-       139,
-       20,
-       80,
-       54,
-       106,
-       147,
-       119,
-       248,
-       111,
-       168,
-       133,
-       195,
-       144,
-       149,
-       163
-      ],
-      "rct_signatures": {
-       "type": 6,
-       "ecdhInfo": [
-        {
-         "amount": "db2e33e181ed0bf1"
-        },
-        {
-         "amount": "fa687c675d9f9e44"
-        },
-        {
-         "amount": "a1b795b9c057ce4c"
-        }
-       ],
-       "outPk": [
-        "642d3e194f009562aa7e670c19690288ccd36a03b1caa6173711c21f555589af",
-        "184c360a9e6d0e4ea11936a43fb776a992d90de6e465a23859a25605ec661421",
-        "7835705a1d6d647dfc4aa5309c9bcb3c91c84e1958411cd3f39c101061839d75"
-       ]
-      }
-     }
-    }
-   ],
-   "accepted": true,
-   "id": "c77728619aa09b8fe8ef05930b15f28a23e13be08d863497d3be53f2baabcdf6"
+   "id": "7787d1edeeab58131a7a15a7ef7666e3537a87355739275a3e243e1f8418124f"
   },
   {
    "name": "list #2 for 0.01 XMR, 5 blocks",
-   "height": 417,
-   "record": "4d4431fe035ad1fdc2cc3516f8b224f58c2fe84123703ad73576dcbb1f8d34f112d8d2496200000000a601000000e40b540200000000db02af8cb485e6e3288dd1f7cc0508ed7092ab93e0ea31cab784798f088886426ebd0e5569564613f0e529f9d06e75e21f76280ca5cac951181aba51d996c60000da3016697e1362579489c3ff0bb148dcbc43a93eea2a46e538ae10ff7209bc07dc6ebe7b7bf9c289951be136e82952fc8a15c146c199430575838c2bc88e150e",
-   "text": "Mordinals list: sell Mordinal #2 for 0.01 XMR (0.0095 XMR to 49vUphtanm3eziq19XPzMmgiTr9xusEBiaucEiWaQzcDC7UnvPT8rPo4LTFi1AY6PWepgAt3WEcVnEZiTyEa1WRK16goDNA, 0.0005 XMR protocol fee); valid until block 422; code 37a9d1c9aded3e513a9772175a44517c",
+   "height": 420,
+   "record": "4d4431fe0345b9ebee504a8f28804052e31fd78ca5ce03240e3d11f61a4b90b6df97a4214900000000a901000000e40b540200000000b42e245b65c33059b89ce9389d037981b026f165c9fa001fdde9c1ce1a343740b5a9b108556bcc008dd9bc03638b25ff6a954ee58c003017e9eab2585a5f7c5000503b552524d6078fb46dbf784a3d7fc55b3aa61551469027037da2b286c47f0fac59a9c6a907cc9e4245ef11c1b3ac8dad14127fa75bca422ebe4bf2136fd003",
+   "text": "Mordinals list: sell Mordinal #2 for 0.01 XMR (0.0095 XMR to 48T8isznTz7G1QdnwNmvHvNh8wm5Hz4F16L9c2p64SHkBpmLNH3dRko16NnBPeFQ8LjirnqTpfRF54zzc9wJZdEjA8T3aE7, 0.0005 XMR protocol fee); valid until block 425; code 62a0425c2a6840f1377ae41e00b43d1f",
    "accepted": true,
-   "id": "37a9d1c9aded3e513a9772175a44517cf461119ab4153e63088707e606f19cc4"
+   "id": "62a0425c2a6840f1377ae41e00b43d1f00842f299bb14c276c93555c088bef79"
   },
   {
    "name": "move #2 while listed",
-   "height": 417,
-   "record": "4d4431fe025ad1fdc2cc3516f8b224f58c2fe84123703ad73576dcbb1f8d34f112d8d249620000000000db02af8cb485e6e3288dd1f7cc0508ed7092ab93e0ea31cab784798f088886426ebd0e5569564613f0e529f9d06e75e21f76280ca5cac951181aba51d996c600018f5767e7781ce17fdd3e019c855e7fad63d4992fb4e0568233b5b0913b88dd9281ce827434e185943869ed4ae1411b3be79c5976d8ade204450c281cc67b7636006fa02ba36d474961805a3c9ab8feae4b224deeed68f09f7dafe8ff64acc8ae06dcb19216b7b63364ad273057015f2e592ed06830b1b1eedc6eba8b86f666ce03",
-   "text": "Mordinals move: send Mordinal #2 to 87tJpr2WMtCNPShqkLbwxJW16nr9PbNE1Nn86nwm96xtRWJWrbsvZ3iRnvYid4PRbgB29kgQfXVnH1iRTGPwq6LM7BVAfEK; move 0; code c6558d943b699ee97932f193d4311df4",
+   "height": 420,
+   "record": "4d4431fe0245b9ebee504a8f28804052e31fd78ca5ce03240e3d11f61a4b90b6df97a421490000000000b42e245b65c33059b89ce9389d037981b026f165c9fa001fdde9c1ce1a343740b5a9b108556bcc008dd9bc03638b25ff6a954ee58c003017e9eab2585a5f7c5001e995f045cbe804247dde2ba92a1eb0c5678d28abc6dfe70b91dbaa5160c62d83252cb95bb51b2111ee309f498bc83e6b78d9949da7d2f6b0c2eb7ab6836c9f1f00f6813b787e427c3ec13772b747d9e85a2b74622aa2e42324b8520faf85498a05f1b8d5813cad3c9c3d4592fb4c7374954a029dc176b44d1b6a4bc7e37fca670e",
+   "text": "Mordinals move: send Mordinal #2 to 8BJfDGKoCkB771sCeisPLBa257XfN7REN2wEzDX8BuCYNwGpsgatUDv3zwxpBmH5qFJycbW3P83SDWZoow71iYxe4atsJSP; move 0; code 53d124c1673f2456c355508ae487737f",
    "accepted": false,
    "error": "This Mordinal is listed for sale; cancel the listing first."
   },
   {
    "name": "reserve an expired listing",
-   "height": 423,
-   "record": "4d4431fe0537a9d1c9aded3e513a9772175a44517cf461119ab4153e63088707e606f19cc4a601000000117421824d99157c5e8220ec37c29121d54e1be06b382db9f91a70a1acc44d19941d377dba11155e9c2954ea7df8cd433db6571f914c387b37bbf7167772d214000000804e0e6d40ec161f3d04be5edfa1fa702c2387829cc985a6d56e8024fdc12606ff4f8bcab7b9bf5ea5bdf2f95d032601805ef8a4fb4cc37f50d524ebb5515e02",
-   "text": "Mordinals reserve: buy Mordinal #2 for 0.01 XMR; pay exactly 0.009500260302 XMR to 49vUphtanm3eziq19XPzMmgiTr9xusEBiaucEiWaQzcDC7UnvPT8rPo4LTFi1AY6PWepgAt3WEcVnEZiTyEa1WRK16goDNA and exactly 0.000500260302 XMR to 44K78aijjyfA7rGxMrPPUn7Pd9RKhc6RPf2qQg3KNmKaRjoeVLbdN3iPGbBnAZgwqpDZvEwSoAEyhaJBjPQM1SyyEN8SHap by block 422; Mordinal to 42HUFTKdRjrMoY8hKf6rbJ6fE2hzBMHTiY7AxPhVCUY45H9N1qdUheUGpqTrQbiRnLCFKi3arao9RMcNEk2TC3ZK3Jdv8w7; code 67aafac21b6b0ddc6f8ad3fbc90a5c6b",
+   "height": 426,
+   "record": "4d4431fe0562a0425c2a6840f1377ae41e00b43d1f00842f299bb14c276c93555c088bef79a90100000052ee0baa1a18ab16ed706c2e73696be75c65856be979c4f498818b20c044914a902995a93947dcae6322cf0b3a77440e67c97e71aa2c69c170a75f1e32e1641d000000236daf5730ebb763c499845404f08a8f637060abf90ea1a4b96fc6040bdc650dae3fab940cfa1a9b881ef79fa0e86b3f1545752146dbed08ca3cc05e224dcc04",
+   "text": "Mordinals reserve: buy Mordinal #2 for 0.01 XMR; pay exactly 0.009500471624 XMR to 48T8isznTz7G1QdnwNmvHvNh8wm5Hz4F16L9c2p64SHkBpmLNH3dRko16NnBPeFQ8LjirnqTpfRF54zzc9wJZdEjA8T3aE7 and exactly 0.000500471624 XMR to 44R5XAtxG1mafFNQ4vM2hRWj4axAae8bA1hzdaJsZWWHWeUhvi8xXuqezghAVfL1WuBrq9jUQJuuQh5ajah4kSzp4N87D6G by block 425; Mordinal to 44mPCCm5wvJ4qRgB45bW9QfhVTyhuSwqdhutKwmYMgELDUMdw88ixLTWAmwKyhvaLB3QkY2ZD47jNZMcRrMCviDq4Ku3HHY; code c682e9c5f10ae2dedbbeeee2f070d0f5",
    "accepted": false,
    "error": "This listing has expired."
   },
   {
    "name": "cancel by someone else",
-   "height": 423,
-   "record": "4d4431fe0437a9d1c9aded3e513a9772175a44517cf461119ab4153e63088707e606f19cc400db02af8cb485e6e3288dd1f7cc0508ed7092ab93e0ea31cab784798f088886426ebd0e5569564613f0e529f9d06e75e21f76280ca5cac951181aba51d996c600009e2e5676cfdddbc03d244e4b3b5d536a3287a94d9922383a13db9f1d9178bd0be37b69621bbae8e1cd650953318641b60f6107f80167ac7a837b98284e0ea50a",
-   "text": "Mordinals cancel: stop selling Mordinal #2; listing 37a9d1c9aded3e513a9772175a44517c; code a01debef33882fbb3428e2a602446736",
+   "height": 426,
+   "record": "4d4431fe0462a0425c2a6840f1377ae41e00b43d1f00842f299bb14c276c93555c088bef7900b42e245b65c33059b89ce9389d037981b026f165c9fa001fdde9c1ce1a343740b5a9b108556bcc008dd9bc03638b25ff6a954ee58c003017e9eab2585a5f7c50005e4d85dc2439a2146827b058e21c920b28b0b11c9f61b59a134dccc2f981740a4d8a1ba6c01ee0e7ce702775b7ed7d835114a51c3f6650b516a1d6d724ea5108",
+   "text": "Mordinals cancel: stop selling Mordinal #2; listing 62a0425c2a6840f1377ae41e00b43d1f; code 4e08457de972ddc9daa5c21c651feea4",
    "accepted": false,
    "error": "The signature does not match this record."
   },
   {
    "name": "cancel the listing of #2",
-   "height": 423,
-   "record": "4d4431fe0437a9d1c9aded3e513a9772175a44517cf461119ab4153e63088707e606f19cc400db02af8cb485e6e3288dd1f7cc0508ed7092ab93e0ea31cab784798f088886426ebd0e5569564613f0e529f9d06e75e21f76280ca5cac951181aba51d996c60000a33948a63a0f0721fbb761d4b532fbd44ee7f6cc790ce8805c73c52df2984e0c2aafa2d85ee61a14144637d7bab45b1eb483ddd8cb28adb2a9b75556031f630c",
-   "text": "Mordinals cancel: stop selling Mordinal #2; listing 37a9d1c9aded3e513a9772175a44517c; code a01debef33882fbb3428e2a602446736",
+   "height": 426,
+   "record": "4d4431fe0462a0425c2a6840f1377ae41e00b43d1f00842f299bb14c276c93555c088bef7900b42e245b65c33059b89ce9389d037981b026f165c9fa001fdde9c1ce1a343740b5a9b108556bcc008dd9bc03638b25ff6a954ee58c003017e9eab2585a5f7c50006b41d83b7a2c629e7d0e915f08e7b73898fb361f03f836960990783f75e8880c9aad56adc491ee5655f0fda9aad0bfb343a01f2f01d0f3ac9dfd64594aed3905",
+   "text": "Mordinals cancel: stop selling Mordinal #2; listing 62a0425c2a6840f1377ae41e00b43d1f; code 4e08457de972ddc9daa5c21c651feea4",
    "accepted": true,
-   "id": "a01debef33882fbb3428e2a6024467368cff56c24577c67a1896f6cc0a90ed5f"
+   "id": "4e08457de972ddc9daa5c21c651feea49543621036688cccc7da67e0ed93d5be"
   },
   {
    "name": "move #2 signed before the cancel",
-   "height": 423,
-   "record": "4d4431fe025ad1fdc2cc3516f8b224f58c2fe84123703ad73576dcbb1f8d34f112d8d249620000000000db02af8cb485e6e3288dd1f7cc0508ed7092ab93e0ea31cab784798f088886426ebd0e5569564613f0e529f9d06e75e21f76280ca5cac951181aba51d996c600018f5767e7781ce17fdd3e019c855e7fad63d4992fb4e0568233b5b0913b88dd9281ce827434e185943869ed4ae1411b3be79c5976d8ade204450c281cc67b7636006fa02ba36d474961805a3c9ab8feae4b224deeed68f09f7dafe8ff64acc8ae06dcb19216b7b63364ad273057015f2e592ed06830b1b1eedc6eba8b86f666ce03",
-   "text": "Mordinals move: send Mordinal #2 to 87tJpr2WMtCNPShqkLbwxJW16nr9PbNE1Nn86nwm96xtRWJWrbsvZ3iRnvYid4PRbgB29kgQfXVnH1iRTGPwq6LM7BVAfEK; move 0; code c6558d943b699ee97932f193d4311df4",
+   "height": 426,
+   "record": "4d4431fe0245b9ebee504a8f28804052e31fd78ca5ce03240e3d11f61a4b90b6df97a421490000000000b42e245b65c33059b89ce9389d037981b026f165c9fa001fdde9c1ce1a343740b5a9b108556bcc008dd9bc03638b25ff6a954ee58c003017e9eab2585a5f7c5001e995f045cbe804247dde2ba92a1eb0c5678d28abc6dfe70b91dbaa5160c62d83252cb95bb51b2111ee309f498bc83e6b78d9949da7d2f6b0c2eb7ab6836c9f1f00f6813b787e427c3ec13772b747d9e85a2b74622aa2e42324b8520faf85498a05f1b8d5813cad3c9c3d4592fb4c7374954a029dc176b44d1b6a4bc7e37fca670e",
+   "text": "Mordinals move: send Mordinal #2 to 8BJfDGKoCkB771sCeisPLBa257XfN7REN2wEzDX8BuCYNwGpsgatUDv3zwxpBmH5qFJycbW3P83SDWZoow71iYxe4atsJSP; move 0; code 53d124c1673f2456c355508ae487737f",
    "accepted": false,
    "error": "This record was signed for an earlier state of the Mordinal; prepare and sign it again."
   },
   {
    "name": "move #2 to a subaddress",
-   "height": 423,
-   "record": "4d4431fe025ad1fdc2cc3516f8b224f58c2fe84123703ad73576dcbb1f8d34f112d8d249620100000000db02af8cb485e6e3288dd1f7cc0508ed7092ab93e0ea31cab784798f088886426ebd0e5569564613f0e529f9d06e75e21f76280ca5cac951181aba51d996c600018f5767e7781ce17fdd3e019c855e7fad63d4992fb4e0568233b5b0913b88dd9281ce827434e185943869ed4ae1411b3be79c5976d8ade204450c281cc67b76360000f79b7bfa3c1890265f67a31326d50d26a0e3155f6992314b46bee75ff4370c57857afb410c03cff2dcfde6cde146e1f76489911fc43ad9adb2e68f986e610c",
-   "text": "Mordinals move: send Mordinal #2 to 87tJpr2WMtCNPShqkLbwxJW16nr9PbNE1Nn86nwm96xtRWJWrbsvZ3iRnvYid4PRbgB29kgQfXVnH1iRTGPwq6LM7BVAfEK; move 1; code 68a78df4188d0a556398e009a2672b89",
+   "height": 426,
+   "record": "4d4431fe0245b9ebee504a8f28804052e31fd78ca5ce03240e3d11f61a4b90b6df97a421490100000000b42e245b65c33059b89ce9389d037981b026f165c9fa001fdde9c1ce1a343740b5a9b108556bcc008dd9bc03638b25ff6a954ee58c003017e9eab2585a5f7c5001e995f045cbe804247dde2ba92a1eb0c5678d28abc6dfe70b91dbaa5160c62d83252cb95bb51b2111ee309f498bc83e6b78d9949da7d2f6b0c2eb7ab6836c9f1f00bb337e4e9ecd7c6eefa3753e77b9ab5ea6132135a51841d531a39034b5927b0662953bb3ec06308812eef86d047c9c148171a4379fe0721b148f4ff1b2d1eb09",
+   "text": "Mordinals move: send Mordinal #2 to 8BJfDGKoCkB771sCeisPLBa257XfN7REN2wEzDX8BuCYNwGpsgatUDv3zwxpBmH5qFJycbW3P83SDWZoow71iYxe4atsJSP; move 1; code 03eb1b42334e07cbe99ab396c0213a68",
    "accepted": true,
-   "id": "68a78df4188d0a556398e009a2672b89e19f18b72d0a1e9de44227b797249d7b"
+   "id": "03eb1b42334e07cbe99ab396c0213a68d6bdc1bbca9013ff1dddf1a70da1a4c1"
   },
   {
    "name": "move #2 on from the subaddress",
-   "height": 423,
-   "record": "4d4431fe025ad1fdc2cc3516f8b224f58c2fe84123703ad73576dcbb1f8d34f112d8d2496202000000018f5767e7781ce17fdd3e019c855e7fad63d4992fb4e0568233b5b0913b88dd9281ce827434e185943869ed4ae1411b3be79c5976d8ade204450c281cc67b763600117421824d99157c5e8220ec37c29121d54e1be06b382db9f91a70a1acc44d19941d377dba11155e9c2954ea7df8cd433db6571f914c387b37bbf7167772d21400965d1f084451fea4de66617221bf7cb4b6146310063b2f7eade273c83b2d390a60f6415b60302108e2a5a3263d9cea3fb3444abad235e8626bbba1744b8a2c0a",
-   "text": "Mordinals move: send Mordinal #2 to 42HUFTKdRjrMoY8hKf6rbJ6fE2hzBMHTiY7AxPhVCUY45H9N1qdUheUGpqTrQbiRnLCFKi3arao9RMcNEk2TC3ZK3Jdv8w7; move 2; code bfb1461aa4ebaeacb06784a348924d48",
+   "height": 426,
+   "record": "4d4431fe0245b9ebee504a8f28804052e31fd78ca5ce03240e3d11f61a4b90b6df97a421490200000001e995f045cbe804247dde2ba92a1eb0c5678d28abc6dfe70b91dbaa5160c62d83252cb95bb51b2111ee309f498bc83e6b78d9949da7d2f6b0c2eb7ab6836c9f1f0052ee0baa1a18ab16ed706c2e73696be75c65856be979c4f498818b20c044914a902995a93947dcae6322cf0b3a77440e67c97e71aa2c69c170a75f1e32e1641d00a1917c18b84ed8f2b972f84a138eda42386cdf12b6a64ffac6846680d38c4d097102b8838ad98e8c9c03eb33290695b72dc35cc79f472f1dca505dffaa6a400f",
+   "text": "Mordinals move: send Mordinal #2 to 44mPCCm5wvJ4qRgB45bW9QfhVTyhuSwqdhutKwmYMgELDUMdw88ixLTWAmwKyhvaLB3QkY2ZD47jNZMcRrMCviDq4Ku3HHY; move 2; code 93504d48941a9c92eeb583cabd2c4a1c",
    "accepted": true,
-   "id": "bfb1461aa4ebaeacb06784a348924d48676fcd9ff165591c8a0eec29b38b2790"
+   "id": "93504d48941a9c92eeb583cabd2c4a1c3035597d3180c04843f7ea0a1e390bbf"
   },
   {
    "name": "move #2 by a former owner",
-   "height": 423,
-   "record": "4d4431fe025ad1fdc2cc3516f8b224f58c2fe84123703ad73576dcbb1f8d34f112d8d249620000000000db02af8cb485e6e3288dd1f7cc0508ed7092ab93e0ea31cab784798f088886426ebd0e5569564613f0e529f9d06e75e21f76280ca5cac951181aba51d996c600018f5767e7781ce17fdd3e019c855e7fad63d4992fb4e0568233b5b0913b88dd9281ce827434e185943869ed4ae1411b3be79c5976d8ade204450c281cc67b763600ee366c01cab0c0716b43dac4c8f1a7a9674b2c7a896c3f726987dcff2173bb07e0c33d2cb31c1eab6238ee2c36ba23b51e910685c28096c020f8d530d1d7c80f",
-   "text": "Mordinals move: send Mordinal #2 to 87tJpr2WMtCNPShqkLbwxJW16nr9PbNE1Nn86nwm96xtRWJWrbsvZ3iRnvYid4PRbgB29kgQfXVnH1iRTGPwq6LM7BVAfEK; move 0; code c6558d943b699ee97932f193d4311df4",
+   "height": 426,
+   "record": "4d4431fe0245b9ebee504a8f28804052e31fd78ca5ce03240e3d11f61a4b90b6df97a421490000000000b42e245b65c33059b89ce9389d037981b026f165c9fa001fdde9c1ce1a343740b5a9b108556bcc008dd9bc03638b25ff6a954ee58c003017e9eab2585a5f7c5001e995f045cbe804247dde2ba92a1eb0c5678d28abc6dfe70b91dbaa5160c62d83252cb95bb51b2111ee309f498bc83e6b78d9949da7d2f6b0c2eb7ab6836c9f1f0044d6c2a25cbfd39b92e361242aaba3cc4a6e167bd303f52ea0f24d514862da068d4cac26949a8cdf3ef5120e91acb5412ee89443b2b4b15335e97dffa202bc0a",
+   "text": "Mordinals move: send Mordinal #2 to 8BJfDGKoCkB771sCeisPLBa257XfN7REN2wEzDX8BuCYNwGpsgatUDv3zwxpBmH5qFJycbW3P83SDWZoow71iYxe4atsJSP; move 0; code 53d124c1673f2456c355508ae487737f",
    "accepted": false,
    "error": "This Mordinal belongs to another address."
   }
  ],
  "final": {
-  "height": 423,
+  "height": 426,
   "claimed": [
    {
     "number": 0,
-    "owner": "43WadgJmuyF9LDehuyXBBhRonfoGPPoVGCYmiGrerBDPd32tkEwvRDZBP2oikakTzV2RgJvWFsAfYBCvY6GqEtgaLsi969n",
+    "owner": "47d3dbk9chAKPKArwkKgsmKK9wE8M4WWz9VQwESDUqcdM8jf3ujhCGo3afSRFBHzkzPFiscZQGBHWUpJvhiqGn9sCspJ2Ue",
     "seq": 2,
     "lot": null,
     "history": [
@@ -2343,7 +2344,7 @@
    },
    {
     "number": 1,
-    "owner": "42HUFTKdRjrMoY8hKf6rbJ6fE2hzBMHTiY7AxPhVCUY45H9N1qdUheUGpqTrQbiRnLCFKi3arao9RMcNEk2TC3ZK3Jdv8w7",
+    "owner": "44mPCCm5wvJ4qRgB45bW9QfhVTyhuSwqdhutKwmYMgELDUMdw88ixLTWAmwKyhvaLB3QkY2ZD47jNZMcRrMCviDq4Ku3HHY",
     "seq": 1,
     "lot": null,
     "history": [
@@ -2353,7 +2354,7 @@
    },
    {
     "number": 2,
-    "owner": "42HUFTKdRjrMoY8hKf6rbJ6fE2hzBMHTiY7AxPhVCUY45H9N1qdUheUGpqTrQbiRnLCFKi3arao9RMcNEk2TC3ZK3Jdv8w7",
+    "owner": "44mPCCm5wvJ4qRgB45bW9QfhVTyhuSwqdhutKwmYMgELDUMdw88ixLTWAmwKyhvaLB3QkY2ZD47jNZMcRrMCviDq4Ku3HHY",
     "seq": 3,
     "lot": null,
     "history": [
@@ -2364,7 +2365,7 @@
    },
    {
     "number": 3,
-    "owner": "42HUFTKdRjrMoY8hKf6rbJ6fE2hzBMHTiY7AxPhVCUY45H9N1qdUheUGpqTrQbiRnLCFKi3arao9RMcNEk2TC3ZK3Jdv8w7",
+    "owner": "44mPCCm5wvJ4qRgB45bW9QfhVTyhuSwqdhutKwmYMgELDUMdw88ixLTWAmwKyhvaLB3QkY2ZD47jNZMcRrMCviDq4Ku3HHY",
     "seq": 1,
     "lot": null,
     "history": [
@@ -2374,7 +2375,7 @@
    },
    {
     "number": 4,
-    "owner": "47xCwi5nwW3UfxTu77boYTf5KdzLgF2xHCoqNckMhJsxNxwgvmWQgLfQxqF5SiFuuj3DDhpjF78s9eHPGGoQonvGTju5NmF",
+    "owner": "49FvDt4kZjLEXQrRjeMCS7hNZhdTgcCRXc99yvqXkVZLVirAY7fohBGCboE6zCKFZrBZoAsP9CrRncEy6ubnbdRN95ndHdH",
     "seq": 0,
     "lot": null,
     "history": [
@@ -2384,45 +2385,45 @@
   ],
   "lots": [
    {
-    "id": "b887b34310d34505b31aadd361425d0f107bf7f8b0b416a33966461fb5ef90fe",
+    "id": "0824e19f15414abbcbe652dc7c0b565da6ea7c7ac07a669b0073d991bd5e02ab",
     "number": 1,
-    "seller": "49vUphtanm3eziq19XPzMmgiTr9xusEBiaucEiWaQzcDC7UnvPT8rPo4LTFi1AY6PWepgAt3WEcVnEZiTyEa1WRK16goDNA",
+    "seller": "48T8isznTz7G1QdnwNmvHvNh8wm5Hz4F16L9c2p64SHkBpmLNH3dRko16NnBPeFQ8LjirnqTpfRF54zzc9wJZdEjA8T3aE7",
     "price": "200000000000",
     "status": "sold",
-    "buyer": "42HUFTKdRjrMoY8hKf6rbJ6fE2hzBMHTiY7AxPhVCUY45H9N1qdUheUGpqTrQbiRnLCFKi3arao9RMcNEk2TC3ZK3Jdv8w7",
+    "buyer": "44mPCCm5wvJ4qRgB45bW9QfhVTyhuSwqdhutKwmYMgELDUMdw88ixLTWAmwKyhvaLB3QkY2ZD47jNZMcRrMCviDq4Ku3HHY",
     "reservations": 1
    },
    {
-    "id": "e0f0b96ecdafb463819bdc7b9232311f0f2fa29a49cb547d1a482ca623c3968c",
+    "id": "20a33cf813a63e3b3fbdc157fc8df67a3678455caec1dfe370b2b18ef8600e33",
     "number": 3,
-    "seller": "87tJpr2WMtCNPShqkLbwxJW16nr9PbNE1Nn86nwm96xtRWJWrbsvZ3iRnvYid4PRbgB29kgQfXVnH1iRTGPwq6LM7BVAfEK",
+    "seller": "8BJfDGKoCkB771sCeisPLBa257XfN7REN2wEzDX8BuCYNwGpsgatUDv3zwxpBmH5qFJycbW3P83SDWZoow71iYxe4atsJSP",
     "price": "500000000000",
     "status": "sold",
-    "buyer": "42HUFTKdRjrMoY8hKf6rbJ6fE2hzBMHTiY7AxPhVCUY45H9N1qdUheUGpqTrQbiRnLCFKi3arao9RMcNEk2TC3ZK3Jdv8w7",
+    "buyer": "44mPCCm5wvJ4qRgB45bW9QfhVTyhuSwqdhutKwmYMgELDUMdw88ixLTWAmwKyhvaLB3QkY2ZD47jNZMcRrMCviDq4Ku3HHY",
     "reservations": 1
    },
    {
-    "id": "00ba892bdce966812c00d9eaf49ba923ec628ad8e504351c6852b0434bfa7a84",
+    "id": "35bbdb09904bbea427cccb28afee999627faa9d28873020f560483d95ccf708a",
     "number": 0,
-    "seller": "43WadgJmuyF9LDehuyXBBhRonfoGPPoVGCYmiGrerBDPd32tkEwvRDZBP2oikakTzV2RgJvWFsAfYBCvY6GqEtgaLsi969n",
+    "seller": "47d3dbk9chAKPKArwkKgsmKK9wE8M4WWz9VQwESDUqcdM8jf3ujhCGo3afSRFBHzkzPFiscZQGBHWUpJvhiqGn9sCspJ2Ue",
     "price": "100000000000",
     "status": "sold",
-    "buyer": "84T6JjbvxJSZVzaAXRprwX1TqMtToZ2GzRqjo2dxbNFj7KtZ4S2trfaKPpP8diaiWwCYdzR2hZAJ8PKfaeKXVhrLDJv6cLm",
+    "buyer": "86C1sHBqoSfjZw37KU9ZrzgoPmNaf7cC42soNG1Po3FGhmBfk5YQD4q3xk5vh1W2H9178YpW2y33u4xDuSU43N6Y29rD58a",
     "reservations": 2
    },
    {
-    "id": "c2fff71ac0d309dae317f3fc37286762e9292c954b3448ee308e749b498f7e06",
+    "id": "af7ef7e55bf48e54b4e7ad62ba017dcbbec2ebb31e5dd3467dc41d1323cb1a92",
     "number": 0,
-    "seller": "84T6JjbvxJSZVzaAXRprwX1TqMtToZ2GzRqjo2dxbNFj7KtZ4S2trfaKPpP8diaiWwCYdzR2hZAJ8PKfaeKXVhrLDJv6cLm",
+    "seller": "86C1sHBqoSfjZw37KU9ZrzgoPmNaf7cC42soNG1Po3FGhmBfk5YQD4q3xk5vh1W2H9178YpW2y33u4xDuSU43N6Y29rD58a",
     "price": "100000000000",
     "status": "sold",
-    "buyer": "43WadgJmuyF9LDehuyXBBhRonfoGPPoVGCYmiGrerBDPd32tkEwvRDZBP2oikakTzV2RgJvWFsAfYBCvY6GqEtgaLsi969n",
+    "buyer": "47d3dbk9chAKPKArwkKgsmKK9wE8M4WWz9VQwESDUqcdM8jf3ujhCGo3afSRFBHzkzPFiscZQGBHWUpJvhiqGn9sCspJ2Ue",
     "reservations": 1
    },
    {
-    "id": "37a9d1c9aded3e513a9772175a44517cf461119ab4153e63088707e606f19cc4",
+    "id": "62a0425c2a6840f1377ae41e00b43d1f00842f299bb14c276c93555c088bef79",
     "number": 2,
-    "seller": "49vUphtanm3eziq19XPzMmgiTr9xusEBiaucEiWaQzcDC7UnvPT8rPo4LTFi1AY6PWepgAt3WEcVnEZiTyEa1WRK16goDNA",
+    "seller": "48T8isznTz7G1QdnwNmvHvNh8wm5Hz4F16L9c2p64SHkBpmLNH3dRko16NnBPeFQ8LjirnqTpfRF54zzc9wJZdEjA8T3aE7",
     "price": "10000000000",
     "status": "cancelled",
     "buyer": null,
@@ -2430,11 +2431,11 @@
    }
   ],
   "payments": [
-   "3387ea78bf166ccbb3bdbbe35a3af01f646ed0c3b9ff6bbe01f859b6dc2931be",
-   "734dc38f994a568f3d343cf8923fbdd9652a0b2edf06becc011216d7a443fd1c",
-   "75b578c392e6b5a5ffdf81b608987c168ff991cd2a826dc70f5b318aa77777d0",
-   "91657b8cbf3d7ae044bf00b087b79116f37d9ea62db33fead84d89e80d609f45",
-   "c5381140b396835fa241b73029f5fbf7d4f960dab2b2dd3f12e84d5c1a22403a"
+   "0a14b2c14109897bc0a6f680add13e85cc0e43bc939c1ef50578fc3e8dd17a30",
+   "163a0271647d16715acdfc84a3e95d5192fc0ed4e40a9333d89204e8961f9daa",
+   "36758f12b741f6cd9758474f67f2922f5fe014ec1d783c2a8b0e2c69ac5ad90a",
+   "a69a517a60cc18fc9ab712d320e9e81fb8f3418a2621c0443562e831fdcff399",
+   "beb0a4a365ab6230e53bcfaa48072393a61a9794ca203279753025024f6a41b1"
   ]
  }
 }

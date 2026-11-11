@@ -142,7 +142,8 @@ comes back to an earlier owner.
 ## 5. Trade
 
 1. **List.** The seller (current owner, right `seq`, not already listed) signs a price and a
-   last block. Lowest price 0.001 XMR. The fee address cannot sell.
+   last block. Lowest price 0.001 XMR. The last block is at most 21,600 blocks (about 30
+   days) after the block of the listing record. The fee address cannot sell.
 2. **Reserve.** A buyer signs a reservation naming the address that receives the Mordinal
    and a last block to pay by (`payBy`): at most 30 blocks ahead and not after the listing
    ends. The reservation holds the listing until block `payBy + 10`: until then nobody
@@ -246,8 +247,10 @@ second proof of the same payment is a different record with the same effect.
     the transaction carries exactly one additional key per output;
   - the output key fits the payee's address, the view tag is right and the amount fits the
     output's commitment.
-- Each payment transaction is in a block, not before the reservation and not after the buy
-  record. A transaction counts for one sale only.
+- Each payment transaction is in a block at or after the reservation's block and at or before
+  the buy record's block. Only block heights are compared: within one block, the order of
+  the payment, the reservation and the buy record does not matter. A transaction counts for
+  one sale only.
 - A coin counts for one sale only: an output key paid to the same address a second time
   does not count, because the wallet can spend only one of the two. The same output key at
   a different address is a different coin and is judged on its own.
@@ -296,6 +299,7 @@ kept for that.
 | First mint block | not set | ledger setup | open |
 | Marketplace fee cap | 5% on top | `RULES.marketFeeCapBps` | decided |
 | Lowest price | 0.001 XMR | `RULES.minPrice` | decided |
+| Longest listing | 21,600 blocks after its record | `RULES.maxListing` | decided |
 | Reservation length | at most 30 blocks | `RULES.maxReserve` | decided |
 | Time to record a paid purchase | 10 blocks after the pay-by block | `RULES.settle` | draft |
 | Entries per buy | 2 or 3, one per payee, from 1 to 3 transactions | `RULES.maxPayments` | decided |
@@ -307,7 +311,8 @@ kept for that.
 
 ## 8. How records travel
 
-A record counts only when it is in a Monero block at or after the start block.
+A record counts only when it is in a Monero block after the start block (the start block itself is read for its
+hash only).
 
 ```
 tx_extra = 01 <transaction public key 32>  [02 09 01 <payment id 8>]
@@ -316,7 +321,8 @@ tx_extra = 01 <transaction public key 32>  [02 09 01 <payment id 8>]
 
 - The record is cut into chunks of 254 bytes; only the last may be shorter and none is
   empty. A transaction carries a record only if its whole `tx_extra` parses exactly this
-  way, is at most 1,060 bytes, and the joined chunks start with `"MD1" 0xfe` and are at
+  way, in this order (the public key first, then the payment id if there is one, then all chunks with nothing after
+  them), is at most 1,060 bytes, and the joined chunks start with `"MD1" 0xfe` and are at
   most 1,000 bytes. Anything else is not a record and is skipped.
 - One transaction carries one record. Who made the transaction and what it pays do not
   matter: a record stands on its own signature or payments, so anyone can carry it. A
@@ -324,7 +330,7 @@ tx_extra = 01 <transaction public key 32>  [02 09 01 <payment id 8>]
   cannot change a record.
 - Records are applied in chain order: by block, then by the transaction's position in the
   block. A record that fails a check changes nothing, wherever it is.
-- A buy record names payments that must be in a block and not after the buy record
+- A buy record names payments that must be in a block and not after the buy record's block
   (section 5). A relay holds a buy record until its payments are in a block.
 - When blocks are replaced, records in the replaced blocks are undone and the records of
   the new blocks applied; the result depends only on the chain.

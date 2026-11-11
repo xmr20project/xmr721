@@ -225,3 +225,23 @@ Wallets:
 The saved lab cases hold no transaction key.
 
 Not run: anything on mainnet or stagenet; the Feather and Cake apps themselves.
+
+## Review before launch (11 November 2026)
+
+An independent read of the rules, the reader, the relay and the relay's wallet tool found these; all are fixed, each
+with a test in `reader/tests/review.test.mjs` that fails on the code before the fix:
+
+- A buy record naming a block's mining reward transaction as a payment made every reader stop at that block: the
+  node lists the reward apart from the block's transactions. The reader now accepts the reward as part of its block, and
+  the rules refuse it as a payment like any other non-RingCT transaction.
+- The relay's shared limits (records waiting, records a day) applied to purchases, so a seller could crowd out the
+  buyer's purchase after being paid. Purchases now skip those limits, go first, and two coins are kept for them; other
+  records also count against a per-caller daily limit.
+- A transaction paying two relay fees counted for one record only. Fees are now counted per output.
+- RULES.md and the code differed on the start block, the order of `tx_extra` fields and payment heights. The text now
+  says what the code does (records after the start block; fields in their fixed order, now enforced; payment and records
+  compared by block height only).
+- A listing could stay open almost forever, which let reservations pile up. A listing now ends at most 21,600 blocks
+  (about 30 days) after its record.
+- The message, claim and payment-proof signers in the rule library now mix the key and the message into their random
+  nonce, as the payment proof already did. `/pending` no longer does quadratic work.

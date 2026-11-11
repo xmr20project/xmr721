@@ -11,9 +11,9 @@ export function createChain(node,{fetch:f=fetch,timeout=30000}={}){
   // The newest block.
   async info(){const i=await rpc('get_info');return {height:i.height-1,hash:i.top_block_hash,nettype:i.nettype,offline:Boolean(i.offline)};},
   async header(height){return header((await rpc('get_block_header_by_height',{height})).block_header);},
-  // A block's ordinary transactions in block order (the mining reward transaction is not among them).
+  // A block's ordinary transactions in block order, and apart from them the block's mining reward transaction.
   async block(height){const r=await rpc('get_block',{height}),b=header(r.block_header);if(b.height!==height)throw Error('The Monero node returned another block');
-   const txids=r.tx_hashes||[];if(txids.some(t=>!HEX32.test(t)))throw Error('The Monero node returned a malformed block');return {...b,txids};},
+   const txids=r.tx_hashes||[],minerTx=r.miner_tx_hash||null;if(txids.some(t=>!HEX32.test(t))||(minerTx!=null&&!HEX32.test(minerTx)))throw Error('The Monero node returned a malformed block');return {...b,txids,minerTx};},
   // Transactions by id -> Map(txid -> {txid, inPool, height, tx}). Unknown ids are simply absent.
   async txs(ids){const out=new Map();
    for(let i=0;i<ids.length;i+=100){const part=ids.slice(i,i+100),v=await post('/get_transactions',{txs_hashes:part,decode_as_json:true,prune:true});

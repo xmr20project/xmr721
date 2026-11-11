@@ -70,7 +70,7 @@ export function verifySpendSignature(message,address,signature,network='mainnet'
 // Signing with a secret spend key (the XMR20 wallet can sign for its own address; tests use throwaway keys).
 export function signWithSpendKey(message,{spend,view},secret,random=n=>crypto.getRandomValues(new Uint8Array(n))){
  const p=le(secret)%L;if(p===0n)throw Error('Invalid secret key');if(hex(G.multiply(p).toRawBytes())!==hex(spend))throw Error('This key does not belong to the address.');
- const h=messageHash(message,spend,view,0);let k=0n;while(k===0n)k=le(random(64))%L;const R=G.multiply(k).toRawBytes();
+ const h=messageHash(message,spend,view,0);let k=0n;while(k===0n)k=Hs(concat(new TextEncoder().encode('mordinals-message-nonce'),random(64),leBytes(p),h));const R=G.multiply(k).toRawBytes();
  const c=Hs(concat(h,spend,R)),r=((k-c*p)%L+L)%L;return 'SigV2'+base58Encode(concat(leBytes(c),leBytes(r)));}
 // Keys of subaddress (account, index) from the private view key and the public/secret spend key, as wallet2 derives them.
 export function subaddressSecret(viewSecret,account,index){if(!account&&!index)return 0n;

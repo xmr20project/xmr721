@@ -27,7 +27,7 @@ test('a mint is carried once its fee reached the relay wallet, and the fee coin 
   await writeFile(join(dir,'owners.jsonl'),'');
   const start=await tip();
   service=await startService({owners:join(dir,'owners.jsonl'),domain:DOMAIN,feeAddress:fee.address,node:chain.url,start,mintFrom:start+1,state:join(dir,'state'),port:0,checkpointEvery:5,carrierBin:CARRIER,carrierState:join(dir,'carrier'),
-   carrierNetwork:'offline-fakechain',carrierStart:1,fees:{mint:FEE,collection:FEE},limits:{resendMs:0,settleBlocks:6,minReady:1,splitInto:4,margin:2},testHooks:true,log:()=>{}});
+   carrierNetwork:'offline-fakechain',carrierStart:1,fees:{mint:FEE,collection:FEE},limits:{resendMs:0,settleBlocks:6,minReady:1,splitInto:4,margin:2,buyReserve:0},testHooks:true,log:()=>{}});
   const base='http://127.0.0.1:'+service.port,L=()=>service.reader.ledger,carrier=service.relay.carrier;
   const post=async(path,body={})=>{const r=await fetch(base+path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});return {status:r.status,body:await r.json()};};
   const pass=async()=>{const r=await post('/test/step');assert.equal(r.status,200,JSON.stringify(r.body));return r.body;};

@@ -1,6 +1,6 @@
 {
  "execution": "SIMULATED (own offline fakechain; real carrier transactions, real wallet2 signatures, proofs and payments; throwaway wallets)",
- "date": "2026-11-11T05:23:21.541Z",
+ "date": "2026-11-11T12:29:47.385Z",
  "steps": [
   {
    "name": "relay without coins",
@@ -9,7 +9,7 @@
   },
   {
    "name": "first record through the relay",
-   "txid": "6efc0b51a79433089fba2ee13b92ba63d0030913a524d133175180f19432ed7e",
+   "txid": "eb82ef59432b7347ec1ec0774822da246bbc3e42bee2ffa1525a7ecf8dc47531",
    "height": 326,
    "recordBytes": 361,
    "extraBytes": 412,

@@ -36,7 +36,7 @@ export const viewTag=(deriv,index=0)=>keccak_256(concat(VIEW_TAG,deriv,varint(in
 export function outputSecret({viewSecret,spendSecret,txPub,index=0,subScalar=0n}){
  return (outputScalar(derivation(viewSecret,txPub),index)+le(bytes(spendSecret))+subScalar)%L;}
 export function signWithOutputKey(hash,x,random=n=>crypto.getRandomValues(new Uint8Array(n))){
- if(x<=0n||x>=L)throw Error('Invalid key');const P=G.multiply(x).toRawBytes();let k=0n;while(k===0n)k=le(random(64))%L;
+ if(x<=0n||x>=L)throw Error('Invalid key');const P=G.multiply(x).toRawBytes();let k=0n;while(k===0n)k=Hs(concat(enc.encode('mordinals-claim-nonce'),random(64),leBytes(x),hash,P));
  const c=Hs(concat(hash,P,G.multiply(k).toRawBytes())),r=((k-c*x)%L+L)%L;return {c:leBytes(c),r:leBytes(r),key:hex(P)};}
 export function verifyOutputKeySignature(hash,outputKey,c,r){
  try{const P=usableSpendKey(bytes(outputKey));if(!P)return false;const cs=le(c),rs=le(r);if(cs===0n||cs>=L||rs>=L)return false;
@@ -86,7 +86,7 @@ export function ownsOutput({D,spend,outputKey,index=0}){
 export function inProofFromViewKey({txid,txPub,address,viewSecret,message='',random=n=>crypto.getRandomValues(new Uint8Array(n))}){
  const a=le(bytes(viewSecret))%L,sub=address.kind==='sub',B=sub?point(address.spend):G;
  if(a===0n||hex(B.multiply(a).toRawBytes())!==hex(bytes(address.view)))throw Error('This private view key does not belong to this address.');
- const R=point(txPub),D=R.multiply(a).toRawBytes();let k=0n;while(k===0n)k=le(random(64))%L;
+ const R=point(txPub),D=R.multiply(a).toRawBytes();let k=0n;while(k===0n)k=Hs(concat(enc.encode('mordinals-inproof-nonce'),random(64),leBytes(a),unhex(txid),enc.encode(message),bytes(txPub)));
  const prefix=keccak_256(concat(unhex(txid),enc.encode(message)));
  const c=Hs(concat(prefix,D,B.multiply(k).toRawBytes(),R.multiply(k).toRawBytes(),SEP,bytes(address.view),bytes(txPub),sub?bytes(address.spend):new Uint8Array(32)));
  return formatInProof({D,c:leBytes(c),r:leBytes(((k-c*a)%L+L)%L)});}

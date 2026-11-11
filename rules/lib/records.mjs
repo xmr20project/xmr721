@@ -31,7 +31,8 @@ export const MAX_RECORD=1000,NO_COLLECTION='0'.repeat(64),MAX_EDITIONS=10000,MAX
 // Draft parameters. The fee address is given to the ledger; rate, cap, minimum price and window are the draft values of RULES.md section 7.
 // settle: blocks after a reservation's pay-by block in which the listing stays held for it, so a buyer who paid in time
 // can still get the purchase recorded before anyone else may reserve.
-export const RULES={feeBps:500,marketFeeCapBps:500,minPrice:10n**9n,maxReserve:30,settle:10,maxPayments:3,maxKeys:17};
+// maxListing: a listing ends at most this many blocks (about 30 days) after the block of its record.
+export const RULES={feeBps:500,marketFeeCapBps:500,minPrice:10n**9n,maxReserve:30,settle:10,maxPayments:3,maxKeys:17,maxListing:21600};
 // The last block at which a reservation still holds its listing (no other reservation, no cancel).
 export const heldUntil=reservation=>reservation.payBy+RULES.settle;
 export const SUFFIX=['','\n','\r\n'],U64=(1n<<64n)-1n,TX_EXTRA_LIMIT=1060;

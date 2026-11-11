@@ -125,6 +125,7 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
    if(m.lot)throw Error('This Mordinal is listed for sale; cancel the listing first.');signedBy(who);
    if(op===OP.move){if(b.to===m.owner)throw Error('This address already owns the Mordinal.');return {...out,mordinal:m};}
    if(b.until<tip)throw Error('This listing expired; prepare and sign it again.');
+   if(b.until>tip+RULES.maxListing)throw Error(`A listing ends at most ${RULES.maxListing} blocks (about 30 days) after its block.`);
    if(b.price<RULES.minPrice)throw Error(`The lowest price is ${formatXmr(RULES.minPrice)} XMR.`);
    if(b.seller===fee)throw Error('The fee address cannot sell.');return {...out,mordinal:m};}
   const lot=lotOf(b.lot);

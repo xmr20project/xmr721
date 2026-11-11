@@ -12,14 +12,15 @@ export function unframe(extra){
  let at=0,pubkeys=0,paymentIds=0;const chunks=[];
  while(at<e.length){
   const tag=e[at++];
-  if(tag===1){if(++pubkeys!==1||at+32>e.length)return null;at+=32;continue;}
+  // The order is fixed: the public key first, then a payment id if there is one, then the chunks and nothing after them.
+  if(tag===1){if(++pubkeys!==1||at!==1||at+32>e.length)return null;at+=32;continue;}
   if(tag!==2)return null;
   let len=0,shift=0;
   for(;;){if(at>=e.length||shift>7)return null;const n=e[at++];len|=(n&127)<<shift;if(n<128){if(shift!==0&&n===0)return null;break;}shift+=7;}
   if(len<1||len>255||at+len>e.length)return null;
   const d=e.subarray(at,at+len);at+=len;
   if(d[0]===127)chunks.push(d.subarray(1));
-  else if(++paymentIds!==1||d[0]!==1||d.length!==9)return null;}
+  else if(++paymentIds!==1||chunks.length||d[0]!==1||d.length!==9)return null;}
  if(pubkeys!==1||!chunks.length)return null;
  const size=chunks.reduce((n,c)=>n+c.length,0);if(size<5||size>MAX_RECORD)return null;
  // Canonical chunking: every chunk is full except the last, and none is empty.

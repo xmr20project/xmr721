@@ -21,6 +21,7 @@
 //   refused  the rules refused it (before sending, or in the block)
 //   stuck    not mined after a long time; needs a person
 import {execFile} from 'node:child_process';
+import {createHash,randomBytes} from 'node:crypto';
 import {existsSync,mkdirSync,readdirSync,readFileSync,renameSync,unlinkSync,openSync,writeSync,fsyncSync,closeSync} from 'node:fs';
 import {join} from 'node:path';
 import {OP,decodeRecord,recordId,signerOf} from '../../rules/lib/records.mjs';
@@ -40,7 +41,9 @@ export function createCarrier({bin,stateDir,node,network='offline-fakechain',sta
  return {init:()=>run('init'),status:()=>run('status'),carry:record=>run('carry',record),split:n=>run('split',n),publish:blob=>run('publish',blob),address:n=>run('address',n)};}
 
 const FINAL=new Set(['done','refused','stuck']);
-export const DEFAULT_LIMITS={perSigner:3,waiting:200,perDay:2000,margin:5,resendMs:600000,stuckBlocks:720,holdBlocks:60,settleBlocks:10,sendAgain:2,minReady:3,splitInto:8,keepMs:7*86400000,payBlocks:30,unpaid:2000,payAddresses:5000};
+export const DEFAULT_LIMITS={perSigner:3,waiting:200,perDay:2000,margin:5,resendMs:600000,stuckBlocks:720,holdBlocks:60,settleBlocks:10,sendAgain:2,minReady:3,splitInto:8,keepMs:7*86400000,payBlocks:30,unpaid:2000,payAddresses:5000,buyReserve:2,perCallerDay:200};
+// A purchase is never held back by the shared limits: once a buyer has paid, the record that makes the Mordinal
+// theirs goes first, with coins kept back for it (buyReserve), so nobody can crowd it out until the reservation runs out.
 
 export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,limits:given={},fees:asked={},now=()=>Date.now(),log=()=>{}}){
  const limits={...DEFAULT_LIMITS,...given},jobsDir=join(dir,'jobs'),splitFile=join(dir,'split.json'),payFile=join(dir,'pay.json');
@@ -53,13 +56,19 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
  // Fee payments: which record each subaddress was given to (and from which block its payments count), and the
  // payments already counted for a record that was sent.
  const pay=existsSync(payFile)?JSON.parse(readFileSync(payFile,'utf8')):{addresses:{},used:[]};const used=new Set(pay.used);
+ // Callers are counted by a salted hash of their address, never by the address itself.
+ const saltFile=join(dir,'caller-salt');if(!existsSync(saltFile))write(saltFile,randomBytes(16).toString('hex'));const salt=JSON.parse(readFileSync(saltFile,'utf8'));
+ const callerKey=c=>c?createHash('sha256').update(salt+':'+c).digest('hex').slice(0,24):null;
+ let ready=null;   // spendable coins at the last check; null until the first one
  function payAddress(id,tip,t){
   for(const [n,e] of Object.entries(pay.addresses))if(e.id===id)return Number(n);
   for(let n=1;n<=limits.payAddresses;n++){const e=pay.addresses[n],j=e&&jobs.get(e.id);
    // A subaddress is given out again only when its record is long gone, so a late payment is not counted for another record.
    if(!e||(!j&&t-e.at>limits.keepMs)){pay.addresses[n]={id,from:tip,at:t};write(payFile,pay);return n;}}
   throw bad('The relay is busy. Try again in a few minutes.',503);}
- const paidFor=(j,payments)=>{const e=pay.addresses[j.pay.index];return e&&e.id===j.id?payments.filter(p=>p.index===j.pay.index&&p.height>=e.from&&!used.has(p.txid)):[];};
+ // A fee payment is one output of a transaction: one transaction may pay several records' fees.
+ const outKey=p=>p.txid+':'+(p.out??0);
+ const paidFor=(j,payments)=>{const e=pay.addresses[j.pay.index];return e&&e.id===j.id?payments.filter(p=>p.index===j.pay.index&&p.height>=e.from&&!used.has(outKey(p))):[];};
  const save=j=>write(join(jobsDir,j.id+'.json'),j),drop=j=>{jobs.delete(j.id);try{unlinkSync(join(jobsDir,j.id+'.json'));}catch{}};
  const waiting=()=>[...jobs.values()].filter(j=>!FINAL.has(j.state));
  const view=j=>({id:j.id,state:j.state,op:j.op,number:j.number,txid:j.txid||null,error:j.error||null,note:j.note||null,...(j.state==='unpaid'?{pay:{address:j.pay.address,amount:j.pay.amount,payBy:j.payBy}}:{})});
@@ -96,19 +105,21 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   const signer=signerOf(d.op,b)||(d.op===OP.claim?b.to:l?.reservations.at(-1)?.buyer)||'';
   return {number,signer};}
  async function send(j){
+  // While only the coins kept for purchases are left, other records wait.
+  if(j.op!==OP.buy&&j.state!=='built'&&ready!=null&&ready<=limits.buyReserve){j.note='Waiting for a coin of the relay; purchases go first.';save(j);return j;}
   try{
-   if(j.state!=='built'){const t=await carrier.carry(j.record);j.txid=t.txid;j.blob=t.blob;j.fee=t.fee;j.state='built';j.note=null;save(j);}
+   if(j.state!=='built'){const t=await carrier.carry(j.record);if(ready!=null)ready=Math.max(0,ready-1);j.txid=t.txid;j.blob=t.blob;j.fee=t.fee;j.state='built';j.note=null;save(j);}
    await carrier.publish(j.blob);j.state='sent';j.sentAt=now();j.sentHeight=reader.height;j.note=null;save(j);}
   catch(e){j.note=String(e.message).slice(0,200);j.tries=(j.tries||0)+1;save(j);log({job:j.id,note:j.note});}
   return j;}
 
- async function submit(recordHex){
+ async function submit(recordHex,{caller=null}={}){
   if(typeof recordHex!=='string'||!/^([0-9a-f]{2})+$/.test(recordHex)||recordHex.length>2*MAX_RECORD)throw bad('A record is hexadecimal and at most '+MAX_RECORD+' bytes.');
   const bytes=unhex(recordHex),d=decodeRecord(bytes,network),id=recordId(domain,d.bodyBytes);
   const known=jobs.get(id);if(known&&known.state!=='refused')return view(known);
   const entry=reader.entryById(id);if(entry)return {id,state:'done',op:d.op,txid:entry.txid,error:null,note:null};
   // The rules' own answers go back as they are; a node that cannot be reached is the relay's trouble, not the record's.
-  let ready;try{({ready}=await judge(bytes,d,{fresh:true}));}catch(e){if(!e.rule&&!e.status)e.status=503;throw e;}
+  let isReady;try{({ready:isReady}=await judge(bytes,d,{fresh:true}));}catch(e){if(!e.rule&&!e.status)e.status=503;throw e;}
   const {number,signer}=describe(d),tip=reader.height;
   if(d.op===OP.reserve&&d.body.payBy<tip+limits.margin)throw bad('This reservation would run out before it reaches a block. Reserve again.');
   if(d.op===OP.list&&d.body.until<tip+limits.margin)throw bad('This listing would end before it reaches a block. Choose a later end.');
@@ -116,10 +127,13 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   if(number!=null&&open.some(j=>j.number===number))throw bad('Another record for this Mordinal is waiting for a block. Try again in a few minutes.',429);
   if(price&&all.length-open.length>=limits.unpaid)throw bad('The relay is busy. Try again in a few minutes.',503);
   if(all.filter(j=>j.signer===signer).length>=limits.perSigner)throw bad('This address already has '+limits.perSigner+' records waiting for a block. Try again in a few minutes.',429);
-  if(open.length>=limits.waiting)throw bad('The relay is busy. Try again in a few minutes.',503);
-  const day=now()-86400000;if([...jobs.values()].filter(j=>j.createdAt>day&&j.txid).length>=limits.perDay)throw bad('The relay reached its daily limit. Try again later, or publish the record yourself.',503);
+  const day=now()-86400000,who=callerKey(caller);
+  if(d.op!==OP.buy){
+   if(open.length>=limits.waiting)throw bad('The relay is busy. Try again in a few minutes.',503);
+   if([...jobs.values()].filter(j=>j.createdAt>day&&j.txid&&j.op!==OP.buy).length>=limits.perDay)throw bad('The relay reached its daily limit. Try again later, or publish the record yourself.',503);
+   if(who&&[...jobs.values()].filter(j=>j.caller===who&&j.createdAt>day).length>=limits.perCallerDay)throw bad('This connection sent many records today. Try again tomorrow, or publish the record yourself.',429);}
   if(known)drop(known);
-  const j={id,record:recordHex,op:d.op,number,signer,state:ready?'queued':'held',createdAt:now(),createdHeight:tip};
+  const j={id,record:recordHex,op:d.op,number,signer,caller:who,state:isReady?'queued':'held',createdAt:now(),createdHeight:tip};
   if(price){
    // The subaddress is saved by the carrier before it is given out, so every later scan looks for payments to it.
    const index=payAddress(id,tip,j.createdAt),{address}=await carrier.address(index);
@@ -132,7 +146,8 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   const tip=reader.height,t=now();let asked=null,unknown=null,payments=null;
   const received=async()=>payments??=((await carrier.status()).payments||[]);
   const missing=async txid=>{if(!asked?.has(txid)){const ids=[...new Set([...jobs.values()].filter(j=>j.state==='sent').map(j=>j.txid).concat([txid]))],got=await chain.txs(ids);asked=new Set(ids);unknown=new Set(ids.filter(i=>!got.has(i)));}return unknown.has(txid);};
-  for(const j of [...jobs.values()]){
+  // Purchases first.
+  for(const j of [...jobs.values()].sort((a,b)=>(b.op===OP.buy)-(a.op===OP.buy))){
    try{
     if(j.state==='done'){
      // A block that held this record can still be replaced for a while.
@@ -156,8 +171,9 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
      if(sum<BigInt(j.pay.amount)){if(tip>j.payBy)refuse(j,'The relay fee was not paid in time. Nothing was sent. A payment that arrives late counts when the same record is sent again.');continue;}
      const bytes=unhex(j.record);
      try{await judge(bytes,decodeRecord(bytes,network));}catch(e){if(e.rule){refuse(j,e.message);log({job:j.id,paidButRefused:got.map(p=>p.txid)});continue;}throw e;}
-     for(const p of got)used.add(p.txid);pay.used=[...used];write(payFile,pay);
-     j.state='queued';j.paid=got.map(p=>p.txid);j.createdHeight=tip;save(j);await send(j);continue;}
+     // The job is saved as paid before the payment is marked used, so a crash in between keeps the fee with this record.
+     j.state='queued';j.paid=got.map(outKey);j.createdHeight=tip;save(j);
+     for(const p of got)used.add(outKey(p));pay.used=[...used];write(payFile,pay);await send(j);continue;}
     if(j.state==='queued'||j.state==='held'){
      if(j.state==='queued'&&tip-j.createdHeight>limits.stuckBlocks){j.state='stuck';j.endedAt=t;save(j);log({job:j.id,stuck:true});continue;}
      const bytes=unhex(j.record),d=decodeRecord(bytes,network);let ready;
@@ -178,7 +194,7 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
    if(split){const got=await chain.txs([split.txid]),s=got.get(split.txid);
     if(s&&!s.inPool){split=null;try{unlinkSync(splitFile);}catch{}}
     else if(!s&&t-split.sentAt>limits.resendMs){await carrier.publish(split.blob);split.sentAt=t;write(splitFile,split);}}
-   const status=await carrier.status();
+   const status=await carrier.status();ready=status.ready;
    if(!split&&status.ready<limits.minReady&&status.ready>0){
     try{const s=await carrier.split(limits.splitInto);split={txid:s.txid,blob:s.blob,sentAt:t};write(splitFile,split);await carrier.publish(s.blob);log({split:s.txid});}
     catch(e){log({coins:String(e.message).slice(0,200)});}}

@@ -94,7 +94,7 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
  async function lookup(txids,upTo=null){const found=await chain.txs([...new Set(txids)]),out=[];
   for(const id of new Set(txids)){const t=found.get(id);if(!t)continue;const height=t.inPool?null:t.height;
    if(upTo!=null&&(height==null||height>upTo))continue;
-   if(upTo!=null&&height>start&&height<=tipBlock().height){const b=await chain.block(height);if(b.hash!==blocks[height-start-1].hash||!b.txids.includes(id))throw changed(height);}
+   if(upTo!=null&&height>start&&height<=tipBlock().height){const b=await chain.block(height);if(b.hash!==blocks[height-start-1].hash||!(b.txids.includes(id)||b.minerTx===id))throw changed(height);}
    out.push({txid:id,height,tx:slim(t.tx)});}return out;}
  const changed=height=>Error('The Monero node changed its answer for block '+height+'; trying again');
  async function judge(block,pos,txid,record){
@@ -146,6 +146,6 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
    if(fresh.length){const got=await chain.txs(fresh);for(const id of fresh){const t=got.get(id);let v=null;
     if(t){const record=unframe(t.tx.extra);if(record){try{const d=decodeRecord(record,network);v={txid:id,record:hex(record),op:d.op,id:recordId(domain,d.bodyBytes)};}catch{}}}
     pool.seen.set(id,v);}}
-   for(const id of [...pool.seen.keys()])if(!ids.includes(id))pool.seen.delete(id);
+   const now=new Set(ids);for(const id of [...pool.seen.keys()])if(!now.has(id))pool.seen.delete(id);
    return ids.map(i=>pool.seen.get(i)).filter(Boolean);}};
 }

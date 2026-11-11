@@ -331,7 +331,7 @@ async fn run(dir: &Path, op: &str, arg: Option<&str>) -> Result<J> {
             w.refresh(&r).await?;
             let coins = w.usable(MIN_INPUT);
             let balance: u128 = w.owned.iter().filter(|(i, _)| !w.spent.contains(*i)).map(|(_, o)| u128::from(o.commitment().amount)).sum();
-            let payments: Vec<J> = w.payments.iter().map(|((t, _), (s, a, h))| json!({"index":s,"amount":a.to_string(),"txid":hex::encode(t),"height":h})).collect();
+            let payments: Vec<J> = w.payments.iter().map(|((t, o), (s, a, h))| json!({"index":s,"amount":a.to_string(),"txid":hex::encode(t),"out":o,"height":h})).collect();
             Ok(json!({"address":w.address().to_string(),"tip":w.tip,"balance":balance.to_string(),"coins":w.owned.len(),"ready":coins.len(),"subaddresses":w.subs,"payments":payments}))
         }
         "address" => {
