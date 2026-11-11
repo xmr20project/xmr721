@@ -29,12 +29,16 @@ export function fakeChain({start=100,time=1700000000}={}){
  return c;}
 
 // A carrier wallet with a number of coins; each record or split spends one.
-export function fakeCarrier(chain,{coins=5}={}){
- let ready=coins,n=0;const made=[];
+// `subaddress(n)` gives the address of the relay wallet's subaddress n (for fee payments); `paid({index,amount,txid})`
+// tells the stand-in about a payment, which it reports once that transaction is in a block.
+export function fakeCarrier(chain,{coins=5,subaddress=n=>'relay subaddress '+n}={}){
+ let ready=coins,n=0,subs=0;const made=[],payments=[];
+ const settled=async()=>{if(!payments.length)return [];const got=await chain.txs(payments.map(p=>p.txid));return payments.filter(p=>got.get(p.txid)&&!got.get(p.txid).inPool).map(p=>({index:p.index,amount:p.amount,txid:p.txid,height:got.get(p.txid).height}));};
  const tx=extra=>{const txid=sha('carrier tx '+n++ +randomBytes(8).toString('hex'));return {txid,blob:Buffer.from(JSON.stringify({txid,extra})).toString('hex'),fee:'30000000',extraBytes:extra.length,bytes:2000+extra.length};};
- return {made,get ready(){return ready;},set ready(v){ready=v;},
+ return {made,get ready(){return ready;},set ready(v){ready=v;},get subs(){return subs;},subaddress,paid:p=>{payments.push({index:p.index,amount:String(p.amount),txid:p.txid});},
+  address:async k=>{k=Number(k);if(!(k>=1))throw Error('address number');subs=Math.max(subs,k);return {address:subaddress(k),index:k};},
   init:async()=>({address:'carrier'}),
-  status:async()=>({address:'carrier',tip:chain.tip,balance:String(ready*10_000_000_000),coins:ready,ready}),
+  status:async()=>({address:'carrier',tip:chain.tip,balance:String(ready*10_000_000_000),coins:ready,ready,payments:await settled()}),
   carry:async recordHex=>{if(ready<1)throw Error('No coin of this wallet can pay for a transaction now (coins unlock 10 blocks after they arrive)');ready--;
    const t=tx([...frame(unhex(recordHex),randomBytes(32))]);made.push(t.txid);return t;},
   split:async k=>{ready+=k-1;return tx([1,...randomBytes(32)]);},

@@ -331,7 +331,7 @@ test('the service answers wallets and pages, and the check tools agree with it',
  const next=async o=>{chain.mine([],o);const r=await post('/test/step',{});assert.equal(r.status,200,JSON.stringify(r.body));return r.body;};
  try{
   const info=(await get('/info')).body;
-  assert.deepEqual({...info,rules:0},{network:'mainnet',domain:DOMAIN,feeAddress:w.fee.address,height:100,count:8,chunk:3,test:true,owners:ownersHash(owners),start:100,startHash:null,mintFrom:null,relay:{networkFee:'relay',perAddress:3},rules:0});
+  assert.deepEqual({...info,rules:0},{network:'mainnet',domain:DOMAIN,feeAddress:w.fee.address,height:100,count:8,chunk:3,test:true,owners:ownersHash(owners),start:100,startHash:null,mintFrom:null,relay:{networkFee:'relay',perAddress:3,fees:{collection:'0',mint:'0'},payBlocks:30},rules:0});
   assert.deepEqual(info.rules,{feeBps:500,marketFeeCapBps:500,minPrice:'1000000000',maxReserve:30,settle:10});
   // The owner list comes in pieces and hashes to the stated value.
   let lines='';for(let from=0;from<8;from+=3){const p=(await get('/owners?from='+from)).body;assert.equal(p.total,8);assert.ok(p.entries.length<=3);for(const o of p.entries){lines+=ownerLine(o);assert.equal(o.registrationHeight,undefined);}}

@@ -6,7 +6,13 @@
 // ../carrier). That is why it checks a record against the current ledger before sending it and limits how many
 // records one address or one Mordinal can have waiting.
 //
+// Minting is open to anyone, so a relay may charge a fee for carrying a collection or a mint record (`fees`, in
+// atomic units; 0 = free). The fee is this relay's own price, not a rule of the ledger: a record published any other
+// way counts the same. Each such record gets a subaddress of the relay's wallet; the record is sent once payments of
+// at least the fee to that subaddress are in a block. A record that is not paid for in time is dropped unsent.
+//
 // Every job is one file, jobs/<record id>.json, written before the step it describes:
+//   unpaid   a mint or a collection whose relay fee has not arrived yet (only when the relay charges one)
 //   queued   accepted, no transaction built yet (no coin ready, or the node was unreachable)
 //   held     a purchase whose payments are not in a block yet; it is sent once they are
 //   built    transaction built and saved, not yet handed to the node
@@ -29,21 +35,32 @@ export function createCarrier({bin,stateDir,node,network='offline-fakechain',sta
    let v=null;try{v=JSON.parse(String(stdout).trim().split('\n').at(-1));}catch{}
    if(v&&'result' in v)done(v.result);else fail(Error(v?.error?String(v.error).slice(0,300):'The carrier tool did not answer'+(err?.killed?' in time':'')));})));
   queue=next.catch(()=>{});return next;};
- return {init:()=>run('init'),status:()=>run('status'),carry:record=>run('carry',record),split:n=>run('split',n),publish:blob=>run('publish',blob)};}
+ return {init:()=>run('init'),status:()=>run('status'),carry:record=>run('carry',record),split:n=>run('split',n),publish:blob=>run('publish',blob),address:n=>run('address',n)};}
 
 const FINAL=new Set(['done','refused','stuck']);
-export const DEFAULT_LIMITS={perSigner:3,waiting:200,perDay:2000,margin:5,resendMs:600000,stuckBlocks:720,holdBlocks:60,settleBlocks:10,sendAgain:2,minReady:3,splitInto:8,keepMs:7*86400000};
+export const DEFAULT_LIMITS={perSigner:3,waiting:200,perDay:2000,margin:5,resendMs:600000,stuckBlocks:720,holdBlocks:60,settleBlocks:10,sendAgain:2,minReady:3,splitInto:8,keepMs:7*86400000,payBlocks:30,unpaid:2000,payAddresses:5000};
 
-export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,limits:given={},now=()=>Date.now(),log=()=>{}}){
- const limits={...DEFAULT_LIMITS,...given},jobsDir=join(dir,'jobs'),splitFile=join(dir,'split.json');
+export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,limits:given={},fees:asked={},now=()=>Date.now(),log=()=>{}}){
+ const limits={...DEFAULT_LIMITS,...given},jobsDir=join(dir,'jobs'),splitFile=join(dir,'split.json'),payFile=join(dir,'pay.json');
+ const fees={collection:BigInt(asked.collection||0),mint:BigInt(asked.mint||0)},priceOf=op=>op===OP.collection?fees.collection:op===OP.mint?fees.mint:0n;
  mkdirSync(jobsDir,{recursive:true});
  const write=(file,value)=>{const tmp=file+'.tmp',fd=openSync(tmp,'w',0o600);try{writeSync(fd,JSON.stringify(value)+'\n');fsyncSync(fd);}finally{closeSync(fd);}renameSync(tmp,file);};
  const jobs=new Map();
  for(const f of readdirSync(jobsDir)){if(!/^[0-9a-f]{64}\.json$/.test(f))continue;try{const j=JSON.parse(readFileSync(join(jobsDir,f),'utf8'));if(j.id===f.slice(0,64))jobs.set(j.id,j);}catch{}}
  let split=existsSync(splitFile)?JSON.parse(readFileSync(splitFile,'utf8')):null;
+ // Fee payments: which record each subaddress was given to (and from which block its payments count), and the
+ // payments already counted for a record that was sent.
+ const pay=existsSync(payFile)?JSON.parse(readFileSync(payFile,'utf8')):{addresses:{},used:[]};const used=new Set(pay.used);
+ function payAddress(id,tip,t){
+  for(const [n,e] of Object.entries(pay.addresses))if(e.id===id)return Number(n);
+  for(let n=1;n<=limits.payAddresses;n++){const e=pay.addresses[n],j=e&&jobs.get(e.id);
+   // A subaddress is given out again only when its record is long gone, so a late payment is not counted for another record.
+   if(!e||(!j&&t-e.at>limits.keepMs)){pay.addresses[n]={id,from:tip,at:t};write(payFile,pay);return n;}}
+  throw bad('The relay is busy. Try again in a few minutes.',503);}
+ const paidFor=(j,payments)=>{const e=pay.addresses[j.pay.index];return e&&e.id===j.id?payments.filter(p=>p.index===j.pay.index&&p.height>=e.from&&!used.has(p.txid)):[];};
  const save=j=>write(join(jobsDir,j.id+'.json'),j),drop=j=>{jobs.delete(j.id);try{unlinkSync(join(jobsDir,j.id+'.json'));}catch{}};
  const waiting=()=>[...jobs.values()].filter(j=>!FINAL.has(j.state));
- const view=j=>({id:j.id,state:j.state,op:j.op,number:j.number,txid:j.txid||null,error:j.error||null,note:j.note||null});
+ const view=j=>({id:j.id,state:j.state,op:j.op,number:j.number,txid:j.txid||null,error:j.error||null,note:j.note||null,...(j.state==='unpaid'?{pay:{address:j.pay.address,amount:j.pay.amount,payBy:j.payBy}}:{})});
  const refuse=(j,error)=>{j.state='refused';j.error=String(error).slice(0,300);j.endedAt=now();save(j);};
  // One thing at a time: a new record and the regular check never interleave.
  let chainOf=Promise.resolve();
@@ -93,18 +110,25 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   const {number,signer}=describe(d),tip=reader.height;
   if(d.op===OP.reserve&&d.body.payBy<tip+limits.margin)throw bad('This reservation would run out before it reaches a block. Reserve again.');
   if(d.op===OP.list&&d.body.until<tip+limits.margin)throw bad('This listing would end before it reaches a block. Choose a later end.');
-  const open=waiting();
+  const all=waiting(),open=all.filter(j=>j.state!=='unpaid'),price=priceOf(d.op);
   if(number!=null&&open.some(j=>j.number===number))throw bad('Another record for this Mordinal is waiting for a block. Try again in a few minutes.',429);
-  if(open.filter(j=>j.signer===signer).length>=limits.perSigner)throw bad('This address already has '+limits.perSigner+' records waiting for a block. Try again in a few minutes.',429);
+  if(price&&all.length-open.length>=limits.unpaid)throw bad('The relay is busy. Try again in a few minutes.',503);
+  if(all.filter(j=>j.signer===signer).length>=limits.perSigner)throw bad('This address already has '+limits.perSigner+' records waiting for a block. Try again in a few minutes.',429);
   if(open.length>=limits.waiting)throw bad('The relay is busy. Try again in a few minutes.',503);
   const day=now()-86400000;if([...jobs.values()].filter(j=>j.createdAt>day&&j.txid).length>=limits.perDay)throw bad('The relay reached its daily limit. Try again later, or publish the record yourself.',503);
   if(known)drop(known);
-  const j={id,record:recordHex,op:d.op,number,signer,state:ready?'queued':'held',createdAt:now(),createdHeight:tip};jobs.set(id,j);save(j);
-  if(ready)await send(j);return view(j);}
+  const j={id,record:recordHex,op:d.op,number,signer,state:ready?'queued':'held',createdAt:now(),createdHeight:tip};
+  if(price){
+   // The subaddress is saved by the carrier before it is given out, so every later scan looks for payments to it.
+   const index=payAddress(id,tip,j.createdAt),{address}=await carrier.address(index);
+   j.state='unpaid';j.pay={index,address,amount:price.toString()};j.payBy=tip+limits.payBlocks;}
+  jobs.set(id,j);save(j);
+  if(j.state==='queued')await send(j);return view(j);}
 
  // After each reader pass: settle what reached a block, send again what did not, keep coins ready.
  async function tick(){
-  const tip=reader.height,t=now();let asked=null,unknown=null;
+  const tip=reader.height,t=now();let asked=null,unknown=null,payments=null;
+  const received=async()=>payments??=((await carrier.status()).payments||[]);
   const missing=async txid=>{if(!asked?.has(txid)){const ids=[...new Set([...jobs.values()].filter(j=>j.state==='sent').map(j=>j.txid).concat([txid]))],got=await chain.txs(ids);asked=new Set(ids);unknown=new Set(ids.filter(i=>!got.has(i)));}return unknown.has(txid);};
   for(const j of [...jobs.values()]){
    try{
@@ -125,6 +149,13 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
      j.again=(j.again||0)+1;j.state=ready?'queued':'held';j.txid=j.blob=j.fee=null;j.createdHeight=tip;j.note=null;save(j);log({job:j.id,again:j.again});
      if(ready)await send(j);
      continue;}
+    if(j.state==='unpaid'){
+     const got=paidFor(j,await received()),sum=got.reduce((a,p)=>a+BigInt(p.amount),0n);
+     if(sum<BigInt(j.pay.amount)){if(tip>j.payBy)refuse(j,'The relay fee was not paid in time. Nothing was sent. A payment that arrives late counts when the same record is sent again.');continue;}
+     const bytes=unhex(j.record);
+     try{await judge(bytes,decodeRecord(bytes,network));}catch(e){if(e.rule){refuse(j,e.message);log({job:j.id,paidButRefused:got.map(p=>p.txid)});continue;}throw e;}
+     for(const p of got)used.add(p.txid);pay.used=[...used];write(payFile,pay);
+     j.state='queued';j.paid=got.map(p=>p.txid);j.createdHeight=tip;save(j);await send(j);continue;}
     if(j.state==='queued'||j.state==='held'){
      if(j.state==='queued'&&tip-j.createdHeight>limits.stuckBlocks){j.state='stuck';j.endedAt=t;save(j);log({job:j.id,stuck:true});continue;}
      const bytes=unhex(j.record),d=decodeRecord(bytes,network);let ready;
@@ -152,7 +183,7 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
    return {tip,waiting:waiting().length,ready:status.ready,balance:status.balance};}
   catch(e){log({coins:String(e.message).slice(0,200)});return {tip,waiting:waiting().length,ready:null,balance:null};}}
 
- return {limits,
+ return {limits,fees:{collection:fees.collection.toString(),mint:fees.mint.toString()},
   submit:recordHex=>alone(()=>submit(recordHex)),tick:()=>alone(tick),
   // What became of a record: a waiting job, or an accepted record in a block.
   status(id){const j=jobs.get(id),e=reader.entryById(id);

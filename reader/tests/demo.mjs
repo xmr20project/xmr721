@@ -50,7 +50,8 @@ function picture(n,scale=12){
  return png(size,(x,y)=>{const cx=Math.floor(x/scale),cy=Math.floor(y/scale),mx=cx<cells/2?cx:cells-1-cx,bit=h[1+cy*4+mx];return bit>150?front:bit>118&&(cx+cy)%2?mark:back;});}
 
 // mints: the made-up ledger allows minting from its first block, and a collection and a few minted NFTs are added.
-export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=[],network='mainnet',views=undefined,mints=false,log=()=>{}}={}){
+// fees: {mint, collection} in atomic units: the relay charges them, to subaddresses of a made-up relay wallet.
+export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=[],network='mainnet',views=undefined,mints=false,fees=null,log=()=>{}}={}){
  const names=['alice','bob','carol','dave','erin'],w=Object.fromEntries([...names,'fee','other'].map(n=>[n,wallet('demo '+n,network)])),by=new Map(Object.values(w).map(x=>[x.address,x]));
  const given=new Map();for(const g of give){const a=decodeAddress(g.address,network);for(const n of g.numbers)given.set(n,{spend:a.spend,view:a.view,sub:a.kind==='sub'});}
  // Who holds what at the start: the demo wallets hold the low numbers, everything else sits with a wallet nobody uses.
@@ -68,8 +69,9 @@ export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=
  const dir=mkdtempSync(join(tmpdir(),'mordinals-demo-')),start=100,story=14;
  const chain=fakeChain({start,time:Math.floor(Date.now()/1000)-story*120});
  const reader=openReader({dir:join(dir,'state'),chain,network,domain:DOMAIN,feeAddress:w.fee.address,owners,start,checkpointEvery:5,...(mints?{mintFrom:start+1}:{}),log});
- const carrier=fakeCarrier(chain,{coins:40});
- const relay=createRelay({dir:join(dir,'relay'),reader,chain,carrier,network,domain:DOMAIN,limits:{resendMs:60000,settleBlocks:3,holdBlocks:60},log});
+ const relayWallet=wallet('demo relay',network),feeAddresses=new Map();
+ const carrier=fakeCarrier(chain,{coins:40,subaddress:n=>{const a=relayWallet.sub(n).address;feeAddresses.set(a,n);return a;}});
+ const relay=createRelay({dir:join(dir,'relay'),reader,chain,carrier,network,domain:DOMAIN,limits:{resendMs:60000,settleBlocks:3,holdBlocks:60},...(fees?{fees}:{}),log});
  const L=()=>reader.ledger,key=(n,h)=>outputSecret({viewSecret:h.viewSecret,spendSecret:h.spendSecret,txPub:owners[n].ownerTxPubKeys[0],subScalar:h.subScalar});
  const make={
   claim:(n,h)=>{const p=L().prepareClaim({mordinal:n,to:h.address});return L().claimWithKey(p.bodyBytes,signWithOutputKey(p.keyHash,key(n,h)));},
@@ -79,7 +81,10 @@ export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=
   cancel:(lot,seller)=>{const p=L().prepareCancel({lot,seller:seller.address});return L().sign(p.bodyBytes,seller.sign(p.text));},
   reserve:(lot,buyer)=>{const p=L().prepareReserve({lot,buyer:buyer.address});return {...p,record:L().sign(p.bodyBytes,buyer.sign(p.text))};}};
  let paid=0;
- const payment=outs=>makeTx('demo payment '+paid++ +' '+Date.now(),outs.map(x=>{const a=by.get(x.to)||decodeAddress(x.to,network);return {to:{spend:a.spend,view:a.view,kind:a.kind},amount:BigInt(x.amount)};}));
+ const payment=outs=>{const t=makeTx('demo payment '+paid++ +' '+Date.now(),outs.map(x=>{const a=by.get(x.to)||decodeAddress(x.to,network);return {to:{spend:a.spend,view:a.view,kind:a.kind},amount:BigInt(x.amount)};}));
+  // A payment to one of the relay's fee subaddresses is seen by the relay's wallet once it is in a block.
+  for(const x of outs)if(feeAddresses.has(x.to))carrier.paid({index:feeAddresses.get(x.to),amount:BigInt(x.amount),txid:t.txid});
+  return t;};
  const block=async(...items)=>{chain.mine(items.map(r=>r.txid?{txid:r.txid,tx:r.tx}:carried(r)));await reader.sync();};
 
  // A short made-up history, so every page has something to show.

@@ -264,3 +264,6 @@ input[type=file]{font-size:13px;color:var(--ux-copy)}
 .other-wallet{border-top:1px solid var(--ux-line);padding-top:12px}
 .other-wallet>summary{cursor:pointer;color:var(--ux-copy);font-size:14px}
 .other-wallet[open]>summary{margin-bottom:16px}
+
+.paybox{border:1px solid var(--ux-line2);border-radius:12px;padding:16px}
+.paybox h3{margin:0}

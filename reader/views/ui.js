@@ -52,6 +52,8 @@ export function terms(l){
 export const running=(t,height)=>t.reservation&&heldUntil(t.reservation)>=height?t.reservation:null;
 
 export const xmr=p=>formatXmr(BigInt(p));
+// What this relay charges to carry a collection or a mint record, in atomic units (0n = free).
+export const relayFee=kind=>{try{return BigInt(service.info.relay?.fees?.[kind]||0);}catch{return 0n;}};
 export const count=n=>Number(n).toLocaleString('en-US');
 export const short=(s,head=8,tail=6)=>s.length>head+tail+1?s.slice(0,head)+'…'+s.slice(-tail):s;
 export const when=seconds=>seconds?new Date(seconds*1000).toISOString().slice(0,16).replace('T',' ')+' UTC':'';
@@ -122,7 +124,7 @@ export const eventColumns=({number=true}={})=>[
  {label:'Time',num:true,cell:e=>when(e.time)}];
 
 export const OPNAME={1:'Claim',2:'Send',3:'Listing',4:'Stop selling',5:'Reservation',6:'Purchase',7:'Collection',8:'Mint',9:'Burn'};
-export const JOB={queued:['Waiting to be sent','yellow'],built:['Waiting to be sent','yellow'],held:['Waiting for a payment to be in a block','yellow'],
+export const JOB={unpaid:['Waiting for the relay fee','yellow'],queued:['Waiting to be sent','yellow'],built:['Waiting to be sent','yellow'],held:['Waiting for a payment to be in a block','yellow'],
  sent:['Sent, waiting for a block','yellow'],done:['In a block','green'],refused:['Refused','red'],stuck:['Did not reach a block','red'],unknown:['Not known to this service','']};
 export const jobPill=state=>pill(...(JOB[state]||[state,'']));
 // Records the relay holds that are not in a block yet. They do not count until they are.

@@ -354,7 +354,9 @@ characters with no space at either end. Two collections may have the same name.
   (1 = a Bitcoin inscription) and 1 to 64 bytes naming it. The rules do not check it.
 - **The whole record is at most 1,000 bytes**, the room one relayed transaction has
   (section 8). That leaves 824 bytes for name and content, or 759 when `to` is written.
-- There is no mint fee.
+- There is no mint fee in the rules. A relay may charge for carrying a collection or a mint record; that is the
+  relay's own price for its Monero network fee and against junk, not a rule. A record published any other way
+  counts the same.
 
 **Burn (op 9).** The owner ends an NFT, minted or a claimed Mordinal. `seq` is its counter
 as in `move`; it must not be listed. Afterwards it has no owner and no record can touch it.

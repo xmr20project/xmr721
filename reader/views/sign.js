@@ -1,7 +1,7 @@
 // Signing a record's text in any Monero wallet, sending the record, and following it until it is in a block.
 import {attachSignature,hex} from './rules.js';
 import {canonical} from './rules.js';
-import {el,fill,api,service,addr,txid,copyButton,pill,notice,count,JOB} from './ui.js';
+import {el,fill,api,service,addr,txid,copyButton,pill,notice,count,xmr,JOB} from './ui.js';
 import {walletLink} from './wallet.js';
 
 const ENDED=new Set(['done','refused','stuck']);
@@ -17,7 +17,18 @@ export function follow(ctx,id,{own=false,onEnd}={}){
    s.state==='done'&&s.height!=null?el('span',{class:'dim',text:'Block '+count(s.height)}):null,
    s.txid?txid(s.txid):null,
    s.error?el('span',{class:'dim',text:s.error}):null,
-   s.note&&!s.error?el('span',{class:'dim',text:s.note}):null);}
+   s.note&&!s.error?el('span',{class:'dim',text:s.note}):null);
+  payBox(s);}
+ // A record whose relay fee is not paid yet: where to pay, how much, and until when.
+ const paying=el('div',{class:'stack paybox','data-pay':'',hidden:''});let shownFor='';
+ function payBox(s){
+  if(s.state!=='unpaid'||!s.pay){paying.hidden=true;shownFor='';return;}
+  if(shownFor===s.pay.address)return;shownFor=s.pay.address;paying.hidden=false;
+  fill(paying,el('h3',{text:'Pay the relay fee'}),
+   el('p',{class:'muted'},'Send ',el('strong',{'data-pay-amount':'',text:xmr(s.pay.amount)+' XMR'}),' to this address from any Monero wallet. The record is sent to the Monero network once the payment is in a block, usually a few minutes after you pay.'),
+   el('div',{class:'signtext','data-pay-address':'',text:s.pay.address}),
+   el('div',{class:'row'},copyButton(s.pay.address,'Copy address','to pay'),copyButton(xmr(s.pay.amount),'Copy amount','to pay'),el('span',{class:'dim',text:'Pay by block '+count(s.pay.payBy)+'. This address is for this record only.'})),
+   el('p',{class:'dim',text:'The fee pays for putting the record on the Monero network. If you do not pay, nothing is sent and nothing is owed.'}));}
  async function turn(){
   if(ctx.signal.aborted)return;
   try{const s=await api('/status/'+id,{signal:ctx.signal});show(s);if(s.height!=null&&s.state!=='done')ctx.tip(s.height);
@@ -25,7 +36,7 @@ export function follow(ctx,id,{own=false,onEnd}={}){
   catch(e){if(e.name==='AbortError'||ctx.signal.aborted)return;}
   timer=setTimeout(turn,2500);}
  ctx.onLeave(()=>clearTimeout(timer));
- turn();return line;}
+ turn();return el('div',{class:'stack'},line,paying);}
 
 // What the person sees while a sent record waits, and when it has ended.
 //   done(status) -> node shown once the record is in a block
@@ -33,7 +44,7 @@ export function follow(ctx,id,{own=false,onEnd}={}){
 export function sent(ctx,id,{own=false,done,again}={}){
  const end=el('div',{class:'stack'});
  const box=el('div',{class:'stack','data-sent':id},
-  notice('note','Sent. It is not done yet: a record counts only once it is in a Monero block. This usually takes a few minutes. You can leave this page and come back.'),
+  notice('note','Handed to the relay. It is not done yet: a record counts only once it is in a Monero block. This usually takes a few minutes. You can leave this page and come back.'),
   follow(ctx,id,{own,onEnd(s){
    if(s.state==='done')end.replaceChildren(done?done(s):notice('good','Done. The record is in block '+count(s.height)+'.'));
    else fill(end,notice('error',s.state==='refused'?'The record was refused: '+(s.error||'it does not fit the rules.'):'The record did not reach a block. Nothing changed.'),
@@ -76,7 +87,7 @@ export function signPanel(ctx,{bodyBytes,rctx,text,signer,done,back,backLabel='B
     el('p',{class:'muted'},'Open “Sign message” in the wallet that holds ',addr(signer),' (Feather, Cake Wallet, Monero GUI or CLI). Paste the text and sign it with this address. Signing moves no XMR.')),
    el('li',{class:'stack'},el('h3',{text:'Paste the signature'}),area,problem,
     el('div',{class:'row'},send,back?el('button',{type:'button',class:'btn',text:backLabel,onclick:back}):null)));
- const fee=el('p',{class:'dim',text:'The relay pays the Monero network fee of this record and charges nothing in this version. The record counts once it is in a block.'});
+ const fee=el('p',{class:'dim',text:'The relay puts this record on the Monero network. The record counts once it is in a block.'});
  if(!w){panel.append(steps,fee);return panel;}
  // One approval in the connected wallet: it reads the record itself, shows it, signs and sends it.
  const label=w.status().label||'your wallet',approve=el('button',{type:'button',class:'btn primary',text:'Approve in '+label,'data-action':'approve'}),trouble=el('div',{});

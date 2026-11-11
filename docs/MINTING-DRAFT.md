@@ -116,7 +116,9 @@ each edition's owner at a block, the way the Mordinals owner list does. Not desi
 ## 7. Decided (11 November 2026)
 
 - Standard mints only in the first version; large mints later.
-- No mint fee. The 5% sale fee applies to every XMR721 NFT.
+- No mint fee in the rules. The 5% sale fee applies to every XMR721 NFT. The relay charges a small fee
+  (0.0005 XMR planned) for each collection or mint record it carries, paid to a subaddress given for that
+  record; the record is sent once the payment is in a block.
 - Anyone may create a collection, and anyone may mint an NFT that belongs to none.
 - Burning is allowed.
 

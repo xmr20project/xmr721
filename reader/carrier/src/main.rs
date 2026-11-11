@@ -4,10 +4,12 @@
 //!
 //!   mordinals-carrier <state dir> <op> [argument]        one JSON line on stdout
 //!     init                  make the wallet keys (once) and print the address
-//!     status                scan new blocks; balance and how many coins can carry a record now
+//!     status                scan new blocks; balance, how many coins can carry a record now, and the payments
+//!                           received at subaddresses given out with `address`
 //!     carry <record hex>    build the carrier (not sent): {txid, blob, fee, extraBytes}
 //!     split <n>             one transaction paying n coins of 0.01 XMR to this wallet (more carriers per block)
 //!     publish <blob hex>    send a built transaction to the node
+//!     address <n>           subaddress n of this wallet, for a fee payment; from then on every scan looks for it
 //!   Environment: MORDINALS_NODE (http://127.0.0.1:port), MORDINALS_NETWORK (offline-fakechain | stagenet),
 //!   MORDINALS_START (first block to scan).
 //!
@@ -16,7 +18,7 @@ use anyhow::{ensure, Context, Result};
 use curve25519_dalek::{constants::ED25519_BASEPOINT_POINT as G, scalar::Scalar as DS};
 use monero_simple_request_rpc::{prelude::MoneroDaemon, SimpleRequestTransport};
 use monero_wallet::{
-    address::{MoneroAddress, Network},
+    address::{MoneroAddress, Network, SubaddressIndex},
     ed25519::{Point, Scalar},
     interface::{prelude::*, FeeRate},
     ringct::RctType,
@@ -37,7 +39,10 @@ const CHUNK: usize = 254;
 const MAX_RECORD: usize = 1000;
 const SELF_PAYMENT: u64 = 1_000_000;
 const SPLIT_COIN: u64 = 10_000_000_000;
-const MIN_INPUT: u64 = 1_000_000_000;
+// The least a coin must hold above what a transaction pays out, so it can cover the network fee many times over.
+// A fee payment of 0.0005 XMR is large enough to carry a record itself.
+const MIN_INPUT: u64 = 400_000_000;
+const MAX_SUBADDRESSES: u32 = 100_000;
 
 fn parts(record: &[u8]) -> Result<Vec<Vec<u8>>> {
     ensure!(record.len() > 5 && record.len() <= MAX_RECORD, "Record size out of range");
@@ -101,6 +106,10 @@ struct Wallet {
     spent: BTreeSet<[u8; 32]>,
     // An output received at height h can be spent from block h+10 (a mining reward from h+60).
     maturity: BTreeMap<[u8; 32], (usize, bool)>,
+    // Subaddresses 1..=subs were given out for fee payments; every scan looks for outputs to them.
+    subs: u32,
+    // Outputs received at those subaddresses: (transaction, output number) -> (subaddress, amount, block).
+    payments: BTreeMap<([u8; 32], u64), (u32, u64, usize)>,
     network: String,
     start: usize,
     tip: usize,
@@ -119,6 +128,8 @@ impl Wallet {
             owned: BTreeMap::new(),
             spent: BTreeSet::new(),
             maturity: BTreeMap::new(),
+            subs: 0,
+            payments: BTreeMap::new(),
             network: network.to_string(),
             start,
             tip: 0,
@@ -140,6 +151,13 @@ impl Wallet {
             for e in v["spent"].as_array().context("spent")? {
                 w.spent.insert(b32(e)?);
             }
+            w.subs = v["subs"].as_u64().unwrap_or(0) as u32;
+            for e in v["payments"].as_array().map(|a| a.as_slice()).unwrap_or(&[]) {
+                w.payments.insert(
+                    (b32(&e[0])?, e[1].as_u64().context("output")?),
+                    (e[2].as_u64().context("subaddress")? as u32, e[3].as_str().context("amount")?.parse()?, e[4].as_u64().context("height")? as usize),
+                );
+            }
             w.tip = v["tip"].as_u64().context("tip")? as usize;
             w.tip_hash = b32(&v["tipHash"])?;
         }
@@ -149,11 +167,24 @@ impl Wallet {
         let v = json!({"v":1,"network":self.network,"start":self.start,"tip":self.tip,"tipHash":hex::encode(self.tip_hash),
             "owned":self.owned.iter().map(|(k,o)|(hex::encode(k),hex::encode(o.serialize()))).collect::<Vec<_>>(),
             "maturity":self.maturity.iter().map(|(k,(h,c))|(hex::encode(k),*h,*c)).collect::<Vec<_>>(),
-            "spent":self.spent.iter().map(hex::encode).collect::<Vec<_>>()});
+            "spent":self.spent.iter().map(hex::encode).collect::<Vec<_>>(),"subs":self.subs,
+            "payments":self.payments.iter().map(|((t,i),(s,a,h))|json!([hex::encode(t),i,s,a.to_string(),h])).collect::<Vec<_>>()});
         write_private(&self.state_file, &v.to_string())
     }
+    fn net(&self) -> Network {
+        if self.network == "stagenet" { Network::Stagenet } else { Network::Mainnet }
+    }
     fn address(&self) -> MoneroAddress {
-        self.view.legacy_address(if self.network == "stagenet" { Network::Stagenet } else { Network::Mainnet })
+        self.view.legacy_address(self.net())
+    }
+    // Gives out subaddress n. The count is saved first, so no scan after this misses a payment to it.
+    fn subaddress(&mut self, n: u32) -> Result<MoneroAddress> {
+        ensure!((1..=MAX_SUBADDRESSES).contains(&n), "Subaddress number out of range");
+        if n > self.subs {
+            self.subs = n;
+            self.save()?;
+        }
+        Ok(self.view.subaddress(self.net(), SubaddressIndex::new(0, n).context("subaddress")?))
     }
     fn secret(&self, o: &WalletOutput) -> Scalar {
         let a: DS = (*self.spend).into();
@@ -166,11 +197,15 @@ impl Wallet {
         let tip_hash = r.block_by_number(tip).await?.hash();
         let first = self.start.max(1);
         let resume = self.tip >= first && self.tip <= tip && r.block_by_number(self.tip).await?.hash() == self.tip_hash;
-        let (start, mut previous, mut owned, mut maturity) = if resume {
-            (self.tip + 1, self.tip_hash, self.owned.clone(), self.maturity.clone())
+        let (start, mut previous, mut owned, mut maturity, mut payments) = if resume {
+            (self.tip + 1, self.tip_hash, self.owned.clone(), self.maturity.clone(), self.payments.clone())
         } else {
-            (first, if first <= tip { r.block_by_number(first - 1).await?.hash() } else { [0u8; 32] }, BTreeMap::new(), BTreeMap::new())
+            (first, if first <= tip { r.block_by_number(first - 1).await?.hash() } else { [0u8; 32] }, BTreeMap::new(), BTreeMap::new(), BTreeMap::new())
         };
+        let mut scanner = Scanner::new(self.view.clone());
+        for n in 1..=self.subs {
+            scanner.register_subaddress(SubaddressIndex::new(0, n).context("subaddress")?);
+        }
         for h in start..=tip {
             let b = r.block_by_number(h).await?;
             ensure!(b.number() == h && b.header.previous == previous, "The chain changed during the scan; try again");
@@ -183,7 +218,12 @@ impl Wallet {
                 }
             }
             // A mining reward is locked for 60 blocks; it is skipped here unless the scan runs after it unlocked.
-            for o in Scanner::new(self.view.clone()).scan(scan)?.additional_timelock_satisfied_by(tip, 0) {
+            for o in scanner.scan(scan)?.additional_timelock_satisfied_by(tip, 0) {
+                if let Some(sub) = o.subaddress() {
+                    if sub.account() == 0 {
+                        payments.insert((o.transaction(), o.index_in_transaction()), (sub.address(), o.commitment().amount, h));
+                    }
+                }
                 let ki = image(self.secret(&o));
                 maturity.insert(ki, (h, o.transaction() == reward_txid));
                 owned.insert(ki, o);
@@ -194,6 +234,7 @@ impl Wallet {
         }
         self.owned = owned;
         self.maturity = maturity;
+        self.payments = payments;
         self.tip = tip;
         self.tip_hash = tip_hash;
         self.save()
@@ -215,10 +256,27 @@ impl Wallet {
         let usable = self.usable(total + MIN_INPUT);
         // A record rides on the smallest coin that can pay for it, so large coins stay whole for splitting.
         let none = if largest && !self.usable(MIN_INPUT).is_empty() { "No coin of this wallet is large enough to be split into that many coins; pay it a larger amount in one payment" } else { "No coin of this wallet can pay for a transaction now (coins unlock 10 blocks after they arrive)" };
-        let (ki, out) = if largest { usable.last() } else { usable.first() }.cloned().context(none)?;
-        let decoys = OutputWithDecoys::new(&mut OsRng, r, 16, r.latest_block_number().await?, out).await?;
+        ensure!(!usable.is_empty(), none);
         let rate: FeeRate = ProvidesFeeRates::fee_rate(r, FeePriority::Unimportant, 10_000_000).await?;
-        let tx = SignableTransaction::new(RctType::ClsagBulletproofPlus, seed(), vec![decoys], payments, Change::new(self.view.clone(), None), data, rate)?.sign(&mut OsRng, &self.spend)?;
+        let order: Vec<_> = if largest { usable.into_iter().rev().collect() } else { usable };
+        // A small coin (a fee payment, say) may not cover the network fee of the day: the next larger coin is tried.
+        let mut built = None;
+        let mut short = String::new();
+        for (ki, out) in order {
+            let decoys = OutputWithDecoys::new(&mut OsRng, r, 16, r.latest_block_number().await?, out).await?;
+            match SignableTransaction::new(RctType::ClsagBulletproofPlus, seed(), vec![decoys], payments.clone(), Change::new(self.view.clone(), None), data.clone(), rate) {
+                Ok(t) => {
+                    built = Some((ki, t.sign(&mut OsRng, &self.spend)?));
+                    break;
+                }
+                Err(e) => {
+                    let text = format!("{e}");
+                    ensure!(text.contains("not enough funds"), "{text}");
+                    short = text;
+                }
+            }
+        }
+        let (ki, tx) = built.with_context(|| format!("No coin of this wallet covers the network fee now ({short})"))?;
         ensure!(tx.prefix().extra.len() <= EXTRA_LIMIT, "The record does not fit a standard transaction");
         self.spent.insert(ki);
         self.save()?;
@@ -263,7 +321,12 @@ async fn run(dir: &Path, op: &str, arg: Option<&str>) -> Result<J> {
             w.refresh(&r).await?;
             let coins = w.usable(MIN_INPUT);
             let balance: u128 = w.owned.iter().filter(|(i, _)| !w.spent.contains(*i)).map(|(_, o)| u128::from(o.commitment().amount)).sum();
-            Ok(json!({"address":w.address().to_string(),"tip":w.tip,"balance":balance.to_string(),"coins":w.owned.len(),"ready":coins.len()}))
+            let payments: Vec<J> = w.payments.iter().map(|((t, _), (s, a, h))| json!({"index":s,"amount":a.to_string(),"txid":hex::encode(t),"height":h})).collect();
+            Ok(json!({"address":w.address().to_string(),"tip":w.tip,"balance":balance.to_string(),"coins":w.owned.len(),"ready":coins.len(),"subaddresses":w.subs,"payments":payments}))
+        }
+        "address" => {
+            let n: u32 = arg.context("subaddress number")?.parse()?;
+            Ok(json!({"address":w.subaddress(n)?.to_string(),"index":n}))
         }
         "carry" => {
             let record = hex::decode(arg.context("record")?)?;
@@ -286,7 +349,7 @@ async fn run(dir: &Path, op: &str, arg: Option<&str>) -> Result<J> {
 async fn main() {
     let a: Vec<String> = std::env::args().collect();
     let out = if a.len() < 3 {
-        json!({"error":"usage: mordinals-carrier <state dir> <init|status|carry|split|publish> [argument]"})
+        json!({"error":"usage: mordinals-carrier <state dir> <init|status|carry|split|publish|address> [argument]"})
     } else {
         match run(Path::new(&a[1]), &a[2], a.get(3).map(|s| s.as_str())).await {
             Ok(result) => json!({"result":result}),

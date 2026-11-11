@@ -2,7 +2,7 @@
 // Create page. Everything that is signed is built here from the records themselves; the service's plain fields are
 // only used for reading.
 import {OP,RULES,MAX_RECORD,NO_COLLECTION,MAX_NAME,MAX_EDITIONS,encodeBody,decodeRecord,recordId,codeOf,renderText,nftLabel,splitOf,formatXmr,parseXmr,canonical,unhex} from './rules.js';
-import {el,add,api,service,count,xmr,addr,txid,code,notice,pill,strong,table,field,textInput,eventColumns,waitingList,terms,running,draft,ROOT} from './ui.js';
+import {el,add,api,service,count,xmr,relayFee,addr,txid,code,notice,pill,strong,table,field,textInput,eventColumns,waitingList,terms,running,draft,ROOT} from './ui.js';
 import {signPanel,signingWallet} from './sign.js';
 import {walletLink,watchWallet} from './wallet.js';
 
@@ -135,6 +135,8 @@ export async function nft(ctx,id,action){
   owner(),
   el('section',{class:'section','data-section':'history'},el('div',{class:'section-head'},el('h2',{text:'History'})),table(eventColumns({number:false}),n.history.slice().reverse(),'Nothing yet.')));}
 
+// What the relay charges for a collection or a mint, said before anything is signed.
+const feeLine=(kind,what)=>{const f=relayFee(kind);return f?`${what} costs ${formatXmr(f)} XMR. It pays for putting the record on the Monero network; you pay it after signing, and nothing is sent before it arrives.`:`${what} has no fee. The relay pays the Monero network fee of the record.`;};
 // Create: a collection, or one NFT. The content is read in the browser and goes into the record that is signed.
 function sniff(bytes){
  const s=(sig,at=0)=>sig.every((v,i)=>bytes[at+i]===v);
@@ -174,7 +176,7 @@ export async function create(ctx){
    field('Your Monero address',who,mine?'The address of your connected wallet. Only this address can mint into the collection. Change it to sign in another wallet.':'The address that makes the collection. Only this address can mint into it. You sign with it, so it must be in a wallet that has “Sign message”.'),
    field('Name',name,`1 to ${MAX_NAME} plain characters.`),field('Editions',max,`How many NFTs the collection can hold, at most ${count(MAX_EDITIONS)}.`),problem,
    el('div',{class:'row'},el('button',{type:'button',class:'btn primary',text:'Continue','data-action':'next',onclick:next})),
-   el('p',{class:'dim',text:'Making a collection has no fee. The relay pays the Monero network fee of the record.'})].filter(Boolean));}
+   el('p',{class:'dim','data-fee':'',text:feeLine('collection','Making a collection')})].filter(Boolean));}
 
  async function nftForm(){
   let content=null,type=null;
@@ -212,6 +214,6 @@ export async function create(ctx){
    field('Name (optional)',name,`Up to ${MAX_NAME} plain characters. It uses the same room as the content.`),
    field('First owner (optional)',to,'Another Monero address that receives the NFT. Uses 65 bytes of the room.'),room,problem,
    el('div',{class:'row'},el('button',{type:'button',class:'btn primary',text:'Continue','data-action':'next',onclick:next})),
-   el('p',{class:'dim',text:'Minting has no fee. The relay pays the Monero network fee of the record. Anything you inscribe is public for good.'})].filter(Boolean));
+   el('p',{class:'dim','data-fee':'',text:feeLine('mint','Minting')+' Anything you inscribe is public for good.'})].filter(Boolean));
   count_();}
  if(make==='collection')collectionForm();else await nftForm();}

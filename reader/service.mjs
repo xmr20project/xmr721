@@ -6,6 +6,7 @@
 //   node service.mjs --owners <owners.jsonl> --domain <hex32> --fee-address <address> --node <url> --start <height> --state <dir>
 //        [--start-hash <hash>] [--network mainnet|stagenet] [--port 18951] [--every <ms>] [--transfers <transfers.jsonl>]
 //        [--carrier-bin <path> --carrier-state <dir> --carrier-network offline-fakechain|stagenet]   relay on
+//        [--mint-fee <atomic units> --collection-fee <atomic units>]   what this relay charges to carry a mint or a collection record
 //        [--content-dir <dir> | --content-archive [url]] [--collections <dir>] [--views <dir>] [--allow-origin <origin>] [--allow-extension <id>] [--behind-proxy] [--test-hooks]
 //
 // Lists are served whole (the owner list in pieces, every claimed number), so a wallet never has to name the
@@ -61,7 +62,7 @@ export function createService({reader,relay=null,owners,transfers=[],content=nul
   const path=url.pathname,q=url.searchParams,height=reader.height;
   if(method==='GET'){
    if(path==='/info')return {network:m.network,domain:m.domain,feeAddress:m.feeAddress,height,count:list.length,chunk,test:Boolean(testHooks),owners:m.owners,start:m.start,startHash:m.startHash,mintFrom:m.mintFrom??null,
-    relay:relay?{networkFee:'relay',perAddress:relay.limits.perSigner}:null,rules:{feeBps:RULES.feeBps,marketFeeCapBps:RULES.marketFeeCapBps,minPrice:RULES.minPrice.toString(),maxReserve:RULES.maxReserve,settle:RULES.settle}};
+    relay:relay?{networkFee:'relay',perAddress:relay.limits.perSigner,fees:relay.fees,payBlocks:relay.limits.payBlocks}:null,rules:{feeBps:RULES.feeBps,marketFeeCapBps:RULES.marketFeeCapBps,minPrice:RULES.minPrice.toString(),maxReserve:RULES.maxReserve,settle:RULES.settle}};
    if(path==='/owners'){const from=int(q.get('from'),0,0,list.length),limit=int(q.get('limit'),chunk,1,chunk);return {from,total:list.length,entries:list.slice(from,from+limit)};}
    if(path==='/claimed')return {height,numbers:claimed()};
    if(path.startsWith('/address/')){const a=canonical(decodeURIComponent(path.slice(9)),m.network);
@@ -186,7 +187,7 @@ export async function startService(o){
  const reader=openReader({dir:o.state,chain,network,domain:o.domain,feeAddress:o.feeAddress,owners,start:Number(o.start),startHash:o.startHash||null,mintFrom:o.mintFrom==null?null:Number(o.mintFrom),checkpointEvery:o.checkpointEvery??720,log:o.log});
  let relay=null;
  if(o.carrierBin){const carrier=createCarrier({bin:o.carrierBin,stateDir:o.carrierState,node:o.node,network:o.carrierNetwork||'offline-fakechain',start:Number(o.carrierStart||o.start)});
-  relay=createRelay({dir:join(o.state,'relay'),reader,chain,carrier,network,domain:o.domain,limits:o.limits,...(o.now?{now:o.now}:{}),log:o.log});}
+  relay=createRelay({dir:join(o.state,'relay'),reader,chain,carrier,network,domain:o.domain,limits:o.limits,fees:o.fees,...(o.now?{now:o.now}:{}),log:o.log});}
  const source=o.contentDir?dirContent(o.contentDir):o.contentArchive?archiveContent(o.contentArchive===true?undefined:o.contentArchive):null;
  const service=createService({reader,relay,owners,transfers:o.transfers?readOwners(o.transfers):[],content:source?createContent({source}):null,collections:o.collections?loadCollections(o.collections):new Map(),views:o.views||(existsSync(VIEWS)?VIEWS:null),origins:o.origins||[],extensions:o.extensions?.length?o.extensions:null,behindProxy:Boolean(o.behindProxy),testHooks:Boolean(o.testHooks),...(o.rate?{rate:o.rate}:{}),log:o.log});
  const port=await service.listen(o.port==null?18951:Number(o.port));return {...service,port,chain,owners};}
@@ -196,7 +197,7 @@ if(process.argv[1]===import.meta.filename){
  for(const need of ['owners','domain','fee-address','node','start','state'])if(!arg(need)){console.error('Missing --'+need+'. See the top of this file.');process.exit(2);}
  const archive=has('content-archive')?(arg('content-archive')?.startsWith('http')?arg('content-archive'):true):null;
  const s=await startService({owners:arg('owners'),transfers:arg('transfers'),domain:arg('domain'),feeAddress:arg('fee-address'),node:arg('node'),start:arg('start'),startHash:arg('start-hash'),mintFrom:arg('mint-from'),state:arg('state'),network:arg('network'),
-  port:arg('port'),carrierBin:arg('carrier-bin'),carrierState:arg('carrier-state'),carrierNetwork:arg('carrier-network'),contentDir:arg('content-dir'),collections:arg('collections'),contentArchive:archive,views:arg('views'),
+  port:arg('port'),fees:{mint:arg('mint-fee')||0,collection:arg('collection-fee')||0},carrierBin:arg('carrier-bin'),carrierState:arg('carrier-state'),carrierNetwork:arg('carrier-network'),contentDir:arg('content-dir'),collections:arg('collections'),contentArchive:archive,views:arg('views'),
   origins:process.argv.flatMap((a,i)=>a==='--allow-origin'?[process.argv[i+1]]:[]),extensions:process.argv.flatMap((a,i)=>a==='--allow-extension'?[process.argv[i+1]]:[]),behindProxy:has('behind-proxy'),testHooks:has('test-hooks'),log:v=>console.log(new Date().toISOString(),JSON.stringify(v))});
  console.log(`Mordinals reader on http://127.0.0.1:${s.port} (${s.owners.length} Mordinals, block ${s.reader.height}${s.relay?', relay on':', reader only'})`);
  s.follow(Number(arg('every'))||5000);
