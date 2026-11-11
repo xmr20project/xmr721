@@ -31,11 +31,14 @@ const ROUTES=[
  [/^\/xmr721$/,xmr721,'xmr721'],
  [/^\/about$/,about,'about']];
 
-const main=document.getElementById('main'),tip=document.getElementById('tip');
+// A hosting page can place the views in an element of its own (data-xmr721-main), next to its other content.
+const main=document.querySelector('[data-xmr721-main]')||document.getElementById('main'),tip=document.getElementById('tip'),embedded=main.hasAttribute('data-xmr721-main');
+// In a hosting page only addresses of these views ("#/...") are ours; the page keeps its other anchors.
+const ours=()=>!embedded||/^#\//.test(location.hash);
 let current=null;
 
 function showTip(height){
- const info=service.info;if(!info||height==null)return;
+ const info=service.info;if(!info||height==null||!tip)return;
  tip.replaceChildren('Block ',el('b',{text:count(height)}),info.network==='mainnet'?'':' · '+info.network,info.test?' · test data':'');}
 async function loadInfo(signal){service.info=await api('/info',{signal});showTip(service.info.height);}
 
@@ -47,18 +50,20 @@ async function show({keep=false}={}){
  if(current){current.abort.abort();for(const leave of current.leaving.splice(0)){try{leave();}catch{}}}
  const {path,query}=parse();let found=null;
  for(const [pattern,view,tab] of ROUTES){const m=pattern.exec(path);if(m){found={view,tab,args:m.slice(1)};break;}}
- for(const a of document.querySelectorAll('.tabs a')){if(found&&a.dataset.tab===found.tab)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');}
+ for(const a of document.querySelectorAll('.tabs a[data-tab]')){if(found&&a.dataset.tab===found.tab)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');}
  const box=el('div',{class:'view','data-at':location.hash.replace(/^#/,'')||'/'}),abort=new AbortController();
  const ctx={main:box,query,signal:abort.signal,abort,leaving:[],
   onLeave(work){this.leaving.push(work);},
-  title(text){document.title=text?text+' · XMR721':'XMR721';},
+  title(text){if(!embedded)document.title=text?text+' · XMR721':'XMR721';},
   tip:showTip,
   // Shows the same view again with fresh data, staying where the person is on the page.
   reload:()=>show({keep:true})};
  current=ctx;
- if(!keep){main.replaceChildren(el('p',{class:'loading',text:'Loading…'}));window.scrollTo(0,0);}
+ if(!keep){main.replaceChildren(el('p',{class:'loading',text:'Loading…'}));if(!embedded)window.scrollTo(0,0);else if(main.getBoundingClientRect().top<0)(main.closest('[data-xmr721-top]')||main).scrollIntoView();}
  try{
   if(!service.info)await loadInfo(abort.signal);
+  // Tabs for making NFTs are shown only on a ledger that takes mints.
+  for(const a of document.querySelectorAll('.tabs a[data-tab=nfts],.tabs a[data-tab=create]'))a.hidden=service.info.mintFrom==null;
   if(!found){ctx.title('Not found');box.append(el('div',{class:'head'},el('h1',{class:'small',text:'Nothing at this address'})),
    el('p',{class:'muted'},'Go to the ',el('a',{href:'#/',text:'explorer'}),'.'));}
   else await found.view(ctx,...found.args);
@@ -70,8 +75,8 @@ async function show({keep=false}={}){
    el('p',{class:'section'},el('button',{type:'button',class:'btn',text:'Try again',onclick:()=>show()})));}}
 
 // A hosting page can name the view to open first (<html data-home="/market">).
-const home=document.documentElement.dataset.home;if(home&&!location.hash.replace(/^#\/?$/,''))history.replaceState(null,'','#'+home);
-addEventListener('hashchange',()=>show());
+const home=document.documentElement.dataset.home;if(!embedded&&home&&!location.hash.replace(/^#\/?$/,''))history.replaceState(null,'','#'+home);
+addEventListener('hashchange',()=>{if(ours())show();});
 // The newest block for the header, checked now and then while the page is in front.
 setInterval(()=>{if(!document.hidden&&service.info)api('/info').then(i=>{service.info=i;showTip(i.height);}).catch(()=>{});},20000);
-show();
+if(ours())show();

@@ -11,7 +11,7 @@ changed afterwards without starting a new ledger.
 | Mint fee in the rules | None |
 | Relay fee | 0.0005 XMR for each collection or mint record the relay carries (`--mint-fee 500000000 --collection-fee 500000000`). Claims, moves, listings, reservations and purchases are carried free |
 | Start block (claims, moves, sales) | Set on launch day: a block a little above the chain tip at that time |
-| First mint block | The start block. Collections, mints and burns count from the first block of the ledger |
+| First mint block | Not set at launch. Minting is switched on in a later step; the first release is Mordinals only |
 | Who may mint | Anyone |
 | Repository | Public at launch |
 
@@ -19,4 +19,4 @@ The fee address is a main mainnet address and passes the ledger's own check for 
 keys. The ledger domain is derived at launch from the final settings and the owner-list
 hash, and is then built into the reader and the wallets.
 
-Claims, trading and minting launch together.
+Claims and trading of Mordinals launch first, as a tab of the Monero Market on xmr20.org. Minting follows later.
