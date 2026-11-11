@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// Decodes the XMR20 NFT record in one Monero transaction and, for a mint, writes its picture as a PNG.
+// Decodes the XMR20 NFT record in one Monero transaction and, for a mint, writes its picture as a PNG: the record's
+// text drawn over the picture, as it is meant to be seen, or with --plain the bare decoded picture.
 //
-//   node xmr20-nfts/tools/decode.mjs --node <monero node url> --tx <txid> [--png <file>]
+//   node xmr20-nfts/tools/decode.mjs --node <monero node url> --tx <txid> [--png <file>] [--plain]
 import { writeFileSync } from 'node:fs';
 import { recordOf, signedText, artHash } from '../lib/format.mjs';
 import { decodeMap } from '../lib/map-codec.mjs';
@@ -31,7 +32,7 @@ if (process.argv[1] === import.meta.filename) {
   console.log(JSON.stringify({ txid: t.tx_hash, block: t.in_pool ? null : t.block_height, signatureValid: verifySpendSignature(signedText(record), record.owner, envelope.signature),
     ...(image ? { art: artHash(record) } : {}), record: image ? { ...record, image: { ...image, data: `(${image.data.length} characters)` } } : record }, null, 1));
   if (image && arg('png')) {
-    const { default: sharp } = await import('sharp');
-    writeFileSync(arg('png'), await sharp(await pixels(image), { raw: { width: image.width, height: image.height, channels: 3 } }).png().toBuffer());
+    const { pictureFile } = await import('../lib/collection.mjs');
+    writeFileSync(arg('png'), (await pictureFile(record, { plain: process.argv.includes('--plain') })).bytes);
   }
 }

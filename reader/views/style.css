@@ -201,6 +201,10 @@ pre.cmd{margin:10px 0 0;padding:12px;border-radius:12px;border:1px solid var(--u
 .feed-text{margin-top:6px}
 .feed-text .chip button{display:none}
 .pic.pixel img{image-rendering:pixelated}
+/* An NFT drawn as text over its picture: shown whole, smoothly scaled. */
+.pic.art{background:#0c1014}
+.pic.art img{object-fit:contain}
+.art-grid{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
 .market-main .note+.grid{margin-top:16px}
 a.pic{cursor:pointer}
 /* Your Mordinals: what the connected wallet's address owns. */

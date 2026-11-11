@@ -3,6 +3,7 @@
 // infers among the 2023 inscriptions. Archive data is for browsing only: names and groupings are the archive's own
 // reading of titles and links, and nothing here decides who owns a Mordinal.
 import {el,add,api,service,count,notice,ROOT} from './ui.js';
+import {loadMedia,nftPicture} from './collection.js';
 
 const ARCHIVE=document.querySelector('meta[name="xmr721-archive"]')?.content||null,PAGE=24;
 const IMAGES=new Set(['image/png','image/jpeg','image/webp','image/gif']),HEX=/^[0-9a-f]{64}$/,GROUP=/^[0-9a-f]{24}$/;
@@ -27,11 +28,11 @@ const put=(mosaic,urls,pixel=false)=>[...mosaic.children].forEach((slot,i)=>{if(
 
 // The cards. `limit` keeps the strip on the market short.
 export async function collectionCards(ctx,{limit=Infinity}={}){
- const info=service.info,cards=[],held=(await api('/collections',{signal:ctx.signal})).collections;
+ const info=service.info,cards=[],[held,map]=await Promise.all([api('/collections',{signal:ctx.signal}).then(v=>v.collections),loadMedia(ctx.signal)]);
  const all=tile('#/gallery','Mordinals',`${count(info.count)} inscriptions from 2023`,'mordinals');cards.push(all.card);
  api('/gallery?filter=all&from=0&limit=12',{signal:ctx.signal}).then(g=>put(all.mosaic,g.items.filter(m=>m.bodySize!==null).slice(0,3).map(m=>new URL('content/'+m.number,ROOT).href),true)).catch(()=>{});
  for(const c of held){const t=tile('#/market?show='+c.key,c.name,`${count(c.minted)} of ${count(c.max)} · earlier format`,'held');
-  put(t.mosaic,[4,1,5].map(n=>new URL(`collections/${c.key}/${n}/picture`,ROOT).href),true);cards.push(t.card);}
+  [...t.mosaic.children].forEach((slot,i)=>slot.replaceChildren(nftPicture(map,c.key,[4,1,5][i])));cards.push(t.card);}
  let groups=[],problem=null;
  if(ARCHIVE){try{groups=(await archive({page:'1'},ctx.signal)).collections.filter(g=>g.count>=SMALLEST&&!RUDE.test(g.name)).sort((a,b)=>b.count-a.count);}catch(e){if(e.name==='AbortError')throw e;problem=e.message;}}
  // A collection's pictures load when its card comes into view.

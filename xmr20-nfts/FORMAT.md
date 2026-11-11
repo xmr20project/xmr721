@@ -106,7 +106,16 @@ carries a record can be paid by anyone.
 
 ## 6. How the website draws them
 
-Not part of the format. xmr20.org draws a mint as the record's own JSON text in an 8×12
-pixel font, each character coloured from the decoded picture underneath, and offers larger
-companion images that are not on chain. [`tools/decode.mjs`](tools/decode.mjs) writes the
-plain decoded picture.
+Not part of the ownership rules, but it is how these NFTs are meant to be seen. The text
+`JSON.stringify({name, collection, description, attributes})` of the mint record is written
+over and over in an 8×12 pixel font ([`lib/art-font.json`](lib/art-font.json), 95 printable
+ASCII glyphs of 12 bytes), and takes its colours from the decoded picture:
+
+- a palette picture is drawn 96 characters wide; each character has the picture's colour at
+  its place, on the ground colour `#14191f`;
+- a WebP picture is drawn 128 characters wide; each font pixel (and the pixel to its right)
+  takes the picture's colour at that point, raised to the power 0.65, on `#0c1014`.
+
+The height follows the picture's proportions. [`lib/text-art.mjs`](lib/text-art.mjs) is this
+drawing; [`tools/decode.mjs`](tools/decode.mjs) writes it as a PNG (`--plain` for the bare
+picture). xmr20.org also offers larger companion images that are not on chain.

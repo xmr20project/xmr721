@@ -137,7 +137,7 @@ export function createService({reader,relay=null,owners,transfers=[],content=nul
    const url=new URL(req.url,'http://127.0.0.1');
    if(req.method==='GET'&&url.pathname.startsWith('/content/')){if(headers['access-control-allow-origin'])for(const k of ['access-control-allow-origin','access-control-expose-headers','vary'])res.setHeader(k,headers[k]);return await picture(res,url.pathname.slice(9));}
    const shot=/^\/collections\/([a-z0-9-]{1,40})\/(\d{1,5})\/picture$/.exec(url.pathname);
-   if(req.method==='GET'&&shot){const file=collections.get(shot[1])?.picture(Number(shot[2]));
+   if(req.method==='GET'&&shot){const file=await collections.get(shot[1])?.picture(Number(shot[2]),{plain:url.searchParams.get('plain')==='1'});
     if(!file){res.writeHead(404,headers);res.end(JSON.stringify({error:'No such picture.'}));return;}
     res.writeHead(200,{'content-type':file.type,'content-length':file.bytes.length,'cache-control':'public, max-age=31536000, immutable','x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox",'cross-origin-resource-policy':'cross-origin'});res.end(file.bytes);return;}
    if(req.method==='GET'&&views&&(url.pathname==='/'||url.pathname==='/view')){res.writeHead(302,{location:'/view/'});res.end();return;}

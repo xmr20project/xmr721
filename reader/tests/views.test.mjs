@@ -380,7 +380,7 @@ test('the market shows the newest history beside the listings, and the GENESIS c
  await page.locator('.pills [data-value=genesis]').click();await shown('/market?show=genesis');
  assert.equal(await count('[data-section=collection] [data-edition]'),100);
  const first=page.locator('[data-edition="1"] img');await first.scrollIntoViewIfNeeded();
- await page.waitForFunction(()=>{const i=document.querySelector('[data-edition="1"] img');return i&&i.complete&&i.naturalWidth===80&&i.naturalHeight===119;});
+ await page.waitForFunction(()=>{const i=document.querySelector('[data-edition="1"] img');return i&&i.complete&&i.naturalWidth===1024&&i.naturalHeight===1524;});   // its text over its picture, 128 characters wide
  await page.waitForFunction(()=>{const i=document.querySelector('[data-edition="2"] img');return i&&i.complete&&i.naturalWidth>0;});
  assert.equal(await count('[data-section=history]'),1);
  await page.locator('[data-edition="4"] .meta').click();await shown('/nft/genesis/4');

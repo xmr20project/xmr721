@@ -9,6 +9,8 @@ import { carrierOf, open, recordOf, signedText, MAX_CARRIER } from '../lib/forma
 import { reduce, pictureOk, webpWithSharp } from '../lib/ledger.mjs';
 import { encodeMap } from '../lib/map-codec.mjs';
 import { build } from '../tools/build-collection.mjs';
+import { loadCollection, picturePixels } from '../lib/collection.mjs';
+import { textArt } from '../lib/text-art.mjs';
 import { pixels } from '../tools/decode.mjs';
 import { wallet } from '../../rules/tests/helpers.mjs';
 import { verifySpendSignature } from '../../rules/lib/monero.mjs';
@@ -50,6 +52,22 @@ test('every saved picture decodes to its stated size', async () => {
     const { record } = recordOf(Buffer.from(t.extra, 'hex'));
     assert.equal((await pixels(record.image)).length, record.image.width * record.image.height * 3, t.txid);
   }
+});
+
+test('an NFT is drawn as its own text over its picture', async () => {
+  const dir = new URL('../collections', import.meta.url).pathname, c = loadCollection(dir, 'genesis');
+  const size = png => [png.readUInt32BE(16), png.readUInt32BE(20)];
+  const venus = await c.picture(7), mona = await c.picture(1);
+  assert.equal(venus.type, 'image/png');
+  assert.deepEqual(size(venus.bytes), [768, 480], 'a palette picture: 96 characters of 8 pixels, rows of 12');
+  assert.deepEqual(size(mona.bytes), [1024, 1524], 'a WebP picture: 128 characters wide');
+  assert.deepEqual(size((await c.picture(7, { plain: true })).bytes), [42, 26], 'the bare picture');
+  // The text starts with the record's name; a record with other text gives another drawing of the same size.
+  const { record } = recordOf(Buffer.from(saved.transactions.find(t => t.txid === c.items[6].id).extra, 'hex'));
+  const raw = await picturePixels(record.image), a = textArt(record, raw), b = textArt({ ...record, name: 'Another name' }, raw);
+  assert.deepEqual([a.width, a.height, b.width, b.height], [768, 480, 768, 480]); assert.ok(!a.rgb.equals(b.rgb));
+  assert.deepEqual([...a.rgb.subarray(0, 3)], [20, 25, 31], 'the ground colour where the first glyph has no pixel');
+  assert.equal(c.picture(101), null);
 });
 
 test('a record has one spelling and anything else is not a record', () => {

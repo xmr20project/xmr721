@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { deflateSync, crc32 } from 'node:zlib';
 import { recordOf } from './format.mjs';
 import { decodeMap } from './map-codec.mjs';
+import { textArt } from './text-art.mjs';
 
 function png(width, height, rgb) {
   const chunk = (type, data) => {
@@ -18,13 +19,24 @@ function png(width, height, rgb) {
   return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', head), chunk('IDAT', deflateSync(rows)), chunk('IEND', Buffer.alloc(0))]);
 }
 
-// The picture of a mint record as a file a browser shows: PNG for a palette picture, the WebP itself otherwise.
-export function pictureFile(image) {
+// The plain decoded picture of a mint record as RGBA bytes. A WebP picture needs the optional `sharp` package.
+export async function picturePixels(image) {
   const bytes = Buffer.from(image.data, 'base64');
-  if (image.codec !== 'json-text-1') return { type: 'image/webp', bytes };
-  const { idx } = decodeMap(bytes, 0, image.width, image.height, image.palette.length), rgb = Buffer.alloc(idx.length * 3);
-  idx.forEach((v, i) => rgb.write(image.palette[v], i * 3, 'hex'));
-  return { type: 'image/png', bytes: png(image.width, image.height, rgb) };
+  if (image.codec === 'json-text-1') {
+    const { idx } = decodeMap(bytes, 0, image.width, image.height, image.palette.length), raw = Buffer.alloc(idx.length * 4, 255);
+    idx.forEach((v, i) => raw.write(image.palette[v], i * 4, 'hex'));
+    return raw;
+  }
+  const { default: sharp } = await import('sharp');
+  return sharp(bytes).ensureAlpha().raw().toBuffer();
+}
+// A mint record as the picture people know: its text drawn over its picture (text-art.mjs), as a PNG.
+// `plain: true` gives the bare decoded picture instead.
+export async function pictureFile(record, { plain = false } = {}) {
+  const image = record.image, raw = await picturePixels(image);
+  if (plain) { const rgb = Buffer.alloc(image.width * image.height * 3); for (let i = 0; i < image.width * image.height; i++) raw.copy(rgb, i * 3, i * 4, i * 4 + 3); return { type: 'image/png', bytes: png(image.width, image.height, rgb) }; }
+  const art = textArt(record, raw);
+  return { type: 'image/png', bytes: png(art.width, art.height, art.rgb) };
 }
 
 export function loadCollection(dir, name) {
@@ -34,11 +46,13 @@ export function loadCollection(dir, name) {
   const extras = new Map(saved.transactions.map(t => [t.txid, t.extra])), files = new Map();
   return {
     key: name, header, items,
-    picture(edition) {
+    // -> a promise of {type, bytes}, or null when there is no such edition. Drawn once, then kept.
+    picture(edition, { plain = false } = {}) {
       const item = items.find(t => t.edition === edition);
       if (!item) return null;
-      if (!files.has(edition)) files.set(edition, pictureFile(recordOf(Buffer.from(extras.get(item.id), 'hex')).record.image));
-      return files.get(edition);
+      const key = edition + (plain ? ':plain' : '');
+      if (!files.has(key)) files.set(key, pictureFile(recordOf(Buffer.from(extras.get(item.id), 'hex')).record, { plain }));
+      return files.get(key);
     },
   };
 }
