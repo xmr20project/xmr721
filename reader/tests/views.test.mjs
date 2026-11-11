@@ -31,6 +31,9 @@ await context.route('**/*',route=>{
  if(url.hostname==='127.0.0.1'||url.protocol==='data:'||url.protocol==='blob:')return route.continue();
  blocked.push(url.href);return route.abort();});
 await context.exposeBinding('reportViolation',(_,text)=>{problems.push('content security policy: '+text);});
+// The first-visit tutorial would cover the market in every test, so it is marked as seen here; its own test uses a
+// browser context of its own.
+await context.addInitScript(()=>{try{localStorage.setItem('xmr721-tutorial-seen','1');}catch{}});
 await context.addInitScript(()=>document.addEventListener('securitypolicyviolation',e=>window.reportViolation(`${e.violatedDirective} ${e.blockedURI}`)));
 function watch(page){
  page.on('console',m=>{
@@ -353,6 +356,37 @@ test('a reservation that ran out warns not to pay',async()=>{
  await shot('buy-late');await narrow();
  await page.reload();await page.locator('[data-deadline][data-late=true]').waitFor();});
 
+test('a first visit to the market shows the tutorial once; it can be left at any step and opened again',async()=>{
+ const visitor=await browser.newContext({viewport:{width:1280,height:900}}),fresh=watch(await visitor.newPage());
+ await fresh.goto(`${root}/view/#/market`);
+ const tour=fresh.locator('dialog[data-tutorial]');await tour.waitFor();
+ assert.match(await tour.locator('.label').textContent(),/Step 1 of 4/);assert.equal(await tour.locator('[data-action=back]').count(),0);
+ await tour.locator('[data-action=next]').click();assert.match(await tour.locator('h2').textContent(),/Open the wallet/);
+ assert.equal(await tour.locator('[data-action=connect]').isDisabled(),true);
+ await tour.locator('[data-action=next]').click();await tour.locator('[data-action=next]').click();
+ assert.match(await tour.locator('.label').textContent(),/Step 4 of 4/);assert.equal(await tour.locator('[data-action=next]').count(),0);
+ await tour.locator('[data-action=back]').click();assert.match(await tour.locator('.label').textContent(),/Step 3 of 4/);
+ await tour.locator('[data-action=skip]').click();assert.equal(await fresh.locator('dialog[data-tutorial]').count(),0);
+ assert.ok(await fresh.locator('[data-section=listings] tbody tr').count()>=1,'the market is behind it');
+ await fresh.reload();await fresh.locator('[data-section=listings]').waitFor();await fresh.waitForTimeout(200);
+ assert.equal(await fresh.locator('dialog[data-tutorial]').count(),0,'not shown a second time');
+ await fresh.locator('[data-action=tutorial]').click();await fresh.locator('dialog[data-tutorial]').waitFor();
+ await fresh.keyboard.press('Escape');await visitor.close();});
+
+test('the market shows the newest history beside the listings, and the GENESIS collection',async()=>{
+ await go('/market');
+ assert.match(await text('h1'),/Mordinals \/ XMR721/);
+ assert.ok(await count('[data-section=history] .feed li')>=5);
+ await page.locator('.pills [data-value=genesis]').click();await shown('/market?show=genesis');
+ assert.equal(await count('[data-section=collection] [data-edition]'),100);
+ const first=page.locator('[data-edition="1"] img');await first.scrollIntoViewIfNeeded();
+ await page.waitForFunction(()=>{const i=document.querySelector('[data-edition="1"] img');return i&&i.complete&&i.naturalWidth===80&&i.naturalHeight===119;});
+ await page.waitForFunction(()=>{const i=document.querySelector('[data-edition="2"] img');return i&&i.complete&&i.naturalWidth>0;});
+ assert.equal(await count('[data-section=history]'),1);
+ await page.locator('[data-edition="4"] .meta').click();await shown('/nft/genesis/4');
+ assert.match(await text('h1'),/The Scream/);assert.match(await text('.kv'),/Edvard Munch/);
+ await go('/xmr721');assert.equal(await count('[data-section=steps] .steps > li'),3);});
+
 test('activity pages through older events',async()=>{
  // Eight more records, so the newest activity no longer fits one page.
  const w=demo.wallets;
@@ -404,7 +438,7 @@ test('a service without a relay is shown as read-only',async()=>{
 test('no view scrolls sideways at 360 px',async()=>{
  const lot=await lotOf(3);
  await page.setViewportSize({width:360,height:740});
- for(const at of ['/','/?kind=sale','/gallery','/gallery?filter=listed','/mordinal/3','/mordinal/7','/mordinal/3/stop','/mordinal/2/send','/mordinal/2/sell','/market','/lot/'+lot,
+ for(const at of ['/','/?kind=sale','/gallery','/gallery?filter=listed','/mordinal/3','/mordinal/7','/mordinal/3/stop','/mordinal/2/send','/mordinal/2/sell','/market','/market?show=genesis','/xmr721','/nft/genesis/4','/lot/'+lot,
   `/buy/${lot}/${W.bob}`,'/address/'+W.alice,'/about','/search?q=nothing','/nowhere']){
   await go(at);await page.waitForTimeout(150);await noSideScroll();}
  await page.setViewportSize({width:1280,height:900});});

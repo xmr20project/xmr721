@@ -28,6 +28,7 @@ import {outputSecret,signWithOutputKey} from '../../rules/lib/claim.mjs';
 import {provePayments} from '../../rules/lib/payment.mjs';
 import {wallet,makeTx,ownerEntry,makeInProof,DOMAIN} from '../../rules/tests/helpers.mjs';
 import {openReader} from '../lib/reader.mjs';
+import {loadCollections} from '../../xmr20-nfts/lib/collection.mjs';
 import {createRelay} from '../lib/relay.mjs';
 import {createContent} from '../lib/content.mjs';
 import {createService} from '../service.mjs';
@@ -113,7 +114,7 @@ export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=
   if(path==='/test/coins'){carrier.ready=Math.max(0,Number(body.ready)||0);return {ready:carrier.ready};}
   return undefined;};
  const content=createContent({source:async o=>pictures.get(o.bodySha256)||null});
- const service=createService({reader,relay,owners,transfers,content,origins,testHooks:true,extra,chunk:100,rate:{perSecond:50,burst:500},log,
+ const service=createService({reader,relay,owners,transfers,content,collections:loadCollections(join(import.meta.dirname,'../../xmr20-nfts/collections')),origins,testHooks:true,extra,chunk:100,rate:{perSecond:50,burst:500},log,
   ...(views===undefined?{views:join(import.meta.dirname,'../views')}:{views})});
  const at=await service.listen(port);
  let timer=null;

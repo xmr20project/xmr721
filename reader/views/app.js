@@ -5,6 +5,8 @@ import {gallery} from './gallery.js';
 import {mordinal} from './mordinal.js';
 import {market,lot,buy} from './market.js';
 import {about} from './about.js';
+import {xmr721} from './xmr721.js';
+import {nft} from './collection.js';
 
 const ADDRESS='([1-9A-HJ-NP-Za-km-z]{95})',ID='([0-9a-f]{64})';
 const ROUTES=[
@@ -17,6 +19,8 @@ const ROUTES=[
  [/^\/market$/,market,'market'],
  [new RegExp(`^/lot/${ID}$`),lot,'market'],
  [new RegExp(`^/buy/${ID}/${ADDRESS}$`),buy,'market'],
+ [/^\/nft\/([a-z0-9-]{1,40})\/(\d{1,5})$/,nft,'market'],
+ [/^\/xmr721$/,xmr721,'xmr721'],
  [/^\/about$/,about,'about']];
 
 const main=document.getElementById('main'),tip=document.getElementById('tip');
@@ -39,7 +43,7 @@ async function show({keep=false}={}){
  const box=el('div',{class:'view','data-at':location.hash.replace(/^#/,'')||'/'}),abort=new AbortController();
  const ctx={main:box,query,signal:abort.signal,abort,leaving:[],
   onLeave(work){this.leaving.push(work);},
-  title(text){document.title=text?text+' · Mordinals':'Mordinals';},
+  title(text){document.title=text?text+' · XMR721':'XMR721';},
   tip:showTip,
   // Shows the same view again with fresh data, staying where the person is on the page.
   reload:()=>show({keep:true})};

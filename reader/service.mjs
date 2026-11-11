@@ -6,7 +6,7 @@
 //   node service.mjs --owners <owners.jsonl> --domain <hex32> --fee-address <address> --node <url> --start <height> --state <dir>
 //        [--start-hash <hash>] [--network mainnet|stagenet] [--port 18951] [--every <ms>] [--transfers <transfers.jsonl>]
 //        [--carrier-bin <path> --carrier-state <dir> --carrier-network offline-fakechain|stagenet]   relay on
-//        [--content-dir <dir> | --content-archive [url]] [--views <dir>] [--allow-origin <origin>] [--allow-extension <id>] [--behind-proxy] [--test-hooks]
+//        [--content-dir <dir> | --content-archive [url]] [--collections <dir>] [--views <dir>] [--allow-origin <origin>] [--allow-extension <id>] [--behind-proxy] [--test-hooks]
 //
 // Lists are served whole (the owner list in pieces, every claimed number), so a wallet never has to name the
 // Mordinals it holds before it claims them.
@@ -19,6 +19,7 @@ import {openReader} from './lib/reader.mjs';
 import {createRelay,createCarrier} from './lib/relay.mjs';
 import {createContent,dirContent,archiveContent} from './lib/content.mjs';
 import {served,readOwners} from './lib/owners.mjs';
+import {loadCollections} from '../xmr20-nfts/lib/collection.mjs';
 
 const TYPES={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.woff2':'font/woff2'};
 const PAGE_CSP="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -27,7 +28,7 @@ const KINDS=new Set(['claim','move','list','cancel','reserve','sale']);
 const fail=(message,status=400)=>{const e=Error(message);e.status=status;return e;};
 const int=(v,fallback,min,max)=>{const n=v==null||v===''?NaN:Number(v);return Number.isInteger(n)?Math.min(max,Math.max(min,n)):fallback;};
 
-export function createService({reader,relay=null,owners,transfers=[],content=null,views=null,origins=[],extensions=null,behindProxy=false,testHooks=false,extra=null,chunk=4000,rate={perSecond:2,burst:60},log=()=>{}}){
+export function createService({reader,relay=null,owners,transfers=[],content=null,collections=new Map(),views=null,origins=[],extensions=null,behindProxy=false,testHooks=false,extra=null,chunk=4000,rate={perSecond:2,burst:60},log=()=>{}}){
  const m=reader.meta,list=owners.map(served),numbers=owners.map(o=>o.number),entry=new Map(owners.map(o=>[o.number,o])),byReg=new Map(owners.map(o=>[o.registrationTx,o]));
  const old=new Map();for(const t of transfers){if(t.result!=='updated')continue;if(!old.has(t.mordinal))old.set(t.mordinal,[]);old.get(t.mordinal).push({kind:'transfer',height:t.height,txid:t.tx});}
  // Answers that only change when the reader moves are kept until it does.
@@ -94,6 +95,12 @@ export function createService({reader,relay=null,owners,transfers=[],content=nul
      history,waiting:waitingFor({number:o.number})};}
    if(path==='/log'){const all=reader.journal,from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),200,1,500);
     return {height,hash:reader.hash,from,total:all.length,entries:all.slice(from,from+limit)};}
+   // Collections shown next to the Mordinals (read-only; see xmr20-nfts/).
+   if(path==='/collections')return {height,collections:[...collections.values()].map(c=>({key:c.key,...c.header}))};
+   if(path.startsWith('/collections/')){const [key,edition]=path.slice(13).split('/'),c=collections.get(key);if(!c)throw fail('This collection is not known here.',404);
+    if(edition===undefined)return {height,collection:{key:c.key,...c.header},items:c.items};
+    const item=/^\d{1,5}$/.test(edition)?c.items.find(t=>t.edition===Number(edition)):null;if(!item)throw fail('This collection has no such edition.',404);
+    return {height,collection:{key:c.key,...c.header},item};}
    if(path==='/checkpoints')return {height,checkpoints:reader.checkpoints};
    if(path==='/checkpoint')return reader.checkpoint();}
   if(method==='POST'&&path==='/records'){
@@ -129,6 +136,10 @@ export function createService({reader,relay=null,owners,transfers=[],content=nul
   try{
    const url=new URL(req.url,'http://127.0.0.1');
    if(req.method==='GET'&&url.pathname.startsWith('/content/')){if(headers['access-control-allow-origin'])for(const k of ['access-control-allow-origin','access-control-expose-headers','vary'])res.setHeader(k,headers[k]);return await picture(res,url.pathname.slice(9));}
+   const shot=/^\/collections\/([a-z0-9-]{1,40})\/(\d{1,5})\/picture$/.exec(url.pathname);
+   if(req.method==='GET'&&shot){const file=collections.get(shot[1])?.picture(Number(shot[2]));
+    if(!file){res.writeHead(404,headers);res.end(JSON.stringify({error:'No such picture.'}));return;}
+    res.writeHead(200,{'content-type':file.type,'content-length':file.bytes.length,'cache-control':'public, max-age=31536000, immutable','x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox",'cross-origin-resource-policy':'cross-origin'});res.end(file.bytes);return;}
    if(req.method==='GET'&&views&&(url.pathname==='/'||url.pathname==='/view')){res.writeHead(302,{location:'/view/'});res.end();return;}
    if(req.method==='GET'&&views&&url.pathname.startsWith('/view/'))return page(res,url.pathname);
    let body={};
@@ -154,7 +165,7 @@ export async function startService(o){
  if(o.carrierBin){const carrier=createCarrier({bin:o.carrierBin,stateDir:o.carrierState,node:o.node,network:o.carrierNetwork||'offline-fakechain',start:Number(o.carrierStart||o.start)});
   relay=createRelay({dir:join(o.state,'relay'),reader,chain,carrier,network,domain:o.domain,limits:o.limits,...(o.now?{now:o.now}:{}),log:o.log});}
  const source=o.contentDir?dirContent(o.contentDir):o.contentArchive?archiveContent(o.contentArchive===true?undefined:o.contentArchive):null;
- const service=createService({reader,relay,owners,transfers:o.transfers?readOwners(o.transfers):[],content:source?createContent({source}):null,views:o.views||(existsSync(VIEWS)?VIEWS:null),origins:o.origins||[],extensions:o.extensions?.length?o.extensions:null,behindProxy:Boolean(o.behindProxy),testHooks:Boolean(o.testHooks),...(o.rate?{rate:o.rate}:{}),log:o.log});
+ const service=createService({reader,relay,owners,transfers:o.transfers?readOwners(o.transfers):[],content:source?createContent({source}):null,collections:o.collections?loadCollections(o.collections):new Map(),views:o.views||(existsSync(VIEWS)?VIEWS:null),origins:o.origins||[],extensions:o.extensions?.length?o.extensions:null,behindProxy:Boolean(o.behindProxy),testHooks:Boolean(o.testHooks),...(o.rate?{rate:o.rate}:{}),log:o.log});
  const port=await service.listen(o.port==null?18951:Number(o.port));return {...service,port,chain,owners};}
 
 if(process.argv[1]===import.meta.filename){
@@ -162,7 +173,7 @@ if(process.argv[1]===import.meta.filename){
  for(const need of ['owners','domain','fee-address','node','start','state'])if(!arg(need)){console.error('Missing --'+need+'. See the top of this file.');process.exit(2);}
  const archive=has('content-archive')?(arg('content-archive')?.startsWith('http')?arg('content-archive'):true):null;
  const s=await startService({owners:arg('owners'),transfers:arg('transfers'),domain:arg('domain'),feeAddress:arg('fee-address'),node:arg('node'),start:arg('start'),startHash:arg('start-hash'),state:arg('state'),network:arg('network'),
-  port:arg('port'),carrierBin:arg('carrier-bin'),carrierState:arg('carrier-state'),carrierNetwork:arg('carrier-network'),contentDir:arg('content-dir'),contentArchive:archive,views:arg('views'),
+  port:arg('port'),carrierBin:arg('carrier-bin'),carrierState:arg('carrier-state'),carrierNetwork:arg('carrier-network'),contentDir:arg('content-dir'),collections:arg('collections'),contentArchive:archive,views:arg('views'),
   origins:process.argv.flatMap((a,i)=>a==='--allow-origin'?[process.argv[i+1]]:[]),extensions:process.argv.flatMap((a,i)=>a==='--allow-extension'?[process.argv[i+1]]:[]),behindProxy:has('behind-proxy'),testHooks:has('test-hooks'),log:v=>console.log(new Date().toISOString(),JSON.stringify(v))});
  console.log(`Mordinals reader on http://127.0.0.1:${s.port} (${s.owners.length} Mordinals, block ${s.reader.height}${s.relay?', relay on':', reader only'})`);
  s.follow(Number(arg('every'))||5000);

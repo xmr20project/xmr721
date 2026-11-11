@@ -1,6 +1,8 @@
 // The market: open listings, recent sales, one listing, and buying it by signing a message and paying from any wallet.
 import {OP,RULES,heldUntil,encodeBody,renderText,recordId,codeOf,amounts,splitOf,formatXmr,canonical,parseTxKey,provePayments,hex} from './rules.js';
-import {el,add,fill,api,service,count,xmr,addr,code,exact,notice,pill,strong,table,when,pictures,terms,running,field,textInput,mordinalLink,draft} from './ui.js';
+import {el,add,fill,api,service,count,xmr,addr,code,exact,notice,pill,pills,strong,table,when,pictures,terms,running,field,textInput,mordinalLink,draft,kindPill,eventText} from './ui.js';
+import {tutorial} from './xmr721.js';
+import {collectionGrid} from './collection.js';
 import {signPanel,sent,follow} from './sign.js';
 
 const READ_ONLY='Records cannot be sent from here: this service only reads. Use the XMR20 wallet or the command-line tool to buy.';
@@ -15,17 +17,26 @@ function costs(){
   el('li',{text:'A buyer pays the price in two payments: to the seller, and the 5% protocol fee to the fee address. Your own wallet adds its normal network fee for those payments.'}),
   el('li',{text:'A record counts only once it is in a Monero block. Until then it is shown as waiting.'}));}
 
+const SHOW=[['mordinals','Mordinals'],['genesis','GENESIS']];
+// The newest records, short, for the side of the market.
+function history(events){
+ return el('aside',{class:'side card stack','data-section':'history'},
+  el('div',{class:'section-head'},el('h2',{text:'History'}),el('a',{class:'dim',href:'#/',text:'All'})),
+  events.length?el('ul',{class:'feed'},events.map(e=>el('li',{'data-kind':e.kind},
+   el('div',{class:'feed-top'},kindPill(e.kind),mordinalLink(e.number),el('span',{class:'dim',text:when(e.time).slice(5,16)})),
+   el('div',{class:'feed-text'},eventText(e))))):el('p',{class:'empty',text:'Nothing has happened yet.'}));}
+
 export async function market(ctx){
  ctx.title('Market');const info=service.info;
- const [l,s]=await Promise.all([api('/listings',{signal:ctx.signal}),api('/sales?limit=10',{signal:ctx.signal})]);
+ const asked=ctx.query.get('show'),show=SHOW.some(([k])=>k===asked)?asked:'mordinals';
+ const [l,s,a,grid]=await Promise.all([api('/listings',{signal:ctx.signal}),api('/sales?limit=10',{signal:ctx.signal}),api('/activity?limit=12',{signal:ctx.signal}),
+  show==='genesis'?collectionGrid(ctx,'genesis'):null]);
  const pic=pictures(ctx),height=l.height;ctx.tip(height);
  const rows=l.listings.map(x=>{try{return terms(x);}catch{return {unfit:true,id:x.id,number:x.number};}});
  const who=textInput({class:'mono','data-field':'continue',placeholder:'Your Monero address','aria-label':'Your Monero address'}),problem=el('div',{});
  const resume=()=>{try{location.hash='#/address/'+canonical(who.value,info.network);}catch(e){problem.replaceChildren(notice('error',e.message));}};
  who.addEventListener('keydown',e=>{if(e.key==='Enter')resume();});
- add(ctx.main,
-  el('div',{class:'head'},el('h1',{text:'Market'}),
-   el('p',{class:'lede',text:'Buy and sell Mordinals for XMR. The buyer pays the seller directly; no one holds the money or the Mordinal in between.'})),
+ const mordinals=()=>[
   el('section',{class:'section','data-section':'listings'},el('div',{class:'section-head'},el('h2',{text:'For sale'}),el('span',{class:'dim',text:count(rows.length)})),
    table([
     {label:'Mordinal',cell:t=>el('div',{class:'with-thumb'},Number.isInteger(t.number)?pic(t.number,{size:'thumb'}):null,Number.isInteger(t.number)?mordinalLink(t.number):'')},
@@ -47,7 +58,18 @@ export async function market(ctx){
    el('div',{class:'search'},who,el('button',{type:'button',class:'btn','data-action':'continue',text:'Continue',onclick:resume})),problem):null,
   el('section',{class:'section','data-section':'sales'},el('div',{class:'section-head'},el('h2',{text:'Recent sales'})),
    table([{label:'Mordinal',cell:e=>mordinalLink(e.number)},{label:'Price',cell:e=>strong(xmr(e.price)+' XMR')},{label:'Seller',cell:e=>addr(e.seller)},
-    {label:'Buyer',cell:e=>addr(e.buyer)},{label:'Block',num:true,cell:e=>count(e.height)},{label:'Time',num:true,cell:e=>when(e.time)}],s.events,'No sales yet.')));}
+    {label:'Buyer',cell:e=>addr(e.buyer)},{label:'Block',num:true,cell:e=>count(e.height)},{label:'Time',num:true,cell:e=>when(e.time)}],s.events,'No sales yet.'))];
+ add(ctx.main,
+  el('div',{class:'head'},el('h1',{text:'Mordinals / XMR721'}),
+   el('p',{class:'lede',text:'Buy and sell Mordinals as XMR721 NFTs, for XMR. The buyer pays the seller directly; no one holds the money or the NFT in between.'}),
+   el('div',{class:'row head-row'},
+    pills(SHOW,show,v=>{location.hash='#/market'+(v==='mordinals'?'':'?show='+v);},'Collection'),
+    el('button',{type:'button',class:'btn small','data-action':'tutorial',text:'How it works',onclick:()=>tutorial(ctx,{force:true})}),
+    el('a',{class:'btn small',href:'#/xmr721',text:'Claim your Mordinals'}))),
+  el('div',{class:'market'},
+   el('div',{class:'market-main'},show==='genesis'?grid:mordinals()),
+   history(a.events)));
+ tutorial(ctx);}
 
 export async function lot(ctx,id){
  const info=service.info;

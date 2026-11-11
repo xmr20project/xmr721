@@ -14,7 +14,7 @@ import { wallet } from '../../rules/tests/helpers.mjs';
 import { verifySpendSignature } from '../../rules/lib/monero.mjs';
 
 const read = name => readFileSync(new URL(name, import.meta.url), 'utf8');
-const saved = JSON.parse(read('./genesis-transactions.json'));
+const saved = JSON.parse(read('../collections/genesis-transactions.json'));
 
 // Record -> extra field bytes, the way a wallet carries it: public key, then fragments of 250 carrier bytes.
 function extraOf(envelope, { size = 250 } = {}) {

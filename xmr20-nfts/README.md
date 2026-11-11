@@ -25,7 +25,7 @@ This is a legacy format. New inscriptions are planned to use XMR721
 - [`collections/genesis.jsonl`](collections/genesis.jsonl): one line per edition with its
   mint transaction, block, name, attributes, picture codec and size, `art` hash, owner and
   latest transaction.
-- [`tests/genesis-transactions.json`](tests/genesis-transactions.json): the raw extra field
+- [`collections/genesis-transactions.json`](collections/genesis-transactions.json): the raw extra field
   of the deploy and the 100 mint transactions, so the two files can be rebuilt offline.
 
 ## How the files were made
@@ -33,7 +33,7 @@ This is a legacy format. New inscriptions are planned to use XMR721
 ```
 node xmr20-nfts/tools/build-collection.mjs --node <monero node url> --name genesis \
      --collection 48c2e05b20e3a704f374ed5bbae1c17b45523ed0ad1d0db772c05187a53b87e0 \
-     --reader https://indexer2.xmr20.org/api/xmr20 --extras xmr20-nfts/tests/genesis-transactions.json
+     --reader https://indexer2.xmr20.org/api/xmr20 --extras xmr20-nfts/collections/genesis-transactions.json
 ```
 
 Every transaction is read from the Monero node, decoded and judged with the code in
