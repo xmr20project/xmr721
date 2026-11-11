@@ -139,7 +139,9 @@ them and build the relay's wallet first with `sh reader/carrier/build.sh`.
   wallets as test builds and will be published with those wallets.
 - **New NFTs.** Draft 4 adds collections, mints of up to about 800 bytes in one
   transaction, and burning (RULES.md section 9). The pages can create, show, send, sell and
-  burn them by signed message; the wallets cannot yet.
+  burn them by signed message. A site that hosts the pages can give them a wallet
+  that approves such a record itself (`signRecord` in `reader/views/wallet.js`); the
+  released wallets do not have this yet.
 - **Anyone can run a competing index.** Ownership here rests on people agreeing to these
   rules. That is why the index, the rules and the reader are public and reproducible.
 

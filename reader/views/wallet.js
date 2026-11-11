@@ -2,6 +2,8 @@
 //   status() -> {connected, address, label, demo?}    connect() -> status    disconnect()
 //   openMordinals()   shows the wallet's own screens, where keys stay and every claim, sale and purchase is approved
 //   onChange(fn) -> stop
+//   signRecord(hex) -> {id, state}   optional: the wallet reads the body of one record (collection, mint, send, sell,
+//                     stop, burn of a minted NFT), shows it, signs it after one approval and sends it to the relay
 // These pages never see a key or a recovery phrase. Without a wallet link they work as before, by signed messages.
 import {canonical} from './rules.js';
 import {el,add,api,service,count,xmr,addr,notice,pill,mordinalLink} from './ui.js';
@@ -33,6 +35,6 @@ export async function walletPanel(ctx,pic){
     el('span',{},el('span',{class:'strong',text:x.name||'NFT '+x.id.slice(0,8)}),el('span',{class:'dim',text:x.lot?'For sale, '+xmr(x.lot.price)+' XMR':'XMR721 NFT'})))),mine.map(m=>el('a',{class:'owned-item','data-number':m.number,href:'#/mordinal/'+m.number},pic(m.number,{size:'thumb'}),
     el('span',{},el('span',{class:'strong',text:'#'+count(m.number)}),el('span',{class:'dim',text:m.lot?'For sale, '+xmr(m.lot.price)+' XMR':'XMR721 NFT'})))))
    :el('p',{class:'muted',text:'This address holds no XMR721 NFTs yet. Mordinals you inscribed or received in 2023 are found and claimed inside the wallet.'}),
-  el('div',{class:'row'},find,open,leave),
+  el('div',{class:'row'},find,open,typeof w.signRecord==='function'&&service.info.mintFrom!=null?el('a',{class:'btn','data-action':'create',href:'#/create',text:'Create an NFT'}):null,leave),
   el('p',{class:'dim',text:'Finding checks the public list on your device. Claiming signs with the key of the inscribed coin; the coin is not spent and no XMR moves.'}),problem);
  return box;}

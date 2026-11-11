@@ -115,6 +115,39 @@ test('a minted NFT is listed, reserved, paid and bought through the same pages a
  assert.equal((await get('/nft/'+newId)).nft.owner,W.bob);
  await go('/address/'+W.bob);});
 
+// A site may give the pages a wallet that approves records itself. Here the wallet is a stand-in that signs in this
+// test process the way a wallet would: from the body bytes alone.
+test('with a connected wallet, the creator is filled in and one approval mints; a refusal sends nothing',async()=>{
+ const {decodeRecord,renderText,attachSignature,recordId}=await import('../../rules/lib/records.mjs'),{hex,unhex}=await import('../../rules/lib/monero.mjs'),info=await get('/info');
+ const other=await context.newPage();other.on('pageerror',e=>problems.push('page error: '+e.message));
+ let refuse=true;const asked=[];
+ await other.exposeFunction('walletApprove',async bodyHex=>{
+  asked.push(bodyHex);if(refuse)return {cancelled:true};
+  const bodyBytes=unhex(bodyHex),d=decodeRecord(bodyBytes,info.network,{sig:false}),ctx={domain:info.domain,number:null};
+  const record=attachSignature(bodyBytes,(await post('/test/sign',{as:'carol',text:renderText(d.op,d.body,bodyBytes,ctx)})).signature,ctx,info.network);
+  return {id:recordId(info.domain,bodyBytes),state:(await post('/records',{record:hex(record)})).state};});
+ await other.addInitScript(address=>{globalThis.xmr721Wallet={status:()=>({connected:true,address,label:'Test wallet'}),connect:async()=>({connected:true,address}),disconnect(){},openMordinals(){},onChange:()=>()=>{},
+  async signRecord(body){const out=await globalThis.walletApprove(body);if(out.cancelled)throw Object.assign(Error('Not approved. Nothing was signed.'),{cancelled:true});return out;}};},W.carol);
+ await other.goto(`${root}/view/#/create`);await other.locator('[data-wallet=connected]').waitFor();
+ assert.equal(await other.locator('[data-field=creator]').inputValue(),W.carol);
+ await other.locator('[data-field=text]').fill('Approved in the wallet');await other.locator('[data-field=name]').fill('One press');await other.locator('[data-action=next]').click();
+ const words=(await other.locator('[data-wallet-sign] [data-signtext]').textContent()).trim();assert.match(words,/^XMR721 mint: one NFT in no collection named "One press"; 22 bytes of type 5/);
+ assert.equal(await other.locator('details.other-wallet [data-field=signature]').count(),1,'signing in another wallet stays possible');
+ const before=(await get('/nfts')).total;
+ await other.locator('[data-action=approve]').click();await other.locator('[data-wallet-sign] p.note').waitFor();
+ assert.match(await other.locator('[data-wallet-sign] p.note').textContent(),/Nothing was signed/);assert.equal(await other.locator('[data-sent]').count(),0);
+ refuse=false;await other.locator('[data-action=approve]').click();await other.locator('[data-sent]').waitFor();
+ assert.equal(asked.length,2);assert.equal(asked[0],asked[1]);
+ await demo.mine();await other.locator('[data-sent] .good').waitFor({timeout:20000});
+ const now=await get('/nfts');assert.equal(now.total,before+1);const made=now.items.find(x=>x.name==='One press');assert.equal(made.owner,W.carol);
+ // On the NFT's page the owner's choices are open at once, and a burn goes through the wallet too.
+ await other.goto(`${root}/view/#/nft/${made.id}`);await other.locator('[data-action=burn-start]').click();
+ await other.locator('[data-action=approve]').waitFor();
+ // Another address gets the three steps, with no wallet button.
+ await other.goto(`${root}/view/#/create`);await other.locator('[data-field=creator]').fill(W.dave);await other.locator('[data-field=text]').fill('Not this wallet');await other.locator('[data-action=next]').click();
+ await other.locator('[data-field=signature]').waitFor();assert.equal(await other.locator('[data-action=approve]').count(),0);
+ await other.close();});
+
 test('nothing scrolls sideways at 360 px, and the browser reported no errors',async()=>{
  await page.setViewportSize({width:360,height:740});
  for(const at of ['/nfts','/create','/create?make=collection','/set/'+setId,'/nft/'+newId,'/nft/'+newId+'/send']){await go(at);await page.waitForTimeout(150);

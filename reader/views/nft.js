@@ -3,7 +3,8 @@
 // only used for reading.
 import {OP,RULES,MAX_RECORD,NO_COLLECTION,MAX_NAME,MAX_EDITIONS,encodeBody,decodeRecord,recordId,codeOf,renderText,nftLabel,splitOf,formatXmr,parseXmr,canonical,unhex} from './rules.js';
 import {el,add,api,service,count,xmr,addr,txid,code,notice,pill,strong,table,field,textInput,eventColumns,waitingList,terms,running,draft,ROOT} from './ui.js';
-import {signPanel} from './sign.js';
+import {signPanel,signingWallet} from './sign.js';
+import {walletLink,watchWallet} from './wallet.js';
 
 const TYPES={1:'PNG picture',2:'JPEG picture',3:'WebP picture',4:'GIF picture',5:'Text',6:'JSON',7:'MP4 video',8:'Text art'},LISTING_BLOCKS=720,SIGNATURE=65;
 const fact=(label,value)=>el('div',{},el('dt',{text:label}),el('dd',{},value));
@@ -79,7 +80,7 @@ export async function nft(ctx,id,action){
   const done=text=>s=>el('div',{class:'stack'},notice('good',text+' The record is in block '+count(s.height)+'.'),el('p',{},el('a',{class:'btn',href:home,text:'Back to the NFT'})));
   const go=to=>()=>{location.hash=home+'/'+to;},leave=()=>{location.hash=home;};
   const sign=(op,body,title,lines,ok,back)=>{const bodyBytes=encodeBody(op,body,info.network);
-   panel.replaceChildren(el('h3',{text:title}),...lines,signPanel(ctx,{bodyBytes,rctx,text:renderText(op,body,bodyBytes,rctx),signer:x.owner,back,backLabel:back===leave?'Cancel':'Back',done:done(ok)}));};
+   panel.replaceChildren(el('h3',{text:title}),...lines,signPanel(ctx,{bodyBytes,rctx,text:renderText(op,body,bodyBytes,rctx),signer:x.owner,back,backLabel:back===leave?'Cancel':'Back',done:done(ok),wallet:true}));};
   function choices(){
    const say=[el('p',{class:'muted'},'You send it, sell it, stop a sale or burn it by signing a message with the address that owns it, ',addr(x.owner),'. Signing moves no XMR.')];
    if(n.waiting.length)say.push(notice('note','A record for this NFT is waiting for a block. Wait until it is in a block before sending another.'));
@@ -116,6 +117,7 @@ export async function nft(ctx,id,action){
   else if(action==='stop'&&free&&t&&!held){open.hidden=true;sign(OP.cancel,{lot:t.id,seller:x.owner},'Stop selling '+n.title,[el('p',{class:'muted',text:'The NFT stays yours. Nobody can buy it after the record is in a block.'})],'The sale is stopped.',leave);}
   else if(action==='burn'&&free&&!t){open.hidden=true;sign(OP.burn,{nft:id,seq:x.seq,owner:x.owner},'Burn '+n.title,
    [notice('warn','Burning ends this NFT for good. It will have no owner, and nobody, including you, can send or sell it again. This cannot be undone.')],'Burned.',leave);}
+  else if(signingWallet(x.owner)){open.hidden=true;choices();}
   return box;}
 
  add(ctx.main,
@@ -148,10 +150,18 @@ export async function create(ctx){
     el('a',{class:'btn'+(make==='nft'?' primary':''),href:'#/create','data-make':'nft',text:'One NFT'}),el('a',{class:'btn'+(make==='collection'?' primary':''),href:'#/create?make=collection','data-make':'collection',text:'A collection'}))),
   why?notice('note',why):!info.relay?readOnly():el('section',{class:'section card stack'},stage));
  if(why||!info.relay)return;
+ // A connected wallet that approves records itself: its address is the creator, and one approval there mints.
+ const link=walletLink(),able=link&&typeof link.signRecord==='function',state=()=>{try{const s=link.status();return s.connected?canonical(s.address,info.network):'';}catch{return '';}},mine=able?state():'';
+ if(able)watchWallet(ctx,()=>{if(state()!==mine)ctx.reload();});
+ const bar=()=>{if(!able)return null;const problem=el('span',{class:'dim'});
+  if(mine)return el('div',{class:'row','data-wallet':'connected'},pill(link.status().label||'Wallet','green'),addr(mine),el('span',{class:'dim',text:'You approve in this wallet. Nothing is copied or pasted.'}));
+  const go=el('button',{type:'button',class:'btn primary small','data-action':'connect',text:'Connect wallet'});
+  go.addEventListener('click',async()=>{go.disabled=true;problem.textContent='';try{await link.connect();}catch(e){problem.textContent=e.message||'The wallet did not answer.';}finally{go.disabled=false;}});
+  return el('div',{class:'row','data-wallet':'off'},go,el('span',{class:'dim',text:'to create with one approval. Or type an address below and sign in any Monero wallet.'}),problem);};
  const done=(text,href,label)=>s=>el('div',{class:'stack'},notice('good',text+' The record is in block '+count(s.height)+'.'),el('p',{},el('a',{class:'btn primary',href,text:label})));
- const who=textInput({class:'mono','data-field':'creator',placeholder:'4… or 8…'}),problem=el('div',{}),fail=m=>problem.replaceChildren(notice('error',m));
+ const who=textInput({class:'mono','data-field':'creator',placeholder:'4… or 8…',value:mine}),problem=el('div',{}),fail=m=>problem.replaceChildren(notice('error',m));
  const signIt=(op,body,rctx,title,lines,after,back)=>{const bodyBytes=encodeBody(op,body,info.network),id=recordId(info.domain,bodyBytes);
-  stage.replaceChildren(el('h2',{text:title}),...lines,signPanel(ctx,{bodyBytes,rctx,text:renderText(op,body,bodyBytes,rctx),signer:body.creator,back,done:after(id)}));};
+  stage.replaceChildren(el('h2',{text:title}),...lines,signPanel(ctx,{bodyBytes,rctx,text:renderText(op,body,bodyBytes,rctx),signer:body.creator,back,done:after(id),wallet:true}));};
 
  function collectionForm(){
   const name=textInput({'data-field':'name',maxlength:String(MAX_NAME)}),max=textInput({'data-field':'max',inputmode:'numeric',placeholder:'100'});
@@ -160,11 +170,11 @@ export async function create(ctx){
     body={creator:canonical(who.value,info.network),name:name.value.trim(),max:editions};encodeBody(OP.collection,body,info.network);}catch(e){fail(e.message);return;}
    signIt(OP.collection,body,{domain:info.domain},'Create “'+body.name+'”',[el('p',{class:'muted'},`${count(body.max)} editions, minted only by `,addr(body.creator),'. The name and the number of editions cannot be changed later.')],
     id=>done('The collection is made.','#/set/'+id,'Open the collection'),collectionForm);};
-  stage.replaceChildren(el('h2',{text:'A collection'}),
-   field('Your Monero address',who,'The address that makes the collection. Only this address can mint into it. You sign with it, so it must be in a wallet that has “Sign message”.'),
+  stage.replaceChildren(...[el('h2',{text:'A collection'}),bar(),
+   field('Your Monero address',who,mine?'The address of your connected wallet. Only this address can mint into the collection. Change it to sign in another wallet.':'The address that makes the collection. Only this address can mint into it. You sign with it, so it must be in a wallet that has “Sign message”.'),
    field('Name',name,`1 to ${MAX_NAME} plain characters.`),field('Editions',max,`How many NFTs the collection can hold, at most ${count(MAX_EDITIONS)}.`),problem,
    el('div',{class:'row'},el('button',{type:'button',class:'btn primary',text:'Continue','data-action':'next',onclick:next})),
-   el('p',{class:'dim',text:'Making a collection has no fee. The relay pays the Monero network fee of the record.'}));}
+   el('p',{class:'dim',text:'Making a collection has no fee. The relay pays the Monero network fee of the record.'})].filter(Boolean));}
 
  async function nftForm(){
   let content=null,type=null;
@@ -195,9 +205,9 @@ export async function create(ctx){
    signIt(OP.mint,body,{domain:info.domain,collectionName:c?.body.name??null},'Mint '+(body.name||'this NFT'),
     [el('p',{class:'muted'},c?`Edition ${count(body.edition)} of “${c.body.name}”. `:'An NFT in no collection. ','Its first owner is ',addr(body.to||body.creator),'. The content cannot be changed later.')],
     id=>done('The NFT is made.','#/nft/'+id,'Open the NFT'),()=>nftForm());};
-  stage.replaceChildren(...[el('h2',{text:set?'Mint into “'+set.collection.name+'”':'One NFT'}),
+  stage.replaceChildren(...[el('h2',{text:set?'Mint into “'+set.collection.name+'”':'One NFT'}),bar(),
    set?el('p',{class:'muted',text:`${count(set.items.length)} of ${count(set.collection.max)} editions are minted. The next free edition is used.`}):null,
-   field('Your Monero address',who,set?'The address that made the collection. You sign with it.':'The creator. You sign with it, so it must be in a wallet that has “Sign message”.'),
+   field('Your Monero address',who,set?'The address that made the collection. You sign with it.':mine?'The address of your connected wallet: the creator. Change it to sign in another wallet.':'The creator. You sign with it, so it must be in a wallet that has “Sign message”.'),
    field('Picture or text file',file,'PNG, JPEG, WebP, GIF or plain text. It has to be very small: see the count below.'),text,preview,
    field('Name (optional)',name,`Up to ${MAX_NAME} plain characters. It uses the same room as the content.`),
    field('First owner (optional)',to,'Another Monero address that receives the NFT. Uses 65 bytes of the room.'),room,problem,

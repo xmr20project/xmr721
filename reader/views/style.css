@@ -260,3 +260,7 @@ input[type=file]{font-size:13px;color:var(--ux-copy)}
 .pic[data-picture]{cursor:default}
 .mcard .pic{cursor:pointer}
 .card.stack>.kv{margin-top:6px}
+
+.other-wallet{border-top:1px solid var(--ux-line);padding-top:12px}
+.other-wallet>summary{cursor:pointer;color:var(--ux-copy);font-size:14px}
+.other-wallet[open]>summary{margin-bottom:16px}

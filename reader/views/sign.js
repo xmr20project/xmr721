@@ -1,6 +1,8 @@
 // Signing a record's text in any Monero wallet, sending the record, and following it until it is in a block.
 import {attachSignature,hex} from './rules.js';
+import {canonical} from './rules.js';
 import {el,fill,api,service,addr,txid,copyButton,pill,notice,count,JOB} from './ui.js';
+import {walletLink} from './wallet.js';
 
 const ENDED=new Set(['done','refused','stuck']);
 
@@ -45,7 +47,12 @@ export function sent(ctx,id,{own=false,done,again}={}){
 //   text, signer     what the person signs, and with which address
 //   done(status)     -> node shown when the record is in a block
 //   back()           leaves the panel without sending
-export function signPanel(ctx,{bodyBytes,rctx,text,signer,done,back,backLabel='Back',own=false}){
+//   wallet           true for records a connected wallet can approve itself (those of minted NFTs and collections)
+// The connected wallet that holds the signing address, if it approves records itself.
+export function signingWallet(signer){
+ const w=walletLink();if(!w||typeof w.signRecord!=='function')return null;
+ try{const s=w.status();return s.connected&&canonical(s.address,service.info.network)===signer?w:null;}catch{return null;}}
+export function signPanel(ctx,{bodyBytes,rctx,text,signer,done,back,backLabel='Back',own=false,wallet=false}){
  const info=service.info;
  const area=el('textarea',{spellcheck:'false',autocomplete:'off',autocapitalize:'off',placeholder:'SigV2…','aria-label':'Signature','data-field':'signature'});
  const problem=el('div',{});
@@ -61,14 +68,27 @@ export function signPanel(ctx,{bodyBytes,rctx,text,signer,done,back,backLabel='B
   try{const out=await api('/records',{body:{record:hex(record)},signal:ctx.signal});
    panel.replaceChildren(sent(ctx,out.id,{own,done,again:()=>ctx.reload()}));}
   catch(e){if(e.name==='AbortError')return;send.disabled=false;fail(e.message);}});
- panel.append(
-  el('ol',{class:'steps'},
+ const w=wallet?signingWallet(signer):null,steps=el('ol',{class:'steps'},
    el('li',{class:'stack'},el('h3',{text:'Copy this text'}),
     el('div',{class:'signtext','data-signtext':'',text}),
     el('div',{class:'row'},copyButton(text,'Copy text','to sign'),el('span',{class:'dim',text:'One line. Sign it exactly as it is.'}))),
    el('li',{class:'stack'},el('h3',{text:'Sign a message in your Monero wallet'}),
     el('p',{class:'muted'},'Open “Sign message” in the wallet that holds ',addr(signer),' (Feather, Cake Wallet, Monero GUI or CLI). Paste the text and sign it with this address. Signing moves no XMR.')),
    el('li',{class:'stack'},el('h3',{text:'Paste the signature'}),area,problem,
-    el('div',{class:'row'},send,back?el('button',{type:'button',class:'btn',text:backLabel,onclick:back}):null))),
-  el('p',{class:'dim',text:'The relay pays the Monero network fee of this record and charges nothing in this version. The record counts once it is in a block.'}));
+    el('div',{class:'row'},send,back?el('button',{type:'button',class:'btn',text:backLabel,onclick:back}):null)));
+ const fee=el('p',{class:'dim',text:'The relay pays the Monero network fee of this record and charges nothing in this version. The record counts once it is in a block.'});
+ if(!w){panel.append(steps,fee);return panel;}
+ // One approval in the connected wallet: it reads the record itself, shows it, signs and sends it.
+ const label=w.status().label||'your wallet',approve=el('button',{type:'button',class:'btn primary',text:'Approve in '+label,'data-action':'approve'}),trouble=el('div',{});
+ approve.addEventListener('click',async()=>{
+  approve.disabled=true;trouble.replaceChildren();
+  try{const out=await w.signRecord(hex(bodyBytes));if(ctx.signal.aborted)return;
+   panel.replaceChildren(sent(ctx,out.id,{own,done,again:()=>ctx.reload()}));}
+  catch(e){approve.disabled=false;if(!ctx.signal.aborted)trouble.replaceChildren(notice(e.cancelled?'note':'error',e.message||'The wallet did not answer.'));}});
+ panel.append(
+  el('div',{class:'stack','data-wallet-sign':''},
+   el('p',{class:'muted'},'Your connected wallet holds ',addr(signer),'. It shows this record and the text below, and signs after you approve. Signing moves no XMR.'),
+   el('div',{class:'signtext','data-signtext':'',text}),
+   el('div',{class:'row'},approve,back?el('button',{type:'button',class:'btn',text:backLabel,onclick:back}):null),trouble),
+  el('details',{class:'other-wallet'},el('summary',{text:'Sign in another wallet instead'}),steps),fee);
  return panel;}
