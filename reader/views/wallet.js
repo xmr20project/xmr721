@@ -24,7 +24,7 @@ export async function walletPanel(ctx,pic){
   const go=el('button',{type:'button',class:'btn primary','data-action':'connect',text:'Connect wallet'});go.addEventListener('click',act(go,()=>w.connect()));
   add(box,el('h2',{text:'Your Mordinals'}),
    el('p',{class:'muted',text:'Connect the wallet that holds your Mordinals. It finds them on your device, and you claim, sell and buy with one approval each. This page never sees your keys.'}),
-   el('div',{class:'row'},go,el('a',{class:'btn',href:'#/xmr721',text:'How it works'})),problem);
+   el('div',{class:'row'},go),problem);
   return box;}
  let mine=[],made=[];try{const a=await api('/address/'+canonical(s.address,service.info.network),{signal:ctx.signal});mine=a.mordinals;made=a.nfts||[];}catch(e){if(e.name==='AbortError')throw e;}
  const find=el('button',{type:'button',class:'btn primary','data-action':'find',text:'Find my Mordinals'}),open=el('button',{type:'button',class:'btn','data-action':'open-wallet',text:'Sell, send or buy'});

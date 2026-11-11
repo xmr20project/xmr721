@@ -44,8 +44,7 @@ export async function mordinal(ctx,number,action){
 
  add(ctx.main,
   el('div',{class:'head'},el('a',{class:'crumb',href:'#/gallery',text:'Gallery'}),el('h1',{class:'small',text:'Mordinal #'+count(n)})),
-  el('div',{class:'split'},pic(n,{size:'large',hasContent:m.bodySize!==null}),el('div',{class:'stack'},answer,el('div',{class:'card'},facts))),
-  sale,
+  el('div',{class:'split item'},pic(n,{size:'large',hasContent:m.bodySize!==null}),el('div',{class:'stack'},sale,answer,el('div',{class:'card'},facts))),
   m.claimed?owner():null,
   v.waiting.length?el('section',{class:'section','data-section':'waiting'},el('div',{class:'section-head'},el('h2',{text:'Waiting for a block'}),
    el('span',{class:'dim',text:'These records do not count yet.'})),waitingList(v.waiting)):null,

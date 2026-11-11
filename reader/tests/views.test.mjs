@@ -234,7 +234,7 @@ test('sell and stop selling through the page',async()=>{
  await demo.mine();
  await page.locator('[data-sent] .good').waitFor({timeout:15000});
  await go('/market');
- const row=page.locator('[data-section=listings] tbody tr',{hasText:'#12'});
+ const row=page.locator('[data-section=listings] .lotcard',{hasText:'#12'});
  assert.match(await row.innerText(),/0\.3 XMR/);assert.match(await row.innerText(),/Open/);
 
  await go('/mordinal/12');
@@ -247,7 +247,7 @@ test('sell and stop selling through the page',async()=>{
  await demo.mine();
  await page.locator('[data-sent] .good').waitFor({timeout:15000});
  await go('/market');
- assert.equal(await count('[data-section=listings] tbody tr:has-text("#12")'),0);
+ assert.equal(await count('[data-section=listings] .lotcard:has-text("#12")'),0);
  await go('/mordinal/12');
  assert.equal(await count('[data-section=listing]'),0);
  assert.equal(await text('[data-answer=claimed] .exact .v'),W.carol);});
@@ -255,11 +255,11 @@ test('sell and stop selling through the page',async()=>{
 test('buy: reserve by signing, pay the exact amounts, finish, and the buyer owns it',async()=>{
  const lot=await lotOf(8),at=`/buy/${lot}/${W.alice}`;
  await go('/market');
- assert.equal(await count('[data-section=listings] tbody tr'),3);
- assert.match(await text('[data-section=listings] tbody tr:has-text("#10")'),/Reserved/);
+ assert.equal(await count('[data-section=listings] .lotcard'),3);
+ assert.match(await text('[data-section=listings] .lotcard:has-text("#10")'),/Reserved/);
  assert.match(await text('[data-section=sales]'),/1\.5 XMR/);
  await shot('market');await narrow('market-360');
- await page.locator('[data-section=listings] tbody tr',{hasText:'#8'}).locator('a',{hasText:'See and buy'}).click();await shown('/lot/'+lot);
+ await page.locator('[data-section=listings] .lotcard',{hasText:'#8'}).locator('a',{hasText:'Buy now'}).click();await shown('/lot/'+lot);
  assert.equal(await text('[data-price]'),'0.25 XMR');
  assert.equal(await page.locator('[data-section=terms] .chip .v').first().getAttribute('title'),W.erin);
  await page.locator('[data-field=buyer]').fill(W.erin);await page.locator('[data-action=buy]').click();
@@ -367,7 +367,7 @@ test('a first visit to the market shows the tutorial once; it can be left at any
  assert.match(await tour.locator('.label').textContent(),/Step 4 of 4/);assert.equal(await tour.locator('[data-action=next]').count(),0);
  await tour.locator('[data-action=back]').click();assert.match(await tour.locator('.label').textContent(),/Step 3 of 4/);
  await tour.locator('[data-action=skip]').click();assert.equal(await fresh.locator('dialog[data-tutorial]').count(),0);
- assert.ok(await fresh.locator('[data-section=listings] tbody tr').count()>=1,'the market is behind it');
+ assert.ok(await fresh.locator('[data-section=listings] .lotcard').count()>=1,'the market is behind it');
  await fresh.reload();await fresh.locator('[data-section=listings]').waitFor();await fresh.waitForTimeout(200);
  assert.equal(await fresh.locator('dialog[data-tutorial]').count(),0,'not shown a second time');
  await fresh.locator('[data-action=tutorial]').click();await fresh.locator('dialog[data-tutorial]').waitFor();

@@ -98,8 +98,8 @@ test('the owner sends it, and another owner burns one',async()=>{
 test('a minted NFT is listed, reserved, paid and bought through the same pages as a Mordinal',async()=>{
  await go('/nft/'+newId+'/sell');await page.locator('[data-field=price]').fill('0.4');await page.locator('[data-action=next]').click();
  assert.match(await signSendMine('alice'),/^Mordinals list: sell "Page Made" #1 \(NFT [0-9a-f]{32}\) for 0\.4 XMR \(0\.38 XMR to /);
- await go('/market');const row=page.locator('[data-section=listings] tbody tr',{hasText:'NFT '+newId.slice(0,8)});assert.match(await row.textContent(),/0\.4 XMR/);
- await row.locator('a',{hasText:'See and buy'}).click();await page.locator('[data-section=buy]').waitFor();
+ await go('/market');const row=page.locator('[data-section=listings] .lotcard',{hasText:'NFT '+newId.slice(0,8)});assert.match(await row.textContent(),/0\.4 XMR/);
+ await row.locator('a',{hasText:'Buy now'}).click();await page.locator('[data-section=buy]').waitFor();
  assert.match(await text('h1'),/First of five/);const lot=page.url().split('/lot/')[1];
  await page.locator('[data-field=buyer]').fill(W.bob);await page.locator('[data-action=buy]').click();await view(`/buy/${lot}/${W.bob}`).waitFor();
  await page.locator('[data-stage=reserve]').waitFor();
