@@ -1,6 +1,6 @@
 // The explorer: totals, newest activity, records waiting for a block, search, one address, one record.
 import {canonical} from './rules.js';
-import {el,add,api,service,count,xmr,pills,table,eventColumns,waitingList,notice,exact,field,textInput,pictures,terms,mordinalLink,addr,code,txid,strong,OPNAME} from './ui.js';
+import {el,add,api,service,count,xmr,pills,table,eventColumns,waitingList,notice,exact,field,textInput,pictures,terms,mordinalLink,addr,code,txid,strong,OPNAME,kindPill} from './ui.js';
 import {card} from './gallery.js';
 import {follow} from './sign.js';
 
@@ -11,7 +11,8 @@ function searchBox(value=''){
  const input=textInput({placeholder:'Mordinal number, transaction id, record code or Monero address','aria-label':'Search',value,'data-field':'search'});
  const go=()=>{location.hash='#/search?q='+encodeURIComponent(input.value.trim());};
  input.addEventListener('keydown',e=>{if(e.key==='Enter')go();});
- return el('div',{class:'search',role:'search'},input,el('button',{type:'button',class:'btn primary',text:'Search','data-action':'search',onclick:go}));}
+ return el('div',{class:'searchbar',role:'search'},
+  el('span',{class:'searchbar-icon','aria-hidden':'true'}),input,el('button',{type:'button',class:'btn primary',text:'Search','data-action':'search',onclick:go}));}
 
 // Looks through the newest events for one that fits. The service has no lookup by record code or
 // transaction id, so this reads a bounded number of pages and gives up after that.
@@ -50,34 +51,60 @@ export async function search(ctx){
  catch(e){if(e.name==='AbortError')throw e;problem=e.message;}
  add(ctx.main,el('div',{class:'head'},el('h1',{class:'small',text:'Search'}),searchBox(q)),notice('error',problem));}
 
+const LEGACY=[['','All'],['inscribed','Inscriptions'],['transfer','Transfers']];
+const day=seconds=>seconds?new Date(seconds*1000).toISOString().slice(0,10):'';
 export async function explorer(ctx){
- ctx.title('Explorer');
- const asked=ctx.query.get('kind'),kind=KINDS.some(([k])=>k&&k===asked)?asked:'',before=/^\d{1,9}$/.test(ctx.query.get('before')||'')?ctx.query.get('before'):'';
- const at=(k,b)=>{const p=new URLSearchParams();if(k)p.set('kind',k);if(b!=null&&b!=='')p.set('before',b);const s=p.toString();return '#/'+(s?'?'+s:'');};
- const [stats,pending,activity]=await Promise.all([api('/stats',{signal:ctx.signal}),api('/pending',{signal:ctx.signal}),
-  api(`/activity?limit=${PAGE}${kind?'&kind='+kind:''}${before?'&before='+before:''}`,{signal:ctx.signal})]);
- ctx.tip(stats.height);
+ ctx.title('Activity');
+ const q=ctx.query,asked=q.get('kind'),kind=KINDS.some(([k])=>k&&k===asked)?asked:'',before=/^\d{1,9}$/.test(q.get('before')||'')?q.get('before'):'';
+ const hAsked=q.get('h'),hKind=LEGACY.some(([k])=>k&&k===hAsked)?hAsked:'',hBefore=/^\d{1,9}$/.test(q.get('hbefore')||'')?q.get('hbefore'):'';
+ // Every link keeps the place in the other list.
+ const at=({k=kind,b=before,hk=hKind,hb=hBefore}={})=>{const p=new URLSearchParams();if(k)p.set('kind',k);if(b!=null&&b!=='')p.set('before',b);if(hk)p.set('h',hk);if(hb!=null&&hb!=='')p.set('hbefore',hb);const s=p.toString();return '#/'+(s?'?'+s:'');};
+ const [stats,pending,activity,legacy]=await Promise.all([api('/stats',{signal:ctx.signal}),api('/pending',{signal:ctx.signal}),
+  api(`/activity?limit=${PAGE}${kind?'&kind='+kind:''}${before?'&before='+before:''}`,{signal:ctx.signal}),
+  api(`/history?limit=${PAGE}${hKind?'&kind='+hKind:''}${hBefore?'&before='+hBefore:''}`,{signal:ctx.signal})]);
+ ctx.tip(stats.height);const pic=pictures(ctx);
  const tile=(label,value,unit)=>el('div',{class:'tile','data-stat':label},el('span',{class:'label',text:label}),el('span',{class:'value'},value,unit?el('span',{class:'unit',text:unit}):null));
- const known=new Set(pending.jobs.map(j=>j.id)),pool=pending.pool.filter(p=>!known.has(p.id));
+ const known=new Set(pending.jobs.map(j=>j.id)),pool=pending.pool.filter(p=>!known.has(p.id)),waiting=pending.jobs.length||pool.length;
+ const quiet=!activity.total&&!waiting;
  add(ctx.main,
-  el('div',{class:'head'},el('h1',{text:'Mordinals'}),
-   el('p',{class:'lede',text:'Inscriptions on Monero, each owned by a Monero address. Everything here is read from Monero blocks.'}),
+  el('div',{class:'head'},el('h1',{text:'Activity'}),
+   el('p',{class:'lede',text:'Every Mordinal and every record, read from Monero blocks. Search for a number, a transaction, a record code or an address.'}),
    searchBox(),
    el('div',{class:'stats'},tile('Mordinals',count(stats.mordinals)),tile('Claimed',count(stats.claimed)),tile('For sale',count(stats.forSale)),
     tile('Sales',count(stats.sales)),tile('Volume',xmr(stats.volume),'XMR'))),
-  el('section',{class:'section','data-section':'waiting'},el('div',{class:'section-head'},el('h2',{text:'Waiting for a block'}),
-    el('span',{class:'dim',text:'These records do not count yet.'})),
-   pending.jobs.length||pool.length?[
-    pending.jobs.length?waitingList(pending.jobs):null,
-    pool.length?table([{label:'Record',cell:p=>OPNAME[p.op]||'Record'},{label:'Code',cell:p=>code(p.id)},{label:'Transaction',cell:p=>txid(p.txid)},
-     {label:'State',cell:()=>'Seen by the Monero node, not in a block yet'}],pool):null]
-    :el('p',{class:'empty',text:'Nothing is waiting.'})),
-  el('section',{class:'section','data-section':'activity'},el('div',{class:'section-head'},el('h2',{text:before?'Earlier activity':'Newest activity'}),
-    pills(KINDS,kind,k=>{location.hash=at(k);},'Kind of event')),
-   table(eventColumns(),activity.events,'No events of this kind yet.'),
+  waiting?el('section',{class:'section card catalog','data-section':'waiting'},el('div',{class:'cat-head'},el('div',{},el('h2',{text:'Waiting for a block'}),
+    el('p',{class:'card-sub',text:'These records do not count yet.'}))),
+   pending.jobs.length?waitingList(pending.jobs):null,
+   pool.length?table([{label:'Record',cell:p=>OPNAME[p.op]||'Record'},{label:'Code',cell:p=>code(p.id)},{label:'Transaction',cell:p=>txid(p.txid)},
+    {label:'State',cell:()=>'Seen by the Monero node, not in a block yet'}],pool):null):null,
+  // Claims, sends, listings and sales under XMR721. Before the first one, a short note instead of an empty table.
+  quiet?el('section',{class:'section card catalog quiet','data-section':'activity','data-empty':''},
+    el('span',{class:'quiet-dot','aria-hidden':'true'}),
+    el('div',{},el('h2',{text:'Waiting for activity'}),
+     el('p',{class:'card-sub',text:'Claims, sends, listings and sales under XMR721 appear here once the first record is in a Monero block. Below is everything that happened to Mordinals before.'})),
+    el('a',{class:'btn primary',href:'#/market',text:'Claim your Mordinals'}))
+   :el('section',{class:'section card catalog','data-section':'activity'},
+    el('div',{class:'cat-head'},el('div',{},el('h2',{text:before?'Earlier XMR721 activity':'XMR721 activity'}),el('p',{class:'card-sub',text:'Claims, sends, listings and sales, newest first.'})),
+     pills(KINDS,kind,k=>{location.hash=at({k,b:''});},'Kind of event')),
+    table(eventColumns(),activity.events,'No events of this kind yet.'),
+    el('div',{class:'pager'},
+     before?el('a',{class:'btn',href:at({b:''}),text:'Newest'}):el('span',{}),
+     activity.next!=null?el('a',{class:'btn',href:at({b:activity.next}),text:'Older'}):el('span',{class:'where',text:activity.events.length?'This is the oldest.':''}))),
+  // The original history: inscriptions and transfers under the 2023 rules.
+  el('section',{class:'section card catalog','data-section':'legacy'},
+   el('div',{class:'cat-head'},el('div',{},el('h2',{},'Mordinals history ',el('span',{class:'cat-count',text:count(legacy.total)})),
+     el('p',{class:'card-sub',text:`${count(legacy.inscriptions)} inscriptions and ${count(legacy.transfers)} transfers under the original Mordinals rules, newest first.`})),
+    pills(LEGACY,hKind,k=>{location.hash=at({hk:k,hb:''});},'Kind of event')),
+   table([
+    {label:'Mordinal',cell:e=>el('div',{class:'with-thumb'},pic(e.number,{size:'thumb'}),mordinalLink(e.number))},
+    {label:'Event',cell:e=>kindPill(e.kind==='transfer'?'transfer':'inscribed')},
+    {label:'Date',cell:e=>el('span',{class:'nowrap',text:day(e.time)})},
+    {label:'Block',num:true,cell:e=>e.height==null?'':count(e.height)},
+    {label:'Transaction',cell:e=>txid(e.txid)}],legacy.events,'Nothing here.'),
    el('div',{class:'pager'},
-    before?el('a',{class:'btn',href:at(kind),text:'Newest'}):el('span',{}),
-    activity.next!=null?el('a',{class:'btn',href:at(kind,activity.next),text:'Older'}):el('span',{class:'where',text:activity.events.length?'This is the oldest.':''}))));}
+    hBefore?el('a',{class:'btn',href:at({hb:''}),text:'Newest'}):el('span',{}),
+    legacy.next!=null?el('a',{class:'btn',href:at({hb:legacy.next}),text:'Older'}):el('span',{class:'where',text:legacy.events.length?'This is the oldest.':''}))));}
+
 
 export async function address(ctx,a){
  const info=service.info,me=canonical(a,info.network),before=/^\d{1,9}$/.test(ctx.query.get('before')||'')?ctx.query.get('before'):'';

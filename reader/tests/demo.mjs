@@ -20,7 +20,7 @@
 //   GET  /test/wallets                  the demo wallets' addresses
 import {createHash} from 'node:crypto';
 import {deflateSync,crc32} from 'node:zlib';
-import {mkdtempSync,rmSync} from 'node:fs';
+import {mkdtempSync,rmSync,readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {decodeAddress} from '../../rules/lib/monero.mjs';
@@ -50,8 +50,9 @@ function picture(n,scale=12){
  return png(size,(x,y)=>{const cx=Math.floor(x/scale),cy=Math.floor(y/scale),mx=cx<cells/2?cx:cells-1-cx,bit=h[1+cy*4+mx];return bit>150?front:bit>118&&(cx+cy)%2?mark:back;});}
 
 // mints: the made-up ledger allows minting from its first block, and a collection and a few minted NFTs are added.
+// seed: false leaves the ledger as on its first day (no claims, listings or sales; the 2023 history only).
 // fees: {mint, collection} in atomic units: the relay charges them, to subaddresses of a made-up relay wallet.
-export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=[],network='mainnet',views=undefined,mints=false,fees=null,log=()=>{}}={}){
+export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=[],network='mainnet',views=undefined,mints=false,fees=null,seed=true,log=()=>{}}={}){
  const names=['alice','bob','carol','dave','erin'],w=Object.fromEntries([...names,'fee','other'].map(n=>[n,wallet('demo '+n,network)])),by=new Map(Object.values(w).map(x=>[x.address,x]));
  const given=new Map();for(const g of give){const a=decodeAddress(g.address,network);for(const n of g.numbers)given.set(n,{spend:a.spend,view:a.view,sub:a.kind==='sub'});}
  // Who holds what at the start: the demo wallets hold the low numbers, everything else sits with a wallet nobody uses.
@@ -88,7 +89,7 @@ export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=
  const block=async(...items)=>{chain.mine(items.map(r=>r.txid?{txid:r.txid,tx:r.tx}:carried(r)));await reader.sync();};
 
  // A short made-up history, so every page has something to show.
- const have=n=>n<count&&!given.has(n);
+ const have=n=>seed&&n<count&&!given.has(n);
  if(have(0)&&have(1)&&have(2))await block(make.claim(0,w.alice),make.claim(1,w.alice),make.claimProof(2,w.bob));
  if(have(3))await block(make.claim(3,w.carol));
  let first=null;if(have(0)){first=make.list(0,w.alice,3n*XMR/2n);await block(first.record);}
@@ -128,7 +129,9 @@ export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=
   if(path==='/test/coins'){carrier.ready=Math.max(0,Number(body.ready)||0);return {ready:carrier.ready};}
   return undefined;};
  const content=createContent({source:async o=>pictures.get(o.bodySha256)||null});
- const service=createService({reader,relay,owners,transfers,content,collections:loadCollections(join(import.meta.dirname,'../../xmr20-nfts/collections')),origins,testHooks:true,extra,chunk:100,rate:{perSecond:50,burst:500},log,
+ // Dates for the made-up history come from the real block times of the index (the demo's heights lie in the same range).
+ const blockTimes=JSON.parse(readFileSync(join(import.meta.dirname,'../../ownership-index/result/block-times.json'),'utf8')).times;
+ const service=createService({reader,relay,owners,transfers,blockTimes,content,collections:loadCollections(join(import.meta.dirname,'../../xmr20-nfts/collections')),origins,testHooks:true,extra,chunk:100,rate:{perSecond:50,burst:500},log,
   ...(views===undefined?{views:join(import.meta.dirname,'../views')}:{views})});
  const at=await service.listen(port);
  let timer=null;

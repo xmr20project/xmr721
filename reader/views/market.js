@@ -34,7 +34,14 @@ function brief(e){
  if(e.kind==='cancel')return ['by ',who(e.seller)];
  return [eventText(e)];}
 // The newest records, short, for the side of the market.
-function history(events,pic){
+function history(events,pic,legacy=[]){
+ // Before the first XMR721 record, the rail shows the newest of the original history.
+ if(!events.length&&legacy.length)return el('aside',{class:'side card stack','data-section':'history','data-legacy':''},
+  el('div',{class:'section-head'},el('h2',{text:'Mordinals history'}),el('a',{class:'more',href:'#/',text:'View all'})),
+  el('p',{class:'card-sub rail-note',text:'No XMR721 activity yet. These are the newest inscriptions and transfers under the original rules.'}),
+  el('ul',{class:'feed'},legacy.map(e=>el('li',{'data-kind':e.kind},pic(e.number,{size:'thumb'}),
+   el('div',{class:'feed-body'},el('div',{class:'feed-top'},kindPill(e.kind),mordinalLink(e.number),el('span',{class:'dim',text:e.time?new Date(e.time*1000).toISOString().slice(0,10):''})),
+    el('div',{class:'feed-text'},'Block '+(e.height==null?'?':count(e.height))))))));
  return el('aside',{class:'side card stack','data-section':'history'},
   el('div',{class:'section-head'},el('h2',{},el('span',{class:'live-dot','aria-hidden':'true'}),'Activity'),el('a',{class:'more',href:'#/',text:'View all'})),
   events.length?el('ul',{class:'feed'},events.map(e=>el('li',{'data-kind':e.kind},
@@ -60,6 +67,7 @@ export async function market(ctx){
  const asked=ctx.query.get('show'),show=SHOW.some(([k])=>k===asked)?asked:'mordinals';
  const [l,s,a,grid]=await Promise.all([api('/listings',{signal:ctx.signal}),api('/sales?limit=10',{signal:ctx.signal}),api('/activity?limit=9',{signal:ctx.signal}),
   show==='genesis'?collectionGrid(ctx,'genesis'):null]);
+ const old=a.events.length?[]:await api('/history?limit=9',{signal:ctx.signal}).then(h=>h.events).catch(()=>[]);
  const pic=pictures(ctx),height=l.height;ctx.tip(height);
  const mine=await walletPanel(ctx,pic);watchWallet(ctx,()=>ctx.reload());
  const strip=await collectionCards(ctx,{limit:6});
@@ -95,7 +103,7 @@ export async function market(ctx){
    info.relay?null:notice('note',READ_ONLY),
    info.relay?el('div',{class:'continue','data-section':'continue'},el('div',{},el('h3',{text:'Continue a purchase'}),
      el('p',{class:'muted',text:'Started buying and closed the page? Enter the address you reserved with.'})),
-    el('div',{class:'stack'},el('div',{class:'search'},who,el('button',{type:'button',class:'btn','data-action':'continue',text:'Continue',onclick:resume})),problem)):null)];
+    el('div',{class:'stack'},el('div',{class:'searchbar plain-bar'},who,el('button',{type:'button',class:'btn','data-action':'continue',text:'Continue',onclick:resume})),problem)):null)];
  add(ctx.main,
   el('div',{class:'head'},el('h1',{text:'Mordinals / XMR721'}),
    el('p',{class:'lede',text:'Buy and sell Mordinals as XMR721 NFTs, for XMR. The buyer pays the seller directly; no one holds the money or the NFT in between.'})),
@@ -105,7 +113,7 @@ export async function market(ctx){
     el('button',{type:'button',class:'linkish','data-action':'tutorial',text:'Take the quick tour',onclick:()=>tutorial(ctx,{force:true})}))),
   el('div',{class:'market'},
    el('div',{class:'market-main'},mine,show==='genesis'?grid:mordinals()),
-   history(a.events,pic)));
+   history(a.events,pic,old)));
  tutorial(ctx);}
 
 export async function lot(ctx,id){

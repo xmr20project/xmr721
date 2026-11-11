@@ -99,7 +99,9 @@ test('the explorer shows totals and the seeded activity, with a filter',async()=
  await go('/');
  for(const [label,value] of [['Mordinals','300'],['Claimed','9'],['For sale','3'],['Sales','1']])assert.equal(await text(`[data-stat="${label}"] .value`),value);
  assert.match(await text('[data-stat="Volume"] .value'),/^1\.5\s*XMR$/);
- assert.match(await text('[data-section=waiting]'),/Nothing is waiting/);
+ assert.equal(await count('[data-section=waiting]'),0,'nothing waits, so no waiting list');
+ assert.match(await text('[data-section=legacy]'),/300 inscriptions and 3 transfers/);
+ assert.equal(await count('[data-section=legacy] tbody tr'),25);assert.match(await page.locator('[data-section=legacy] tbody tr').first().innerText(),/Moved in 2023[\s\S]*2023-11-\d\d/);
  const rows=page.locator('[data-section=activity] tbody tr');
  assert.equal(await rows.count(),19);
  const first=await rows.first().innerText();
@@ -385,7 +387,7 @@ test('the market shows the newest history beside the listings, and the GENESIS c
  assert.equal(await count('[data-section=history]'),1);
  await page.locator('[data-edition="4"] .meta').click();await shown('/nft/genesis/4');
  assert.match(await text('h1'),/The Scream/);assert.match(await text('.kv'),/Edvard Munch/);
- await go('/xmr721');assert.equal(await count('[data-section=steps] .steps > li'),3);
+ await go('/xmr721');assert.equal(await count('[data-section=steps] .guide > li'),3);
  // Collections: Mordinals as a whole and GENESIS; a copy of the pages without an archive lists no others.
  await go('/collections');assert.deepEqual(await page.locator('.ccard .n').allTextContents(),['Mordinals','GENESIS']);
  await page.waitForFunction(()=>document.querySelectorAll('.ccard[data-kind=held] .mosaic img').length===3);
@@ -403,7 +405,7 @@ test('activity pages through older events',async()=>{
  assert.equal(await rows.count(),25);
  assert.match(await rows.first().innerText(),/Sent by/);
  await page.locator('[data-section=activity] .pager a',{hasText:'Older'}).click();
- await page.locator('[data-section=activity] h2:has-text("Earlier activity")').waitFor();
+ await page.locator('[data-section=activity] h2:has-text("Earlier XMR721 activity")').waitFor();
  assert.equal(await rows.count(),total-25);
  assert.match(await rows.last().innerText(),/Claimed by/);
  assert.equal(await count('[data-section=activity] .pager a:has-text("Older")'),0);
@@ -451,3 +453,17 @@ test('the browser reported no errors, broke no policy and asked for nothing outs
  assert.deepEqual(problems,[]);
  assert.deepEqual(blocked,[]);
  assert.ok(posted.length>0&&posted.every(p=>p==='/records'),'the pages posted to something other than /records');});
+
+test('on its first day the activity page shows the original history and waits for XMR721 activity',async()=>{
+ const fresh=await startDemo({port:0,auto:0,seed:false}),at=`http://127.0.0.1:${fresh.port}`,p=await context.newPage();
+ try{
+  await p.goto(at+'/view/#/');await p.locator('#main > .view[data-at="/"]').waitFor();
+  assert.equal(await p.locator('[data-section=activity][data-empty]').count(),1);
+  assert.match(await p.locator('[data-section=activity]').innerText(),/Waiting for activity/);
+  assert.equal(await p.locator('[data-section=legacy] tbody tr').count(),25);
+  await p.locator('[data-section=legacy] .pills button[data-value=transfer]').click();await p.locator('#main > .view[data-at="/?h=transfer"]').waitFor();
+  assert.equal(await p.locator('[data-section=legacy] tbody tr').count(),3);
+  await p.goto(at+'/view/#/market');await p.locator('#main > .view[data-at="/market"]').waitFor();
+  assert.equal(await p.locator('[data-section=history][data-legacy] .feed li').count(),9,'the market rail falls back to the original history');
+  assert.match(await p.locator('[data-section=listings]').innerText(),/Nothing is for sale right now/);
+ }finally{await p.close();await fresh.close();}});

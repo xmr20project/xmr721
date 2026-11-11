@@ -369,7 +369,7 @@ test('the service answers wallets and pages, and the check tools agree with it',
   assert.deepEqual((await get('/gallery?filter=claimed')).body.items.map(i=>i.number),[0,2]);assert.equal((await get('/gallery?filter=unclaimed')).body.total,6);
   assert.deepEqual((await get('/gallery?filter=unclaimed&from=4&limit=5')).body.items.map(i=>i.number),[6,7]);assert.equal((await get('/gallery?filter=else')).status,400);
   const m0=(await get('/mordinal/0')).body;assert.deepEqual(m0.history.map(h=>h.kind),['inscribed','transfer','claim','list','reserve','sale']);
-  assert.deepEqual(m0.history[1],{kind:'transfer',height:60,txid:'ab'.repeat(32)});assert.equal(m0.mordinal.owner,w.bob.address);assert.equal(m0.mordinal.bodySha256,sha(PNG));assert.equal(m0.mordinal.registrationHeight,50);
+  assert.deepEqual(m0.history[1],{kind:'transfer',height:60,time:null,txid:'ab'.repeat(32)});assert.equal(m0.mordinal.owner,w.bob.address);assert.equal(m0.mordinal.bodySha256,sha(PNG));assert.equal(m0.mordinal.registrationHeight,50);
   assert.deepEqual((await get('/mordinal/'+owners[0].registrationTx)).body,m0);assert.equal((await get('/mordinal/7')).body.mordinal.claimed,false);
   assert.equal((await get('/mordinal/99')).status,404);assert.equal((await get('/mordinal/nonsense')).status,404);
   const stats=(await get('/stats')).body;assert.deepEqual({...stats,checkpoint:0,byKind:0},{height:107,mordinals:8,claimed:2,forSale:0,sales:1,volume:String(2n*XMR),fees:String(XMR/10n),records:6,refused:0,byKind:0,checkpoint:0});
