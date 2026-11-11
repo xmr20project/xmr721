@@ -1,6 +1,6 @@
 # Rule library
 
-The rules of [`../RULES.md`](../RULES.md) as code. The reader, the check tool, the pages and
+The XMR721 rules of [`../RULES.md`](../RULES.md) as code. The reader, the check tool, the pages and
 the wallets all import this one library, so they cannot disagree about a record.
 
 What it covers: a Mordinal is claimed without spending its owner coin (two kinds of proof),

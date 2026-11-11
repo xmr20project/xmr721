@@ -5,7 +5,8 @@ and the rules that decode them. They use their own format,
 [XMR20-NFT-V2](FORMAT.md), which is separate from the Mordinals rules: an NFT here is owned
 by a Monero address from the moment it is minted and moves by a signed record.
 
-This is a legacy format. New inscriptions are planned to use a different one.
+This is a legacy format. New inscriptions are planned to use XMR721
+([`../RULES.md`](../RULES.md)).
 
 ## GENESIS
 

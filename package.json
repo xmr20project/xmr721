@@ -1,8 +1,8 @@
 {
-  "name": "mordinals-ledger",
+  "name": "xmr721",
   "version": "0.3.0",
   "private": true,
-  "description": "Ownership index, rules, reader and relay for Mordinals on Monero: claim, move and trade by signature, without spending the inscribed coin.",
+  "description": "XMR721, an NFT standard for Monero: the full Mordinals ownership index, rules, reader and relay. Claim, send and trade by signature without spending any coin.",
   "license": "MIT",
   "type": "module",
   "engines": {

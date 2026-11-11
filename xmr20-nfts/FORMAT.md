@@ -2,8 +2,8 @@
 
 The format of the NFT collections the XMR20 project inscribed on Monero in 2026, GENESIS
 among them. It is written down here so that the collections can be read and checked by
-anyone. It is a legacy format: new inscriptions are meant to use a different one, and
-nothing in the Mordinals rules ([`../RULES.md`](../RULES.md)) depends on it.
+anyone. It is a legacy format: new inscriptions are meant to use XMR721
+([`../RULES.md`](../RULES.md)), and nothing in the XMR721 rules depends on it.
 
 The code in [`lib/`](lib) is this document as code.
 

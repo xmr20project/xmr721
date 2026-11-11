@@ -1,8 +1,16 @@
-# Mordinals ledger
+# XMR721
 
-Ownership index, rules, reader and relay for **Mordinals**, the 2023 inscriptions on Monero.
-With it a Mordinal can be claimed, sent and sold with a wallet signature. The inscribed coin
-is never spent, so nothing about anyone's Monero spending is made public.
+**XMR721** is an NFT standard for Monero. An NFT is owned by an ordinary Monero address and
+is sent and sold with a wallet signature. No coin is spent to move it, so nothing about
+anyone's Monero spending is made public.
+
+Its first collection is **Mordinals**, the 2023 inscriptions on Monero. This repository holds
+the full ownership index of all of them, the rules, and the reader and relay that run the
+standard. With it a Mordinal can be claimed, sent and sold without spending the coin it was
+inscribed on.
+
+The name follows the XMR20 token standard, the same way NFT standards on other chains
+follow their token standards.
 
 > **Draft.** Nothing here is live. No start block is set, the rules have not had an outside
 > review, and the relay runs on test chains only. See [Status](#status).
@@ -41,7 +49,7 @@ What the chain says today (read to block 3,802,870, 9 November 2026):
 
 The Mordinals are all still there. For almost three years nothing could be done with them.
 
-## What this repository does
+## What XMR721 does
 
 **1. A full ownership index.** [`ownership-index/`](ownership-index) holds the owner of every
 Mordinal under the original rules, worked out from the chain by running the original index
@@ -49,7 +57,8 @@ code unchanged and a second, separately written replay next to it. The two agree
 42,894 Mordinals and every transfer. As far as we know this is the only complete, public
 index of Mordinals and their owners.
 
-**2. Rules for owning them without spending them.** [`RULES.md`](RULES.md):
+**2. Rules for owning them without spending them.** [`RULES.md`](RULES.md), the XMR721
+rules:
 
 - At a start block the owner list is fixed. Every Mordinal keeps its number and its history.
 - The holder **claims** a Mordinal once, to an ordinary Monero address, with a signature made
@@ -76,7 +85,7 @@ holds the largest transaction and extra data we know of. The largest inscription
 the original Mordinals rules is 141,345 bytes (#264).
 
 The original rules only read ordinary transactions, so by those rules the video is not a
-Mordinal. This ledger adds it as one extra entry, number 42,894, after the original 42,894
+Mordinal. XMR721 adds it as one extra entry, number 42,894, after the original 42,894
 (numbers 0 to 42,893). The entry and the tool that builds and checks it from any Monero node
 are in [`ownership-index/added/`](ownership-index/added). The reader's pages do not play
 video yet.
@@ -84,21 +93,22 @@ video yet.
 ## XMR20 NFTs: the GENESIS collection
 
 In October 2026 the XMR20 project inscribed GENESIS on Monero: 100 small renderings of
-well-known paintings, each one complete in a single transaction. These NFTs use their own
-format and are owned by Monero addresses from the start, so no coin is ever exposed.
+well-known paintings, each one complete in a single transaction. They were made before
+XMR721, in an earlier format of their own, and are owned by Monero addresses from the
+start, so no coin is ever exposed.
 [`xmr20-nfts/`](xmr20-nfts) holds the collection as rebuilt from the chain, the
-[format](xmr20-nfts/FORMAT.md) and the code that decodes and checks it. It is a legacy
-format; new inscriptions are planned to use a different one.
+[format](xmr20-nfts/FORMAT.md) and the code that decodes and checks it. That format is
+legacy; new inscriptions are planned to use XMR721.
 
 ## Layout
 
 | Path | What |
 |---|---|
-| [`RULES.md`](RULES.md) | The rule document (draft 3): records, checks, fee rule, privacy rules |
+| [`RULES.md`](RULES.md) | The XMR721 rules (draft 3): records, checks, fee rule, privacy rules |
 | [`rules/`](rules) | The rule library, its offline tests, and tests against real wallet software on a local test chain |
 | [`reader/`](reader) | Reader, relay, HTTP service, explorer/gallery/market pages, check tools |
 | [`ownership-index/`](ownership-index) | The owner list, how it was made and checked, and the added entry |
-| [`xmr20-nfts/`](xmr20-nfts) | The GENESIS collection of XMR20 NFTs, their format and decoder |
+| [`xmr20-nfts/`](xmr20-nfts) | The GENESIS collection of XMR20 NFTs, their earlier format and decoder |
 | [`docs/OPEN-POINTS.md`](docs/OPEN-POINTS.md) | What review has changed so far and what is still open |
 
 ## Try it
@@ -128,7 +138,7 @@ them and build the relay's wallet first with `sh reader/carrier/build.sh`.
 - **Wallets are not in this repository.** Claim, send and sell screens exist for the XMR20
   wallets as test builds and will be published with those wallets.
 - **No new inscriptions yet.** The rules cover Mordinals and NFTs that already exist.
-  Minting through this ledger is planned and not designed.
+  Minting new XMR721 NFTs is planned and not designed.
 - **Anyone can run a competing index.** Ownership here rests on people agreeing to these
   rules. That is why the index, the rules and the reader are public and reproducible.
 
@@ -136,7 +146,7 @@ them and build the relay's wallet first with `sh reader/carrier/build.sh`.
 
 Mordinals were created in 2023 by the authors of
 [mooonero/mordinals](https://github.com/mooonero/mordinals). The inscriptions are theirs and
-their holders'; this project does not change them. The ownership index runs the original
+their holders'; XMR721 does not change them, and the name Mordinals stays with them. The ownership index runs the original
 index code from that repository, unmodified, at commit `8467001`.
 
 Maintained by the [XMR20](https://xmr20.org/) project. MIT licence.

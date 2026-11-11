@@ -1,5 +1,7 @@
 # Reader, relay and service
 
+The programs that run XMR721 on the Monero chain.
+
 Draft. Not running anywhere yet; see the status in the [main README](../README.md).
 
 A Mordinal that was inscribed in 2023 sits at a Monero output. Its holder can *claim* it with a signature (no coin

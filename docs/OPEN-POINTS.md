@@ -5,7 +5,7 @@ is chosen. This page says what a reviewer should read first, what review inside 
 project has already found and changed, and what is still open. No outside review has
 happened yet.
 
-The rules are [`../RULES.md`](../RULES.md) (draft 3). The code in `rules/lib/` is the
+The rules are [`../RULES.md`](../RULES.md) (XMR721, draft 3). The code in `rules/lib/` is the
 rules: the reader, the check tool, the pages and the wallets all import that one library.
 The wallets are not in this repository; points about them are kept here because they bear
 on the rules.

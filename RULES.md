@@ -1,8 +1,13 @@
-# Mordinals by signature — rule document (draft 3)
+# XMR721 — rule document (draft 3)
 
 Status: draft. Not final, not independently reviewed, not in use anywhere.
 The code in `rules/lib/` is these rules; `rules/tests/fixtures.json` holds test cases any
 other implementation can replay. Values marked **draft** can still change before review.
+
+This draft covers the Mordinals collection. Byte strings inside records (`"MD1"`,
+`MORDINALS-RECORD-v1`, `MORDINALS-CLAIM-KEY-v1`, `mordinals-payment:`) and the texts a
+wallet signs name Mordinals, because these records are about Mordinals; they are fixed
+identifiers, not the name of the standard.
 
 ## 1. What the rules decide
 
