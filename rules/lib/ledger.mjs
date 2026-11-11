@@ -3,15 +3,20 @@
 // Input that is not a record: the owner list at the start block (ownership-index/result/owners.jsonl format) and, for a buy
 // record, the payment transactions it names as a Monero node returns them ({txid, height, tx}).
 import {decodeAddress,usableSpendKey,verifySpendSignature,parseSignature,concat} from './monero.mjs';
-import {OP,PROOF,RULES,SUFFIX,heldUntil,encodeBody,decodeRecord,recordId,codeOf,amounts,renderText,signerOf,attachSignature,matchSignature,canonical,formatXmr} from './records.mjs';
+import {OP,PROOF,RULES,SUFFIX,MAX_RECORD,NO_COLLECTION,heldUntil,encodeBody,decodeRecord,recordId,codeOf,amounts,renderText,nftLabel,signerOf,attachSignature,matchSignature,canonical,formatXmr} from './records.mjs';
+import {sha256} from '@noble/hashes/sha256';
+import {hex} from './monero.mjs';
 import {claimKeyHash,verifyOutputKeySignature,parseInProof,verifyInProof,ownsOutput} from './claim.mjs';
 import {checkPaymentProof,paymentMessage} from './payment.mjs';
 
-export function createLedger({network='mainnet',domain,feeAddress,owners,height=0}){
+// mintFrom: the first block at which collection, mint and burn records count (a setting of the ledger, like the start
+// block). Without it those records are refused, and the ledger is one of Mordinals only.
+export function createLedger({network='mainnet',domain,feeAddress,owners,height=0,mintFrom=null}){
  if(!/^[0-9a-f]{64}$/.test(domain||''))throw Error('Ledger domain required');
+ if(mintFrom!==null&&!(Number.isInteger(mintFrom)&&mintFrom>=1))throw Error('Bad first mint block');
  // The fee address is checked like every address in a record: both keys must be keys a wallet can use.
  {const a=decodeAddress(feeAddress,network);if(!usableSpendKey(a.spend)||!usableSpendKey(a.view))throw Error('The fee address has a key no wallet can use.');}
- const fee=canonical(feeAddress,network),mordinals=new Map(),byNumber=new Map(),lots=new Map(),open=new Set(),applied=new Set(),payments=new Set(),paidOutputs=new Set();let tip=height;
+ const fee=canonical(feeAddress,network),mordinals=new Map(),byNumber=new Map(),lots=new Map(),open=new Set(),applied=new Set(),payments=new Set(),paidOutputs=new Set(),collections=new Map();let tip=height;
  for(const o of owners){
   if(o.ownerTxPubKeys?.length!==1||o.ownerAdditionalPubKeys?.length)throw Error(`Owner list entry ${o.number} must have exactly one transaction public key`);
   const m={number:o.number,reg:o.registrationTx,ownerTx:o.ownerTx,outputKey:o.ownerOutputKey,txPub:o.ownerTxPubKeys[0],claimed:false,owner:null,seq:0,lot:null,history:[]};
@@ -26,14 +31,27 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
  // purchases. Lines of reservations that ran out are kept on purpose: a payment made for one of them, late or not yet
  // recorded, must never fit somebody else's reservation.
  const awaited=()=>{const out=new Set();for(const id of open){const l=lots.get(id);if(l.until<tip)continue;for(const r of l.reservations)for(const [,address,amount] of linesOf(l,r))out.add(address+':'+amount);}return out;};
- const ctxFor=(d)=>{const lot=d.op===OP.cancel||d.op===OP.reserve?lotOf(d.body.lot):null,m=lot?mordinals.get(lot.reg):find(d.body.reg);return {domain,number:m.number,lot,feeAddress:fee};};
+ const collectionOf=id=>{const c=collections.get(id);if(!c)throw Error('This collection does not exist.');return c;};
+ // How a minted NFT is named in a signed text. A Mordinal keeps "Mordinal #n".
+ const labelOf=m=>m.minted?nftLabel(m.reg,m.minted,m.minted.collection===NO_COLLECTION?null:collections.get(m.minted.collection).name):undefined;
+ const ctxFor=(d)=>{
+  if(d.op===OP.collection)return {domain};
+  if(d.op===OP.mint)return {domain,collectionName:d.body.collection===NO_COLLECTION?null:collectionOf(d.body.collection).name};
+  const lot=d.op===OP.cancel||d.op===OP.reserve?lotOf(d.body.lot):null,m=lot?mordinals.get(lot.reg):find(d.op===OP.burn?d.body.nft:d.body.reg);return {domain,number:m.number,what:labelOf(m),lot,feeAddress:fee};};
  const textOf=bodyBytes=>{const d=decodeRecord(bodyBytes,network,{sig:false});return renderText(d.op,d.body,d.bodyBytes,ctxFor(d));};
  const prepared=(op,body)=>{const bodyBytes=encodeBody(op,body,network),id=recordId(domain,bodyBytes);return {bodyBytes,id,code:codeOf(id),text:textOf(bodyBytes)};};
  const owned=(x,by)=>{const m=find(x);if(!m.claimed)throw Error('This Mordinal has not been claimed yet.');if(m.owner!==canonical(by,network))throw Error('This Mordinal belongs to another address.');return m;};
  const api={
   get height(){return tip;},setHeight(h){if(h<tip)throw Error('Height cannot go back');tip=h;return h;},feeAddress:fee,
   mordinal:x=>{const m=find(x);return {...m,history:m.history.slice()};},lot:id=>lots.get(id)||null,
-  owned:address=>{const a=canonical(address,network);return [...mordinals.values()].filter(m=>m.owner===a).map(m=>m.number);},
+  owned:address=>{const a=canonical(address,network);return [...mordinals.values()].filter(m=>m.owner===a&&m.number!=null).map(m=>m.number);},
+  // Minted NFTs: one by id, those of an address, and collections.
+  nft:id=>{const m=mordinals.get(id);return m?.minted?{...m,history:m.history.slice()}:null;},
+  nftsOf:address=>{const a=canonical(address,network);return [...mordinals.values()].filter(m=>m.minted&&m.owner===a).map(m=>m.reg);},
+  collection:id=>{const c=collections.get(id);return c?{...c,editions:[...c.editions]}:null;},collections:()=>[...collections.values()].map(c=>({...c,editions:[...c.editions]})),
+  prepareCollection({creator,name,max}){return prepared(OP.collection,{creator,name,max});},
+  prepareMint({collection=NO_COLLECTION,edition=0,creator,to,name='',type,content,origin}){return prepared(OP.mint,{collection,edition,creator,to,name,type,content,origin});},
+  prepareBurn({nft,owner}){const m=owned(nft,owner);return prepared(OP.burn,{nft:m.reg,seq:m.seq,owner});},
   // Texts and bodies to sign.
   prepareClaim({mordinal,to,holder}){const m=find(mordinal),body={reg:m.reg,ownerTx:m.ownerTx,to,proof:holder?PROOF.payment:PROOF.outputKey,holder};
    const bodyBytes=encodeBody(OP.claim,body,network),id=recordId(domain,bodyBytes);
@@ -56,6 +74,11 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
   apply(record,facts){
    const v=validate(record,facts),{op,body:b,id}=v;applied.add(id);
    const moved=(m,to,what,extra={})=>{m.history.push({what,height:tip,record:id,from:m.owner,to,...extra});m.owner=to;m.seq++;};
+   if(op===OP.collection){collections.set(id,{id,creator:b.creator,name:b.name,max:b.max,height:tip,editions:new Set()});return {id,collection:id};}
+   if(op===OP.mint){const owner=b.to||b.creator,minted={collection:b.collection,edition:b.edition,creator:b.creator,name:b.name,type:b.type,size:b.content.length,sha256:hex(sha256(b.content)),...(b.origin?{origin:b.origin}:{})};
+    if(b.collection!==NO_COLLECTION)collections.get(b.collection).editions.add(b.edition);
+    mordinals.set(id,{number:null,reg:id,claimed:true,owner,seq:0,lot:null,minted,history:[{what:'mint',height:tip,record:id,to:owner}]});return {id,nft:id,owner,number:null};}
+   if(op===OP.burn){const m=v.mordinal;m.history.push({what:'burn',height:tip,record:id,from:m.owner,to:null});m.owner=null;m.burned=true;m.seq++;return {id,nft:m.reg,number:m.number,owner:null};}
    if(op===OP.claim){const m=v.mordinal;m.claimed=true;m.history.push({what:'claim',height:tip,record:id,to:b.to,proof:b.proof===PROOF.payment?'payment proof and message':'one-time key'});m.owner=b.to;return {id,number:m.number,owner:m.owner};}
    if(op===OP.move){moved(v.mordinal,b.to,'move');return {id,number:v.mordinal.number,owner:b.to};}
    if(op===OP.list){const m=v.mordinal;lots.set(id,{id,reg:m.reg,number:m.number,seller:b.seller,price:b.price,until:b.until,height:tip,status:'open',reservations:[]});open.add(id);m.lot=id;return {id,lot:id,number:m.number};}
@@ -65,13 +88,29 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
    const l=v.lot,r=latest(l),m=mordinals.get(l.reg);for(const p of b.payments)payments.add(p.txid);for(const k of v.outputs)paidOutputs.add(k);
    l.status='sold';open.delete(l.id);l.sale={buyer:r.buyer,height:tip,record:id,payments:[...new Set(b.payments.map(p=>p.txid))],paid:v.paid};m.lot=null;
    moved(m,r.buyer,'sale',{price:l.price.toString(),fee:(l.price*BigInt(RULES.feeBps)/10000n).toString(),lot:l.id});return {id,lot:l.id,number:m.number,owner:r.buyer,paid:v.paid};},
-  toJSON:()=>({height:tip,claimed:[...mordinals.values()].filter(m=>m.claimed).map(m=>({number:m.number,owner:m.owner,seq:m.seq,lot:m.lot,history:m.history.map(h=>h.what)})),
-   lots:[...lots.values()].map(l=>({id:l.id,number:l.number,seller:l.seller,price:l.price.toString(),status:l.status,buyer:l.sale?.buyer||null,reservations:l.reservations.length})),payments:[...payments].sort()}),
+  toJSON:()=>({height:tip,claimed:[...mordinals.values()].filter(m=>m.claimed&&!m.minted).map(m=>({number:m.number,owner:m.owner,seq:m.seq,lot:m.lot,history:m.history.map(h=>h.what)})),
+   lots:[...lots.values()].map(l=>({id:l.id,number:l.number,seller:l.seller,price:l.price.toString(),status:l.status,buyer:l.sale?.buyer||null,reservations:l.reservations.length})),payments:[...payments].sort(),
+   // Present only once something was minted, so a ledger of Mordinals alone has the summary it always had.
+   ...(collections.size?{collections:[...collections.values()].map(c=>({id:c.id,creator:c.creator,name:c.name,max:c.max,editions:[...c.editions].sort((a,b)=>a-b)}))}:{}),
+   ...([...mordinals.values()].some(m=>m.minted)?{minted:[...mordinals.values()].filter(m=>m.minted).map(m=>({id:m.reg,collection:m.minted.collection,edition:m.minted.edition,sha256:m.minted.sha256,owner:m.owner,seq:m.seq,burned:Boolean(m.burned)}))}:{})}),
  };
  function validate(record,facts){
   const d=decodeRecord(record,network),{op,body:b,bodyBytes,proof}=d,id=recordId(domain,bodyBytes),out={op,body:b,id};
   if(applied.has(id))throw Error('This record is already on the ledger.');
   const signedBy=address=>{const ctx=ctxFor(d);if(!verifySpendSignature(renderText(op,b,bodyBytes,ctx)+SUFFIX[proof.variant],address,{c:proof.c,r:proof.r},network))throw Error('The signature does not match this record.');};
+  if((op===OP.collection||op===OP.mint||op===OP.burn)&&(mintFrom===null||tip<mintFrom))throw Error(mintFrom===null?'Minting and burning are not part of this ledger.':`Minting and burning start at block ${mintFrom}.`);
+  if(op===OP.collection){signedBy(b.creator);return out;}
+  if(op===OP.mint){
+   // Standard mints only: the whole record has to fit a relayed transaction.
+   if(record.length>MAX_RECORD)throw Error(`A mint record is at most ${MAX_RECORD} bytes; this one is ${record.length}.`);
+   if(b.collection!==NO_COLLECTION){const c=collectionOf(b.collection);
+    if(b.creator!==c.creator)throw Error('Only the creator of this collection can mint into it.');
+    if(b.edition>c.max)throw Error(`This collection has ${c.max} editions.`);if(c.editions.has(b.edition))throw Error('This edition is already minted.');}
+   signedBy(b.creator);return out;}
+  if(op===OP.burn){const m=find(b.nft);
+   if(m.burned)throw Error('This NFT was burned.');if(!m.claimed)throw Error('This Mordinal has not been claimed yet.');if(m.owner!==b.owner)throw Error('This Mordinal belongs to another address.');
+   if(b.seq!==m.seq)throw Error('This record was signed for an earlier state of the Mordinal; prepare and sign it again.');
+   if(m.lot)throw Error('This Mordinal is listed for sale; cancel the listing first.');signedBy(b.owner);return {...out,mordinal:m};}
   if(op===OP.claim){const m=find(b.reg);
    if(m.claimed)throw Error('This Mordinal is already claimed.');if(b.ownerTx!==m.ownerTx)throw Error('This is not the owner transaction of this Mordinal.');
    if(b.proof===PROOF.outputKey){if(!verifyOutputKeySignature(claimKeyHash(domain,bodyBytes),m.outputKey,proof.c,proof.r))throw Error('The signature was not made with the key of the owner coin.');}
@@ -81,7 +120,7 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
     signedBy(b.holder);}
    return {...out,mordinal:m};}
   if(op===OP.move||op===OP.list){const who=op===OP.move?b.from:b.seller,m=find(b.reg);
-   if(!m.claimed)throw Error('This Mordinal has not been claimed yet.');if(m.owner!==who)throw Error('This Mordinal belongs to another address.');
+   if(m.burned)throw Error('This NFT was burned.');if(!m.claimed)throw Error('This Mordinal has not been claimed yet.');if(m.owner!==who)throw Error('This Mordinal belongs to another address.');
    if(b.seq!==m.seq)throw Error('This record was signed for an earlier state of the Mordinal; prepare and sign it again.');
    if(m.lot)throw Error('This Mordinal is listed for sale; cancel the listing first.');signedBy(who);
    if(op===OP.move){if(b.to===m.owner)throw Error('This address already owns the Mordinal.');return {...out,mordinal:m};}

@@ -30,13 +30,13 @@ const lines=file=>{if(!existsSync(file))return {rows:[],torn:false};const out=[]
 const replace=(file,rows)=>{const tmp=file+'.tmp',fd=openSync(tmp,'w',0o644);try{writeSync(fd,rows.map(r=>JSON.stringify(r)+'\n').join(''));fsyncSync(fd);}finally{closeSync(fd);}renameSync(tmp,file);};
 const append=(file,rows)=>{if(!rows.length)return;const fd=openSync(file,'a',0o644);try{writeSync(fd,rows.map(r=>JSON.stringify(r)+'\n').join(''));fsyncSync(fd);}finally{closeSync(fd);}};
 
-export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners,start,startHash=null,checkpointEvery=720,maxReorg=10000,log=()=>{}}){
+export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners,start,startHash=null,mintFrom=null,checkpointEvery=720,maxReorg=10000,log=()=>{}}){
  if(!Number.isInteger(start)||start<1)throw Error('Start block required');
  mkdirSync(dir,{recursive:true});
  const files={meta:join(dir,'meta.json'),blocks:join(dir,'blocks.jsonl'),records:join(dir,'records.jsonl'),checkpoints:join(dir,'checkpoints.jsonl')};
- const want={schema:SCHEMA,network,domain,feeAddress:canonical(feeAddress,network),start,owners:ownersHash(owners)};
+ const want={schema:SCHEMA,network,domain,feeAddress:canonical(feeAddress,network),start,owners:ownersHash(owners),...(mintFrom!==null?{mintFrom}:{})};
  let meta=existsSync(files.meta)?JSON.parse(readFileSync(files.meta,'utf8')):null;
- if(meta){for(const k of Object.keys(want))if(meta[k]!==want[k])throw Error(`This state folder was made for another ledger (${k} differs).`);
+ if(meta){for(const k of [...Object.keys(want),'mintFrom'])if((meta[k]??null)!==(want[k]??null))throw Error(`This state folder was made for another ledger (${k} differs).`);
   if(startHash&&meta.startHash&&meta.startHash!==startHash)throw Error('This state folder was made for another start block hash.');}
  else{meta={...want,startHash:startHash||null};writeFileSync(files.meta,JSON.stringify(meta,null,1)+'\n');}
 
@@ -46,9 +46,13 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
  // What an accepted record did, in public words. This is what the explorer and the history views show.
  function describe(e,d,out){
   const b=d.body,base={height:e.height,pos:e.pos,txid:e.txid,id:e.id,time:timeOf(e.height)??e.time??null};
+  // A minted NFT has no Mordinal number; its events carry its id as `nft`.
+  if(d.op===OP.collection)return {...base,kind:'collection',number:null,collection:e.id,creator:b.creator,name:b.name,max:b.max};
+  if(d.op===OP.mint)return {...base,kind:'mint',number:null,nft:e.id,collection:b.collection,edition:b.edition,creator:b.creator,to:out.owner,name:b.name,type:b.type,size:b.content.length};
+  if(d.op===OP.burn)return {...base,kind:'burn',number:out.number,nft:out.nft,owner:b.owner};
   if(d.op===OP.claim)return {...base,kind:'claim',number:out.number,to:b.to,proof:b.proof===PROOF.payment?'payment proof and message':'one-time key'};
-  if(d.op===OP.move)return {...base,kind:'move',number:out.number,from:b.from,to:b.to};
-  if(d.op===OP.list)return {...base,kind:'list',number:out.number,lot:e.id,seller:b.seller,price:b.price.toString(),until:b.until};
+  if(d.op===OP.move)return {...base,kind:'move',number:out.number,...(out.number==null?{nft:b.reg}:{}),from:b.from,to:b.to};
+  if(d.op===OP.list)return {...base,kind:'list',number:out.number,...(out.number==null?{nft:b.reg}:{}),lot:e.id,seller:b.seller,price:b.price.toString(),until:b.until};
   const l=ledger.lot(b.lot);
   if(d.op===OP.cancel)return {...base,kind:'cancel',number:l.number,lot:l.id,seller:l.seller};
   if(d.op===OP.reserve)return {...base,kind:'reserve',number:l.number,lot:l.id,buyer:b.buyer,payBy:b.payBy};
@@ -57,7 +61,7 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
  const index=e=>{if(e.id&&e.ok)byId.set(e.id,e);if(!byTx.has(e.txid))byTx.set(e.txid,e);};
  // The ledger from the owner list and the journal alone. No node is asked.
  function rebuild(){
-  ledger=createLedger({network,domain,feeAddress,owners,height:start});events=[];lots=[];bodies=new Map();byId=new Map();byTx=new Map();
+  ledger=createLedger({network,domain,feeAddress,owners,height:start,mintFrom});events=[];lots=[];bodies=new Map();byId=new Map();byTx=new Map();
   for(const e of journal){ledger.setHeight(e.height);index(e);if(!e.ok)continue;
    const bytes=unhex(e.record),d=decodeRecord(bytes,network),out=ledger.apply(bytes,e.facts);
    if(out.id!==e.id)throw Error('The journal does not match the rules at block '+e.height);note(e,d,out);}

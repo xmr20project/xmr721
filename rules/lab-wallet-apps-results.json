@@ -1,6 +1,6 @@
 {
  "execution": "SIMULATED (own offline fakechain; real wallet2 signatures, payment proofs and view-only wallet; throwaway wallets; Feather and Cake apps not driven)",
- "date": "2026-11-10T08:51:12.253Z",
+ "date": "2026-11-11T05:23:21.531Z",
  "steps": [
   {
    "name": "test Mordinals",
@@ -16,7 +16,7 @@
   },
   {
    "name": "claim text",
-   "text": "Mordinals claim: Mordinal #0 (inscription 9ce178f2ff75a9c81e94b631172dcbb1168d8194425103e866be9138d7f7004f), held by output 0 of 9ce178f2ff75a9c81e94b631172dcbb1168d8194425103e866be9138d7f7004f, now belongs to 48VXx1fD65z6FoFNVtEbUBLo6evwdHHXdEyMkd1ygio2KcHAYkSP5NBRadfKiHsKoE9YRmoYZN6xp4uGowEuBuoeVXg1Vk6; code d4cd2faec7337d11a8066aa3ca9dd2e7"
+   "text": "Mordinals claim: Mordinal #0 (inscription 473d80708a234d1836c84ed4f2f140f5461acdd4448c360bf136174927b1e8bd), held by output 0 of 473d80708a234d1836c84ed4f2f140f5461acdd4448c360bf136174927b1e8bd, now belongs to 47j6HR6M9AQeAMfUc3tVspV9S7PPgPPmK6h2b7BjKYrWZvDYJfEMgRt5pPCmpS2BvvEcfzkTqP3B9UnLVKDWopkRLAEajFY; code f2f944f2aee1c0245eac20a19f7318c3"
   },
   {
    "name": "way 1: view key",
@@ -44,7 +44,7 @@
   },
   {
    "name": "move text",
-   "text": "Mordinals move: send Mordinal #0 to 458A71kr3ocZaGnPsddoHxcNYHSvWT362Es7bKDypQQHHGYpC4UgeGKDLfDMBDyLtx6XGhFVc41yDQ4jHZP9sku8G9bcGgw; move 0; code 29761c9c6f02cb96381d6c60537f9450"
+   "text": "Mordinals move: send Mordinal #0 to 43T1DSZ51kxWLjB2dYNDB1KDU9Gv4GSYggiFFAmiaKcX3L8WsDXQEbzc7HLjzPKzWoCvg1eCYK86KBemsaB3rB7U8yyAHM2; move 0; code 97fb1c9173b11f0ea7b6405ff54e2e1b"
   },
   {
    "name": "after the claim",

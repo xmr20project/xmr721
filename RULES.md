@@ -1,4 +1,4 @@
-# XMR721 — rule document (draft 3)
+# XMR721 — rule document (draft 4)
 
 Status: draft. Not final, not independently reviewed, not in use anywhere.
 The code in `rules/lib/` is these rules; `rules/tests/fixtures.json` holds test cases any
@@ -26,7 +26,8 @@ Nothing else counts: no server database, no off-chain agreement. Two readers giv
 chain reach the same owners.
 
 Fixed per ledger: the 32-byte domain (separates this ledger from any other use of the same
-keys), the network, the protocol fee address, the start block.
+keys), the network, the protocol fee address, the start block, and the first block at
+which new NFTs can be made (section 9; without it the ledger holds Mordinals only).
 
 ## 2. Records
 
@@ -43,6 +44,11 @@ op 3 list     reg32 seq(u32) until(u32) price(u64) seller           variant c32 
 op 4 cancel   lot32 seller                                          variant c32 r32
 op 5 reserve  lot32 payBy(u32) buyer rate(u16) [market when rate>0] variant c32 r32
 op 6 buy      lot32 n(u8: 2 or 3) n × (txid32 out(u8) D32 c32 s32)     (no signature)
+op 7 collection  creator max(u32) flags(u8: 0) name(len u8, 1–64)     variant c32 r32
+op 8 mint     collection32 edition(u32) creator flags(u8) [to]
+              name(len u8, 0–64) type(u8) content(len u16, 1 or more)
+              [origin: kind(u8) ref(len u8, 1–64)]                    variant c32 r32
+op 9 burn     nft32 seq(u32) owner                                  variant c32 r32
 
 id   = SHA-256("MORDINALS-RECORD-v1" 0x00 ‖ domain ‖ "MD1" 0xfe ‖ op ‖ body)
 code = the first 16 bytes of id, shown as 32 hex characters
@@ -283,7 +289,11 @@ kept for that.
 
 | Value | Setting | Where | State |
 | --- | --- | --- | --- |
-| Protocol fee | 5%, Mordinals only | `RULES.feeBps` | decided |
+| Protocol fee | 5% of every sale, Mordinals and minted NFTs | `RULES.feeBps` | decided |
+| Mint fee | none | section 9 | decided |
+| Largest mint record | 1,000 bytes (824 of name and content) | `MAX_RECORD` | decided |
+| Who may mint | anyone; into a collection only its creator | section 9 | decided |
+| First mint block | not set | ledger setup | open |
 | Marketplace fee cap | 5% on top | `RULES.marketFeeCapBps` | decided |
 | Lowest price | 0.001 XMR | `RULES.minPrice` | decided |
 | Reservation length | at most 30 blocks | `RULES.maxReserve` | decided |
@@ -319,7 +329,55 @@ tx_extra = 01 <transaction public key 32>  [02 09 01 <payment id 8>]
 - When blocks are replaced, records in the replaced blocks are undone and the records of
   the new blocks applied; the result depends only on the chain.
 
-Reader and relay: `reader/`.
+## 9. New NFTs: collections, mints, burns (new in draft 4)
 
-Not in this draft: the collection and mint records for new Mordinals and the collection
-fee.
+From the ledger's first mint block on, NFTs can be made. An NFT is named by 32 bytes: a
+Mordinal by its registration transaction, a minted NFT by the id of its mint record.
+`move`, `list`, `cancel`, `reserve` and `buy` take those 32 bytes in the `reg32` field and
+work the same for both; the 5% protocol fee applies to every sale. Before the first mint
+block, or on a ledger that names none, records 7, 8 and 9 are refused.
+
+**Collection (op 7).** Anyone can create one. Its id is the record's id, its creator is the
+signer, `max` is its number of editions (1 to 10,000). `name` is 1 to 64 printable ASCII
+characters with no space at either end. Two collections may have the same name.
+
+**Mint (op 8).** Makes one NFT, signed by `creator`.
+- `collection32` names a collection, and then `creator` must be that collection's creator,
+  `edition` is 1 to `max` and not minted before. Or `collection32` is 32 zero bytes: the
+  NFT belongs to no collection, `edition` is 0, and anyone can be the creator.
+- The first owner is `to` when flags bit 0 is set, otherwise the creator. `to` is written
+  only when it is another address.
+- `content` is the inscribed bytes, at least 1. `type` (1 to 255) says what they are:
+  1 PNG, 2 JPEG, 3 WebP, 4 GIF, 5 plain text (UTF-8), 6 JSON, 7 MP4, 8 text art; other
+  values are kept and not shown. The rules do not look inside the content.
+- `origin` (flags bit 1) is a statement by the creator of where the NFT comes from: a kind
+  (1 = a Bitcoin inscription) and 1 to 64 bytes naming it. The rules do not check it.
+- **The whole record is at most 1,000 bytes**, the room one relayed transaction has
+  (section 8). That leaves 824 bytes for name and content, or 759 when `to` is written.
+- There is no mint fee.
+
+**Burn (op 9).** The owner ends an NFT, minted or a claimed Mordinal. `seq` is its counter
+as in `move`; it must not be listed. Afterwards it has no owner and no record can touch it.
+A burned edition is not free again.
+
+Signed texts:
+
+```
+XMR721 collection: create "<name>" with <max> editions, minted only by <creator>; code <code>
+XMR721 mint: edition <n> of "<collection name>" [named "<name>"]; <size> bytes of type <type>,
+  SHA-256 <hash of the content>[; from <kind>:<ref hex>]; first owner <address>; code <code>
+XMR721 mint: one NFT in no collection [named …]; …
+XMR721 burn: destroy <NFT> for good; burn <seq>; code <code>
+```
+
+In the texts of the other records a minted NFT is written `"<collection name>" #<edition>
+(NFT <code of its id>)`, or `NFT <code of its id>` when it has no collection, where a
+Mordinal is written `Mordinal #<number>`.
+
+No record here spends or names a coin. A mint, like every record, rides in an ordinary
+transaction that anyone can pay for.
+
+Not in this draft: mints larger than one relayed transaction, mints that anyone can buy
+from a creator, and bringing earlier collections (GENESIS) under these rules.
+
+Reader and relay: `reader/`.

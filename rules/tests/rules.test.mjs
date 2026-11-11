@@ -61,7 +61,7 @@ test('records decode strictly and fit a Monero transaction',()=>{
  const c0=claim0(0,w.alice),c1=claim1(2,w.bob);sizes.claimOneTimeKey=c0.length;sizes.claimPaymentProof=c1.length;
  for(const r of [c0,c1]){assert.equal(decodeRecord(r).op,OP.claim);
   assert.throws(()=>decodeRecord(concat(r,Uint8Array.of(0))),/extra bytes/);assert.throws(()=>decodeRecord(r.slice(0,-1)),/truncated/);}
- assert.throws(()=>decodeRecord(Uint8Array.of(0x4d,0x44,0x31,0xfe,9)),/Unknown operation/);
+ assert.throws(()=>decodeRecord(Uint8Array.of(0x4d,0x44,0x31,0xfe,10)),/Unknown operation/);
  assert.throws(()=>decodeRecord(Uint8Array.of(0x58,0x54,0x31,0xfe,1)),/Not an MD1 record/);
  const bad=c0.slice();bad[5+64+65]=2;assert.throws(()=>decodeRecord(bad),/Unknown proof kind/);
  l.apply(c0);l.apply(c1);

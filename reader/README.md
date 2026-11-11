@@ -35,7 +35,7 @@ is spent) and from then on it moves by signed records. Every record is a short b
 
 ```
 node service.mjs --owners <owners.jsonl[,added.jsonl]> --domain <hex32> --fee-address <address> --node <url> --start <height> --state <dir>
-     [--start-hash <hash>] [--network mainnet|stagenet] [--port 18951] [--every <ms>] [--transfers <transfers.jsonl>]
+     [--start-hash <hash>] [--mint-from <height>] [--network mainnet|stagenet] [--port 18951] [--every <ms>] [--transfers <transfers.jsonl>]
      [--carrier-bin bin/mordinals-carrier --carrier-state <dir> --carrier-network offline-fakechain|stagenet]
      [--content-dir <dir> | --content-archive [url]] [--views views] [--allow-origin <origin>] [--allow-extension <id>]
      [--behind-proxy] [--test-hooks]

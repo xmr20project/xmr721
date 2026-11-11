@@ -55,7 +55,7 @@ export function createService({reader,relay=null,owners,transfers=[],content=nul
  async function route(method,url,body,req){
   const path=url.pathname,q=url.searchParams,height=reader.height;
   if(method==='GET'){
-   if(path==='/info')return {network:m.network,domain:m.domain,feeAddress:m.feeAddress,height,count:list.length,chunk,test:Boolean(testHooks),owners:m.owners,start:m.start,startHash:m.startHash,
+   if(path==='/info')return {network:m.network,domain:m.domain,feeAddress:m.feeAddress,height,count:list.length,chunk,test:Boolean(testHooks),owners:m.owners,start:m.start,startHash:m.startHash,mintFrom:m.mintFrom??null,
     relay:relay?{networkFee:'relay',perAddress:relay.limits.perSigner}:null,rules:{feeBps:RULES.feeBps,marketFeeCapBps:RULES.marketFeeCapBps,minPrice:RULES.minPrice.toString(),maxReserve:RULES.maxReserve,settle:RULES.settle}};
    if(path==='/owners'){const from=int(q.get('from'),0,0,list.length),limit=int(q.get('limit'),chunk,1,chunk);return {from,total:list.length,entries:list.slice(from,from+limit)};}
    if(path==='/claimed')return {height,numbers:claimed()};
@@ -84,7 +84,7 @@ export function createService({reader,relay=null,owners,transfers=[],content=nul
     return {height,total:all.length,next:at>0?at:null,events:out};}
    if(path==='/gallery'){const filter=q.get('filter')||'all';
     const pick=filter==='claimed'?claimed():filter==='unclaimed'?once('unclaimed',()=>{const c=new Set(claimed());return numbers.filter(n=>!c.has(n));})
-     :filter==='listed'?once('listed',()=>open().filter(l=>l.until>=height).map(l=>l.number).sort((a,b)=>a-b)):filter==='all'?numbers:null;
+     :filter==='listed'?once('listed',()=>open().filter(l=>l.until>=height&&l.number!=null).map(l=>l.number).sort((a,b)=>a-b)):filter==='all'?numbers:null;
     if(!pick)throw fail('Unknown filter.');const from=int(q.get('from'),0,0,pick.length),limit=int(q.get('limit'),60,1,200);
     return {height,filter,from,total:pick.length,items:pick.slice(from,from+limit).map(card)};}
    if(path.startsWith('/mordinal/')){const o=which(path.slice(10)),s=state(o.number);
@@ -160,7 +160,7 @@ export function createService({reader,relay=null,owners,transfers=[],content=nul
 // Everything from command-line style options: used by the command below and by tests.
 export async function startService(o){
  const owners=readOwners(o.owners),chain=createChain(o.node),network=o.network||'mainnet';
- const reader=openReader({dir:o.state,chain,network,domain:o.domain,feeAddress:o.feeAddress,owners,start:Number(o.start),startHash:o.startHash||null,checkpointEvery:o.checkpointEvery??720,log:o.log});
+ const reader=openReader({dir:o.state,chain,network,domain:o.domain,feeAddress:o.feeAddress,owners,start:Number(o.start),startHash:o.startHash||null,mintFrom:o.mintFrom==null?null:Number(o.mintFrom),checkpointEvery:o.checkpointEvery??720,log:o.log});
  let relay=null;
  if(o.carrierBin){const carrier=createCarrier({bin:o.carrierBin,stateDir:o.carrierState,node:o.node,network:o.carrierNetwork||'offline-fakechain',start:Number(o.carrierStart||o.start)});
   relay=createRelay({dir:join(o.state,'relay'),reader,chain,carrier,network,domain:o.domain,limits:o.limits,...(o.now?{now:o.now}:{}),log:o.log});}
@@ -172,7 +172,7 @@ if(process.argv[1]===import.meta.filename){
  const arg=name=>{const i=process.argv.indexOf('--'+name);return i<0?null:process.argv[i+1];},has=name=>process.argv.includes('--'+name);
  for(const need of ['owners','domain','fee-address','node','start','state'])if(!arg(need)){console.error('Missing --'+need+'. See the top of this file.');process.exit(2);}
  const archive=has('content-archive')?(arg('content-archive')?.startsWith('http')?arg('content-archive'):true):null;
- const s=await startService({owners:arg('owners'),transfers:arg('transfers'),domain:arg('domain'),feeAddress:arg('fee-address'),node:arg('node'),start:arg('start'),startHash:arg('start-hash'),state:arg('state'),network:arg('network'),
+ const s=await startService({owners:arg('owners'),transfers:arg('transfers'),domain:arg('domain'),feeAddress:arg('fee-address'),node:arg('node'),start:arg('start'),startHash:arg('start-hash'),mintFrom:arg('mint-from'),state:arg('state'),network:arg('network'),
   port:arg('port'),carrierBin:arg('carrier-bin'),carrierState:arg('carrier-state'),carrierNetwork:arg('carrier-network'),contentDir:arg('content-dir'),collections:arg('collections'),contentArchive:archive,views:arg('views'),
   origins:process.argv.flatMap((a,i)=>a==='--allow-origin'?[process.argv[i+1]]:[]),extensions:process.argv.flatMap((a,i)=>a==='--allow-extension'?[process.argv[i+1]]:[]),behindProxy:has('behind-proxy'),testHooks:has('test-hooks'),log:v=>console.log(new Date().toISOString(),JSON.stringify(v))});
  console.log(`Mordinals reader on http://127.0.0.1:${s.port} (${s.owners.length} Mordinals, block ${s.reader.height}${s.relay?', relay on':', reader only'})`);

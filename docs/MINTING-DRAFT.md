@@ -1,6 +1,9 @@
 # XMR721: creating, moving and burning NFTs (design draft)
 
-11 November 2026. A proposal, not part of the rules yet. Nothing here is implemented.
+11 November 2026. The design notes behind RULES.md section 9. Standard mints, collections
+and burning are now in the rule library (draft 4); RULES.md is the reference for the
+exact bytes, which differ from this page in small ways (a collection's flags byte is 0,
+and a mint may carry an origin).
 `RULES.md` (draft 3) covers Mordinals that already exist; this page proposes how new NFTs
 are made under the same rules, what fits in one Monero transaction, and how an NFT is
 burned. Values marked **open** are choices still to make.

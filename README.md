@@ -104,7 +104,7 @@ legacy; new inscriptions are planned to use XMR721.
 
 | Path | What |
 |---|---|
-| [`RULES.md`](RULES.md) | The XMR721 rules (draft 3): records, checks, fee rule, privacy rules |
+| [`RULES.md`](RULES.md) | The XMR721 rules (draft 4): records, checks, fee rule, privacy rules, new NFTs |
 | [`rules/`](rules) | The rule library, its offline tests, and tests against real wallet software on a local test chain |
 | [`reader/`](reader) | Reader, relay, HTTP service, explorer/gallery/market pages, check tools |
 | [`ownership-index/`](ownership-index) | The owner list, how it was made and checked, and the added entry |
@@ -137,8 +137,9 @@ them and build the relay's wallet first with `sh reader/carrier/build.sh`.
   on mainnet.
 - **Wallets are not in this repository.** Claim, send and sell screens exist for the XMR20
   wallets as test builds and will be published with those wallets.
-- **No new inscriptions yet.** The rules cover Mordinals and NFTs that already exist.
-  Minting new XMR721 NFTs is planned and not designed.
+- **New NFTs are in the rules, not in the pages.** Draft 4 adds collections, mints of up to
+  about 800 bytes in one transaction, and burning (RULES.md section 9). The rule library,
+  reader and relay handle them; the pages and wallets do not show or make them yet.
 - **Anyone can run a competing index.** Ownership here rests on people agreeing to these
   rules. That is why the index, the rules and the reader are public and reproducible.
 

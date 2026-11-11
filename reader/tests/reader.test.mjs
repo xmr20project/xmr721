@@ -93,7 +93,7 @@ test('the reader follows blocks, journals every record and restarts to the same 
  const stale=make.claim(0,w.alice,w.carol);                                                           // already claimed
  const l2=open({dir:state+'-other'});                                                           // a ledger where alice still owns #0, to sign a move the real ledger refuses
  l2.ledger.apply(make.claim(0,w.alice,w.alice,l2.ledger));const move=make.move(0,w.alice,w.carol,l2.ledger);
- await block(stale,Uint8Array.of(...MAGIC,9),move);                                             // 106
+ await block(stale,Uint8Array.of(...MAGIC,10),move);                                             // 106
  assert.deepEqual(reader.journal.slice(-3).map(e=>[e.ok,e.error]),[[false,'This Mordinal is already claimed.'],[false,'Unknown operation'],[false,'This Mordinal belongs to another address.']]);
  assert.equal(reader.journal.at(-2).id,undefined);assert.equal(reader.entryById(reader.journal[0].id).txid,reader.journal[0].txid);
  assert.equal(reader.entryByTx(reader.journal.at(-1).txid).ok,false);assert.equal(reader.body(lot.id).length,2*decodeRecord(lot.record).bodyBytes.length);
@@ -143,6 +143,42 @@ test('a chain reorganisation cuts the journal back and the ledger is rebuilt',as
  chain.mine();await reader.sync();assert.equal(reader.ledger.mordinal(0).owner,w.carol.address);assert.equal(reader.height,102);
  // Another chain at the start block is refused outright.
  const other=open({dir:state+'-other',startHash:'ee'.repeat(32)});await assert.rejects(other.sync(),/another chain at the start block/);});
+
+test('collections, mints and burns are read from blocks once the ledger opens minting, and never before',async()=>{
+ const {w,chain,open,state}=world(),reader=open({dir:state+'-mint',mintFrom:102});await reader.sync();
+ const L=()=>reader.ledger,signed=(p,who)=>L().sign(p.bodyBytes,who.sign(p.text)),block=async(...records)=>{chain.mine(records.map(r=>carried(r)));await reader.sync();};
+ const set=L().prepareCollection({creator:w.alice.address,name:'Reader Set',max:2}),made=signed(set,w.alice);
+ await block(made);                                                                               // 101: one block too early
+ assert.deepEqual([reader.journal.at(-1).ok,reader.journal.at(-1).error],[false,'Minting and burning start at block 102.']);
+ await block(made);                                                                               // 102: the same record counts now
+ assert.equal(reader.journal.at(-1).ok,true);assert.equal(L().collection(set.id).name,'Reader Set');
+ const one=L().prepareMint({collection:set.id,edition:1,creator:w.alice.address,name:'One',type:5,content:Buffer.from('first')});
+ const loose=L().prepareMint({creator:w.bob.address,to:w.carol.address,type:1,content:randomBytes(700)});
+ await block(signed(one,w.alice),signed(loose,w.bob));                                            // 103
+ assert.deepEqual([L().nft(one.id).owner,L().nft(loose.id).owner],[w.alice.address,w.carol.address]);
+ await block(signed(L().prepareMove({mordinal:one.id,from:w.alice.address,to:w.dave.address}),w.alice));   // 104
+ await block(signed(L().prepareBurn({nft:loose.id,owner:w.carol.address}),w.carol));              // 105
+ assert.deepEqual(reader.events.map(e=>[e.kind,e.number,e.nft??e.collection]),[['collection',null,set.id],['mint',null,one.id],['mint',null,loose.id],['move',null,one.id],['burn',null,loose.id]]);
+ assert.deepEqual([L().nft(one.id).owner,L().nft(loose.id).burned],[w.dave.address,true]);
+ // The relay carries the new records too: two mints may wait together, one NFT has one record waiting at a time.
+ const relay=createRelay({dir:state+'-mint-relay',reader,chain,carrier:fakeCarrier(chain,{coins:8}),domain:DOMAIN,limits:{resendMs:1000,minReady:0},now:()=>1_000_000});
+ const two=L().prepareMint({collection:set.id,edition:2,creator:w.alice.address,type:1,content:randomBytes(824)}),other=L().prepareMint({creator:w.alice.address,type:1,content:randomBytes(10)});
+ const sent=await relay.submit(hex(signed(two,w.alice)));assert.deepEqual({state:sent.state,op:sent.op,number:sent.number},{state:'sent',op:OP.mint,number:null});
+ assert.equal((await relay.submit(hex(signed(other,w.alice)))).state,'sent');
+ const shift=L().prepareMove({mordinal:one.id,from:w.dave.address,to:w.bob.address});assert.equal((await relay.submit(hex(signed(shift,w.dave)))).number,one.id);
+ await assert.rejects(relay.submit(hex(signed(L().prepareBurn({nft:one.id,owner:w.dave.address}),w.dave))),e=>e.status===429&&/Another record for this/.test(e.message));
+ chain.mine();await reader.sync();await relay.tick();                                             // 106
+ assert.deepEqual([relay.status(sent.id).state,L().nft(two.id).owner,L().nft(other.id).owner,L().nft(one.id).owner],['done',w.alice.address,w.alice.address,w.bob.address]);
+ assert.deepEqual(reader.events.slice(-3).map(e=>e.kind).sort(),['mint','mint','move']);
+ // Read again from its files, and by a second reader from the start: the same journal and the same owners.
+ const again=open({dir:state+'-mint',mintFrom:102});assert.deepEqual(again.journal,reader.journal);assert.equal(again.ledger.nft(one.id).owner,w.bob.address);
+ assert.deepEqual(again.checkpoint(),reader.checkpoint());
+ // The folder belongs to a ledger with minting from block 102; it cannot be opened as another.
+ assert.throws(()=>open({dir:state+'-mint'}),/another ledger \(mintFrom differs\)/);assert.throws(()=>open({dir:state+'-mint',mintFrom:103}),/mintFrom differs/);
+ // A reader of a ledger without minting sees the same transactions and refuses every one of them.
+ const plain=open({dir:state+'-plain'});await plain.sync();
+ assert.equal(plain.journal.length,reader.journal.length);assert.ok(plain.journal.every(e=>!e.ok));
+ assert.deepEqual([...new Set(plain.journal.map(e=>e.error))],['Minting and burning are not part of this ledger.','This is not a Mordinal on the owner list.']);});
 
 test('a node failure in the middle of a block leaves nothing half read',async()=>{
  const {w,chain,reader,make,block,state}=world();
@@ -195,7 +231,7 @@ test('the relay sends records, waits for blocks and keeps to its limits',async()
  assert.equal((await relay.submit(hex(claim))).state,'done');assert.deepEqual(relay.pending(),[]);
  // Records the rules refuse cost nothing: they are not sent.
  await assert.rejects(relay.submit(hex(make.claim(0,w.alice,w.carol))),e=>!e.status&&e.message==='This Mordinal is already claimed.');
- await assert.rejects(relay.submit('zz'),/hexadecimal/);await assert.rejects(relay.submit(hex(Uint8Array.of(...MAGIC,9))),/Unknown operation/);
+ await assert.rejects(relay.submit('zz'),/hexadecimal/);await assert.rejects(relay.submit(hex(Uint8Array.of(...MAGIC,10))),/Unknown operation/);
  await assert.rejects(relay.submit(hex(make.list(0,w.alice,XMR,reader.height+2).record)),/would end before it reaches a block/);
  assert.equal(carrier.made.length,1);
  // Two waiting records per address here; the third waits its turn.
@@ -295,7 +331,7 @@ test('the service answers wallets and pages, and the check tools agree with it',
  const next=async o=>{chain.mine([],o);const r=await post('/test/step',{});assert.equal(r.status,200,JSON.stringify(r.body));return r.body;};
  try{
   const info=(await get('/info')).body;
-  assert.deepEqual({...info,rules:0},{network:'mainnet',domain:DOMAIN,feeAddress:w.fee.address,height:100,count:8,chunk:3,test:true,owners:ownersHash(owners),start:100,startHash:null,relay:{networkFee:'relay',perAddress:3},rules:0});
+  assert.deepEqual({...info,rules:0},{network:'mainnet',domain:DOMAIN,feeAddress:w.fee.address,height:100,count:8,chunk:3,test:true,owners:ownersHash(owners),start:100,startHash:null,mintFrom:null,relay:{networkFee:'relay',perAddress:3},rules:0});
   assert.deepEqual(info.rules,{feeBps:500,marketFeeCapBps:500,minPrice:'1000000000',maxReserve:30,settle:10});
   // The owner list comes in pieces and hashes to the stated value.
   let lines='';for(let from=0;from<8;from+=3){const p=(await get('/owners?from='+from)).body;assert.equal(p.total,8);assert.ok(p.entries.length<=3);for(const o of p.entries){lines+=ownerLine(o);assert.equal(o.registrationHeight,undefined);}}

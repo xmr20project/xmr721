@@ -70,8 +70,10 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
    reader.ledger.check(bytes,facts);return {ready:true};}
   catch(e){e.rule=true;throw e;}}
  function describe(d){
-  const b=d.body,l=d.op===OP.cancel||d.op===OP.reserve||d.op===OP.buy?reader.ledger.lot(b.lot):null;
-  const number=l?l.number:reader.ledger.mordinal(b.reg).number;
+  const b=d.body;if(d.op===OP.collection||d.op===OP.mint)return {number:null,signer:b.creator};
+  const l=d.op===OP.cancel||d.op===OP.reserve||d.op===OP.buy?reader.ledger.lot(b.lot):null;
+  // One record at a time per NFT: a Mordinal by its number, a minted NFT by its id.
+  const m=reader.ledger.mordinal(l?l.reg:d.op===OP.burn?b.nft:b.reg),number=m.number??m.reg;
   const signer=signerOf(d.op,b)||(d.op===OP.claim?b.to:l?.reservations.at(-1)?.buyer)||'';
   return {number,signer};}
  async function send(j){
@@ -92,7 +94,7 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   if(d.op===OP.reserve&&d.body.payBy<tip+limits.margin)throw bad('This reservation would run out before it reaches a block. Reserve again.');
   if(d.op===OP.list&&d.body.until<tip+limits.margin)throw bad('This listing would end before it reaches a block. Choose a later end.');
   const open=waiting();
-  if(open.some(j=>j.number===number))throw bad('Another record for this Mordinal is waiting for a block. Try again in a few minutes.',429);
+  if(number!=null&&open.some(j=>j.number===number))throw bad('Another record for this Mordinal is waiting for a block. Try again in a few minutes.',429);
   if(open.filter(j=>j.signer===signer).length>=limits.perSigner)throw bad('This address already has '+limits.perSigner+' records waiting for a block. Try again in a few minutes.',429);
   if(open.length>=limits.waiting)throw bad('The relay is busy. Try again in a few minutes.',503);
   const day=now()-86400000;if([...jobs.values()].filter(j=>j.createdAt>day&&j.txid).length>=limits.perDay)throw bad('The relay reached its daily limit. Try again later, or publish the record yourself.',503);

@@ -5,7 +5,7 @@ is chosen. This page says what a reviewer should read first, what review inside 
 project has already found and changed, and what is still open. No outside review has
 happened yet.
 
-The rules are [`../RULES.md`](../RULES.md) (XMR721, draft 3). The code in `rules/lib/` is the
+The rules are [`../RULES.md`](../RULES.md) (XMR721, draft 4). The code in `rules/lib/` is the
 rules: the reader, the check tool, the pages and the wallets all import that one library.
 The wallets are not in this repository; points about them are kept here because they bear
 on the rules.
@@ -20,6 +20,24 @@ on the rules.
 | 3a | **Payment proof in buy records. New in draft 3.** A buy record carries, for each payee, the shared secret `D = r·V` and a proof that the same `r` made `D` and a public key the transaction carries, bound to the transaction id, the ledger domain and the listing. It is the wallet2 `OutProofV2` form for one key. Is the proof sound, is the nonce safe in every signer, is everything bound that must be, and can anyone who sees a record (which shows `D`) make a second payment or a second record that counts? | `rules/lib/payment.mjs` (`makeOutProof`, `verifyOutProof`, `checkPaymentProof`, `provePayments`), `ledger.mjs` (buy), RULES.md "Payment proof" |
 | 4 | **Record decoding.** Exact decoding, one spelling per record, replay protection by the per-Mordinal counter. | `records.mjs` |
 | 5 | **Reader and relay.** Chain order, replaced blocks, restart to the same state, what a relay can and cannot do to a record. | `reader/lib/reader.mjs`, `relay.mjs`, `transport.mjs`, `reader/tools/verify.mjs` |
+
+## New in draft 4, not reviewed
+
+Collections, mints and burns (records 7, 8 and 9; RULES.md section 9; `rules/lib/records.mjs`,
+`ledger.mjs`; tests in `rules/tests/mint.test.mjs`). Questions for a reviewer:
+
+- Are the new records decoded in one way only (flags, the optional first owner, names,
+  the origin field)?
+- Can anything but the collection's creator mint into it, or an edition be minted twice,
+  also after a burn?
+- A minted NFT shares `move`, `list`, `reserve` and `buy` with Mordinals through the same
+  32-byte field. Can a mint id ever collide with a registration transaction id, or one
+  NFT's signed record be used for another?
+- The 1,000-byte limit is checked on the whole record. Is there a way to carry more?
+- The signed texts for minted NFTs differ from those for Mordinals only in how the NFT is
+  named. The texts for Mordinals are unchanged from draft 3 (the saved lab cases replay).
+- Free and open minting means anyone can inscribe anything. The rules do not filter; pages
+  and wallets will have to.
 
 ## Found in review and changed
 
@@ -197,8 +215,9 @@ Wallets:
 | Test | Result on 10 November 2026 |
 |---|---|
 | Rule library, offline (`rules/tests/rules.test.mjs`) | 23 of 23 |
+| Collections, mints and burns, offline (`rules/tests/mint.test.mjs`) | 7 of 7 |
 | Wallet lab: real wallet2 wallets on a local test chain (`rules/tests/lab.test.mjs`) | passed: 22 records accepted, 27 refused as expected; Feather and Cake claim lab passed (6 accepted, 1 refused) |
-| Reader, relay, service, check tools, offline (`reader/tests/reader.test.mjs`) | 10 of 10 |
+| Reader, relay, service, check tools, offline (`reader/tests/reader.test.mjs`) | 11 of 11 |
 | Reader lab: local Monero test chain, real carrier transactions (`reader/tests/lab.test.mjs`) | passed |
 | Pages in a browser (`reader/tests/views.test.mjs`) | 15 of 15 |
 
