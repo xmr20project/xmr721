@@ -8,7 +8,7 @@
 //!     status                scan new blocks; balance, how many coins can carry a record now, and the payments
 //!                           received at subaddresses given out with `address`
 //!     carry <record hex>    build the carrier (not sent): {txid, blob, fee, extraBytes}
-//!     split <n>             one transaction paying n coins of 0.01 XMR to this wallet (more carriers per block)
+//!     split <n>             one transaction paying n coins of 0.01 XMR (MORDINALS_SPLIT_COIN) to this wallet (more carriers per block)
 //!     publish <blob hex>    send a built transaction to the node
 //!     address <n>           subaddress n of this wallet, for a fee payment; from then on every scan looks for it
 //!   Environment: MORDINALS_NODE (http://127.0.0.1:port), MORDINALS_NETWORK (offline-fakechain | stagenet | mainnet),
@@ -348,7 +348,10 @@ async fn run(dir: &Path, op: &str, arg: Option<&str>) -> Result<J> {
             let n: usize = arg.context("count")?.parse()?;
             ensure!((2..=14).contains(&n), "2 to 14 coins per transaction");
             let me = w.address();
-            let tx = w.build(&r, vec![(me, SPLIT_COIN); n], vec![], true).await?;
+            // MORDINALS_SPLIT_COIN sets the size of each new coin (at least 0.0005 XMR); the default is SPLIT_COIN.
+            let coin: u64 = std::env::var("MORDINALS_SPLIT_COIN").ok().and_then(|v| v.parse().ok()).unwrap_or(SPLIT_COIN);
+            ensure!(coin >= 500_000_000, "MORDINALS_SPLIT_COIN is below 0.0005 XMR");
+            let tx = w.build(&r, vec![(me, coin); n], vec![], true).await?;
             tx_json(&tx)
         }
         other => anyhow::bail!("Unknown operation {other}"),
