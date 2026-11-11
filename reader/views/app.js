@@ -61,6 +61,8 @@ async function show({keep=false}={}){
   main.replaceChildren(notice('error',e.message||'Something went wrong.'),
    el('p',{class:'section'},el('button',{type:'button',class:'btn',text:'Try again',onclick:()=>show()})));}}
 
+// A hosting page can name the view to open first (<html data-home="/market">).
+const home=document.documentElement.dataset.home;if(home&&!location.hash.replace(/^#\/?$/,''))history.replaceState(null,'','#'+home);
 addEventListener('hashchange',()=>show());
 // The newest block for the header, checked now and then while the page is in front.
 setInterval(()=>{if(!document.hidden&&service.info)api('/info').then(i=>{service.info=i;showTip(i.height);}).catch(()=>{});},20000);

@@ -3,7 +3,10 @@
 import {formatXmr,decodeRecord,recordId,unhex,OP,heldUntil} from './rules.js';
 
 // The service root. The pages live in <root>/view/, the API beside it.
-export const ROOT=new URL('../',new URL('.',location.href));
+// The service is one folder above these pages, unless the page names another place (a site that hosts the pages
+// under its own address does that with <meta name="xmr721-api" content="…">).
+const named=document.querySelector('meta[name="xmr721-api"]')?.content;
+export const ROOT=named?new URL(named,location.href):new URL('../',new URL('.',location.href));
 
 // What /info said when the page loaded: network, domain, fee address, whether records can be sent from here.
 export const service={info:null};
