@@ -25,7 +25,7 @@ burned. Values marked **open** are choices still to make.
 ```
 op 7 collection  creator  max(u32)  flags(u8)  name(len u8, 1–64 bytes)            variant c32 r32
 op 8 mint        collection32  edition(u32)  creator  flags(u8)  [to]
-                 name(len u8, 0–64 bytes)  type(u8)  content(len u24, bytes)       variant c32 r32
+                 name(len u8, 0–64 bytes)  type(u8)  content(len u16, bytes)       variant c32 r32
 op 9 burn        nft32  seq(u32)  owner                                            variant c32 r32
 ```
 
@@ -61,18 +61,19 @@ With the record framing of RULES.md section 8, that leaves **1,000 bytes for a r
 
 | Mint | Bytes around the content | Room for name + content |
 |---|---|---|
-| Owner is the creator | 177 | **823** |
-| Owner is another address (`to`) | 242 | **758** |
+| Owner is the creator | 176 | **824** |
+| Owner is another address (`to`) | 241 | **759** |
 
 (5 bytes of magic and op, 32 collection, 4 edition, 65 creator, 1 flags, 1 + name, 1 type,
-3 content length, 65 signature.)
+2 content length, 65 signature.)
 
-So a **standard mint** carries about 750 to 820 bytes of content: small pixel art, a small
+So a **standard mint** carries about 760 to 820 bytes of content: small pixel art, a small
 palette picture such as the GENESIS pieces (which are 300 to 900 bytes each), or text. It
 travels like any other transaction, through a relay or any wallet that can attach extra
 data.
 
-A **large mint** is one transaction too, but with content far above that. No node relays
+**Large mints are not in the first version** (decided 11 November 2026); this is how they
+would work later. A large mint is one transaction too, but with content far above that. No node relays
 it, so it has to be put into a block by the miner who finds the block: in practice, by
 mining the block ourselves, as was done for the 598,000-byte video in block 3,799,494.
 - It may sit in an ordinary transaction or in the mining reward transaction of that block.
@@ -116,8 +117,7 @@ each edition's owner at a block, the way the Mordinals owner list does. Not desi
 1. Mint fee (section 5), and whether the 5% sale fee applies to minted NFTs.
 2. Who may mint without a collection: anyone (as drafted) or nobody.
 3. Open mints, where anyone can mint an edition by paying the creator. Not in this draft.
-4. Large mints: allow them (needs our own mined blocks and a reader that reads mining
-   reward transactions), or keep to standard mints at first.
+4. Large mints: decided, not in the first version. Standard mints only.
 5. Content types to show, and whether text art (type 8) gets its own packed layout.
 6. Numbers: Mordinals keep 0 to 42,893. New NFTs could be numbered on in chain order, or
    be known only by collection and edition.
