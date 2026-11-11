@@ -385,7 +385,11 @@ test('the market shows the newest history beside the listings, and the GENESIS c
  assert.equal(await count('[data-section=history]'),1);
  await page.locator('[data-edition="4"] .meta').click();await shown('/nft/genesis/4');
  assert.match(await text('h1'),/The Scream/);assert.match(await text('.kv'),/Edvard Munch/);
- await go('/xmr721');assert.equal(await count('[data-section=steps] .steps > li'),3);});
+ await go('/xmr721');assert.equal(await count('[data-section=steps] .steps > li'),3);
+ // Collections: Mordinals as a whole and GENESIS; a copy of the pages without an archive lists no others.
+ await go('/collections');assert.deepEqual(await page.locator('.ccard .n').allTextContents(),['Mordinals','GENESIS']);
+ await page.waitForFunction(()=>document.querySelectorAll('.ccard[data-kind=held] .mosaic img').length===3);
+ await go('/market');assert.equal(await count('[data-section=collections] .ccard'),2);assert.equal(await count('[data-section=wallet]'),0,'no wallet link, no wallet panel');});
 
 test('activity pages through older events',async()=>{
  // Eight more records, so the newest activity no longer fits one page.
@@ -438,7 +442,7 @@ test('a service without a relay is shown as read-only',async()=>{
 test('no view scrolls sideways at 360 px',async()=>{
  const lot=await lotOf(3);
  await page.setViewportSize({width:360,height:740});
- for(const at of ['/','/?kind=sale','/gallery','/gallery?filter=listed','/mordinal/3','/mordinal/7','/mordinal/3/stop','/mordinal/2/send','/mordinal/2/sell','/market','/market?show=genesis','/xmr721','/nft/genesis/4','/lot/'+lot,
+ for(const at of ['/','/?kind=sale','/gallery','/gallery?filter=listed','/mordinal/3','/mordinal/7','/mordinal/3/stop','/mordinal/2/send','/mordinal/2/sell','/market','/market?show=genesis','/xmr721','/collections','/nft/genesis/4','/lot/'+lot,
   `/buy/${lot}/${W.bob}`,'/address/'+W.alice,'/about','/search?q=nothing','/nowhere']){
   await go(at);await page.waitForTimeout(150);await noSideScroll();}
  await page.setViewportSize({width:1280,height:900});});

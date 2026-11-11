@@ -209,6 +209,21 @@ a.pic{cursor:pointer}
 .owned-item{display:flex;align-items:center;gap:10px;padding:8px 14px 8px 8px;border:1px solid var(--ux-line);border-radius:14px;background:rgba(18,18,21,.9);color:var(--ux-copy)}
 .owned-item:hover{border-color:var(--ux-line2);text-decoration:none}
 .owned-item>span{display:flex;flex-direction:column;line-height:1.3}
+/* Collection cards: three pictures, a name, a count. */
+.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px}
+.cgrid.strip{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.ccard{display:block;border:1px solid var(--ux-line);background:rgba(18,18,21,.9);border-radius:18px;overflow:hidden;color:var(--ux-copy)}
+.ccard:hover{border-color:var(--ux-line2);text-decoration:none}
+.mosaic{display:grid;grid-template-columns:2fr 1fr;grid-template-rows:1fr 1fr;gap:2px;aspect-ratio:3/2;background:#060607}
+.mosaic>span{position:relative;background:#0c0c0e;overflow:hidden}
+.mosaic>span:first-child{grid-row:1/3}
+.mosaic>span.none{grid-column:1/3;display:flex;align-items:center;justify-content:center;color:var(--ux-faint);font-size:12px}
+.mosaic img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.mosaic img.pixel{image-rendering:pixelated}
+.cmeta{display:block;padding:10px 12px 12px}
+.cmeta .n{display:block;font-weight:700;color:var(--ux-strong);font-size:14px;line-height:1.3}
+.cmeta .s{display:block;margin-top:2px;font-size:12px;color:var(--ux-dim)}
+.strip .cmeta .n{font-size:13px}
 /* The first-visit tutorial. */
 .tour{width:min(520px,calc(100vw - 32px));max-height:calc(100vh - 32px);padding:0;border:1px solid var(--ux-line2);border-radius:22px;background:#151517;color:var(--ux-text);overflow:hidden}
 .tour[open]{display:flex;flex-direction:column}
