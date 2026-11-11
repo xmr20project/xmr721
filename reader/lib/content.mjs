@@ -15,8 +15,11 @@ export function pictureType(b){
  if(b.length>=12&&starts(b,[0x52,0x49,0x46,0x46])&&starts(b,[0x57,0x45,0x42,0x50],8))return 'image/webp';
  return null;}
 
-// Files named by their SHA-256 in one folder (tests, or a local copy of the archive).
-export const dirContent=dir=>async o=>{const f=join(dir,o.bodySha256);return existsSync(f)?{bytes:readFileSync(f),sensitive:false}:null;};
+// Files named by their SHA-256 in one folder (tests, or a local copy of the archive). A content-flags.json beside the
+// folder ({"sha256": [...]}) names pictures a person reviewed as sensitive; pages hide those until asked.
+export const dirContent=dir=>{
+ const flags=join(dir,'..','content-flags.json'),hidden=new Set(existsSync(flags)?JSON.parse(readFileSync(flags,'utf8')).sha256||[]:[]);
+ return async o=>{const f=join(dir,o.bodySha256);return existsSync(f)?{bytes:readFileSync(f),sensitive:hidden.has(o.bodySha256)}:null;};};
 // The public Mordinals archive: find the item by registration transaction and hash, then fetch its file.
 export function archiveContent(base='https://xmr20.org/api/mordinals',{fetch:f=fetch,timeout=20000}={}){
  return async o=>{

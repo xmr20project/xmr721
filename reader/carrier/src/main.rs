@@ -1,6 +1,7 @@
 //! Mordinals carrier: the relay's own Monero wallet. It puts one MD1 record into an ordinary transaction (one input,
 //! a small payment to itself plus change, normal decoys) and pays the network fee from its own coins.
-//! Draft: an offline test chain or stagenet only; a mainnet node is refused.
+//! Networks: an offline test chain, stagenet, or mainnet. Mainnet needs MORDINALS_MAINNET=1 as well, and a synchronized,
+//! unrestricted node of its own (decoys come from that node).
 //!
 //!   mordinals-carrier <state dir> <op> [argument]        one JSON line on stdout
 //!     init                  make the wallet keys (once) and print the address
@@ -10,7 +11,8 @@
 //!     split <n>             one transaction paying n coins of 0.01 XMR to this wallet (more carriers per block)
 //!     publish <blob hex>    send a built transaction to the node
 //!     address <n>           subaddress n of this wallet, for a fee payment; from then on every scan looks for it
-//!   Environment: MORDINALS_NODE (http://127.0.0.1:port), MORDINALS_NETWORK (offline-fakechain | stagenet),
+//!   Environment: MORDINALS_NODE (http://127.0.0.1:port), MORDINALS_NETWORK (offline-fakechain | stagenet | mainnet),
+//!   MORDINALS_MAINNET=1 (required for mainnet), MORDINALS_MAX_FEE (largest network fee of one transaction, atomic units),
 //!   MORDINALS_START (first block to scan).
 //!
 //! Record framing in tx_extra is the XMR20 framing: tx public key, then 254-byte nonce chunks each marked 0x7f.
@@ -52,8 +54,13 @@ fn parts(record: &[u8]) -> Result<Vec<Vec<u8>>> {
 
 async fn guard(r: &Rpc, network: &str) -> Result<()> {
     let j: J = serde_json::from_str(&r.json_rpc_call("get_info", None, 8192).await?)?;
-    ensure!(!(j["mainnet"] == true || j["nettype"] == "mainnet"), "Mainnet node refused: this draft runs on a test chain only");
+    let main = j["mainnet"] == true || j["nettype"] == "mainnet";
+    ensure!(!main || network == "mainnet", "Mainnet node refused: this wallet was opened for {network}");
     match network {
+        "mainnet" => {
+            ensure!(std::env::var("MORDINALS_MAINNET").as_deref() == Ok("1"), "Mainnet needs MORDINALS_MAINNET=1");
+            ensure!(main && j["synchronized"] == true && j["restricted"] != true, "A synchronized, unrestricted mainnet node of your own is required (node reports {})", j["nettype"]);
+        }
         "offline-fakechain" => ensure!(
             j["nettype"] == "fakechain" && j["offline"] == true && j["incoming_connections_count"] == 0 && j["outgoing_connections_count"] == 0,
             "Offline test chain required (node reports {})", j["nettype"]
@@ -278,6 +285,9 @@ impl Wallet {
         }
         let (ki, tx) = built.with_context(|| format!("No coin of this wallet covers the network fee now ({short})"))?;
         ensure!(tx.prefix().extra.len() <= EXTRA_LIMIT, "The record does not fit a standard transaction");
+        // A network fee far above the usual one means a fee spike or a fault; nothing is signed away then.
+        let most: u64 = std::env::var("MORDINALS_MAX_FEE").ok().and_then(|v| v.parse().ok()).unwrap_or(5_000_000_000);
+        ensure!(fee(&tx)? <= most, "The network fee of this transaction ({}) is above the limit ({most}); nothing was sent", fee(&tx)?);
         self.spent.insert(ki);
         self.save()?;
         Ok(tx)
