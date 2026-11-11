@@ -101,10 +101,8 @@ transactions.
 ## 5. Fees
 
 - The Monero network fee of the carrying transaction, paid by whoever sends it.
-- Sales: 5% protocol fee, as for Mordinals (**open**: the current decision says "Mordinals
-  only").
-- Mint fee: **open**. Options: none; a fixed XMR amount per mint to the fee address,
-  proven the way a purchase is; or a fee per collection.
+- Minting has no protocol fee.
+- Sales: 5% protocol fee on every XMR721 sale, minted NFTs and Mordinals alike.
 
 ## 6. Collections made before XMR721
 
@@ -112,17 +110,22 @@ GENESIS and the other XMR20 NFT collections are in an earlier format with rules 
 own. To trade them here they have to be adopted: one record or a setup list that fixes
 each edition's owner at a block, the way the Mordinals owner list does. Not designed here.
 
-## 7. Open choices
+## 7. Decided (11 November 2026)
 
-1. Mint fee (section 5), and whether the 5% sale fee applies to minted NFTs.
-2. Who may mint without a collection: anyone (as drafted) or nobody.
-3. Open mints, where anyone can mint an edition by paying the creator. Not in this draft.
-4. Large mints: decided, not in the first version. Standard mints only.
-5. Content types to show, and whether text art (type 8) gets its own packed layout.
-6. Numbers: Mordinals keep 0 to 42,893. New NFTs could be numbered on in chain order, or
-   be known only by collection and edition.
-7. A field that points at where an NFT came from (for Sweep and Burn: the burned Bitcoin
-   inscription), so the link is part of the mint.
-8. Burn: as drafted, or no burn record at all.
+- Standard mints only in the first version; large mints later.
+- No mint fee. The 5% sale fee applies to every XMR721 NFT.
+- Anyone may create a collection, and anyone may mint an NFT that belongs to none.
+- Burning is allowed.
+
+## 8. Still open
+
+1. Open mints, where anyone can mint an edition by paying the creator. Not in this draft.
+2. Content types to show, and whether text art (type 8) gets its own packed layout.
+3. Numbers: Mordinals keep 0 to 42,893. Proposed: new NFTs are known by collection and
+   edition (or by id when they have no collection), with no running number.
+4. Proposed: an optional field on a mint that points at where the NFT came from (for Sweep
+   and Burn: the burned Bitcoin inscription), so the link is part of the mint.
+5. Spam: with free and open minting, readers and pages need a way to hide junk (lists,
+   filters). The rules cannot stop it.
 
 Everything here needs the same outside review as RULES.md before it is used.
