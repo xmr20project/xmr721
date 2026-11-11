@@ -33,6 +33,10 @@ export async function collectionCards(ctx,{limit=Infinity}={}){
  api('/gallery?filter=all&from=0&limit=12',{signal:ctx.signal}).then(g=>put(all.mosaic,g.items.filter(m=>m.bodySize!==null).slice(0,3).map(m=>new URL('content/'+m.number,ROOT).href),true)).catch(()=>{});
  for(const c of held){const t=tile('#/market?show='+c.key,c.name,`${count(c.minted)} of ${count(c.max)} · earlier format`,'held');
   [...t.mosaic.children].forEach((slot,i)=>slot.replaceChildren(nftPicture(map,c.key,[4,1,5][i])));cards.push(t.card);}
+ // Collections made on this ledger.
+ const made=await api('/nft-collections',{signal:ctx.signal}).then(v=>v.collections).catch(()=>[]);
+ for(const c of made){const t=tile('#/set/'+c.id,c.name,`${count(c.minted)} of ${count(c.max)} minted`,'made');
+  api('/nfts?limit=3&collection='+c.id,{signal:ctx.signal}).then(v=>put(t.mosaic,v.items.filter(x=>x.type>=1&&x.type<=4).map(x=>new URL(`nft/${x.id}/content`,ROOT).href),true)).catch(()=>{});cards.push(t.card);}
  let groups=[],problem=null;
  if(ARCHIVE){try{groups=(await archive({page:'1'},ctx.signal)).collections.filter(g=>g.count>=SMALLEST&&!RUDE.test(g.name)).sort((a,b)=>b.count-a.count);}catch(e){if(e.name==='AbortError')throw e;problem=e.message;}}
  // A collection's pictures load when its card comes into view.

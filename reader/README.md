@@ -93,6 +93,10 @@ JSON everywhere. Errors are `{"error": "plain text"}` with a 4xx/5xx status. Amo
 | `GET /tx/<txid>` | `{height, payment:{txid, height (null while in the pool), tx}}`: a Monero transaction as the node gives it, cut to the parts the rules read. A buyer's wallet uses it to make the payment proofs of a purchase. `404` while the node does not know it; counts toward the request limit. |
 | `GET /pending` | `{height, jobs:[job], pool:[{txid, record, op, id}]}`: records waiting for a block |
 | `GET /log?from=&limit=` | `{height, hash, from, total, entries:[{height, pos, txid, record, id?, ok, error?, facts?}]}`: the full record log, accepted and refused |
+| `GET /nfts?from=&limit=&collection=` | `{height, total, from, items:[nft]}`: minted NFTs, newest first; nft = `{id, collection, edition, creator, name, type, size, sha256, origin?, collectionName, owner, burned, seq, height, txid, lot}` |
+| `GET /nft/<id>` | `{height, nft, record (the mint record), collectionRecord, history:[event], waiting:[job]}` |
+| `GET /nft/<id>/content` | the inscribed bytes when they are a picture (by their first bytes) or plain text; `415` otherwise |
+| `GET /nft-collections`, `GET /nft-collection/<id>` | collections made on the ledger; one with its record and its minted NFTs |
 | `GET /checkpoints` | `{height, checkpoints:[{schema, network, domain, owners, start, height, blockHash, records, listHash, stateHash}]}` |
 | `GET /checkpoint` | the same summary at the current block |
 | `GET /records?from=&limit=` | `{height, total, from, records:[hex]}`: accepted records in order, 1,000 at a time unless `limit` says otherwise (at most 5,000) |

@@ -1,10 +1,11 @@
 // The market: open listings, recent sales, one listing, and buying it by signing a message and paying from any wallet.
 import {OP,RULES,heldUntil,encodeBody,renderText,recordId,codeOf,amounts,splitOf,formatXmr,canonical,parseTxKey,provePayments,hex} from './rules.js';
-import {el,add,fill,api,service,count,xmr,addr,code,exact,notice,pill,pills,strong,table,when,pictures,terms,running,field,textInput,mordinalLink,draft,kindPill,eventText} from './ui.js';
+import {el,add,fill,api,service,count,xmr,addr,code,exact,notice,pill,pills,strong,table,when,pictures,terms,running,field,textInput,mordinalLink,draft,kindPill,eventText,ROOT} from './ui.js';
 import {tutorial} from './xmr721.js';
 import {collectionGrid} from './collection.js';
 import {walletPanel,watchWallet} from './wallet.js';
 import {collectionCards} from './collections.js';
+import {subject,nftPicture} from './nft.js';
 import {signPanel,sent,follow} from './sign.js';
 
 const READ_ONLY='Records cannot be sent from here: this service only reads. Use the XMR20 wallet or the command-line tool to buy.';
@@ -25,7 +26,7 @@ function history(events){
  return el('aside',{class:'side card stack','data-section':'history'},
   el('div',{class:'section-head'},el('h2',{text:'History'}),el('a',{class:'dim',href:'#/',text:'All'})),
   events.length?el('ul',{class:'feed'},events.map(e=>el('li',{'data-kind':e.kind},
-   el('div',{class:'feed-top'},kindPill(e.kind),mordinalLink(e.number),el('span',{class:'dim',text:when(e.time).slice(5,16)})),
+   el('div',{class:'feed-top'},kindPill(e.kind),mordinalLink(e.number??e.nft),el('span',{class:'dim',text:when(e.time).slice(5,16)})),
    el('div',{class:'feed-text'},eventText(e))))):el('p',{class:'empty',text:'Nothing has happened yet.'}));}
 
 export async function market(ctx){
@@ -43,7 +44,7 @@ export async function market(ctx){
  const mordinals=()=>[
   el('section',{class:'section','data-section':'listings'},el('div',{class:'section-head'},el('h2',{text:'For sale'}),el('span',{class:'dim',text:count(rows.length)})),
    table([
-    {label:'Mordinal',cell:t=>el('div',{class:'with-thumb'},Number.isInteger(t.number)?pic(t.number,{size:'thumb'}):null,Number.isInteger(t.number)?mordinalLink(t.number):'')},
+    {label:'NFT',cell:t=>el('div',{class:'with-thumb'},Number.isInteger(t.number)?pic(t.number,{size:'thumb'}):t.nft&&!t.unfit?el('img',{class:'thumb-img',alt:'',loading:'lazy',src:new URL(`nft/${t.nft}/content`,ROOT).href}):null,t.unfit?'':mordinalLink(t.number??t.nft))},
     {label:'Price',cell:t=>t.unfit?'':strong(xmr(t.price)+' XMR')},
     {label:'Seller',cell:t=>t.unfit?'This listing does not fit its code and cannot be bought here.':addr(t.seller)},
     {label:'Ends at block',num:true,cell:t=>t.unfit?'':count(t.until)},
@@ -61,7 +62,7 @@ export async function market(ctx){
    el('p',{class:'muted',text:'Started buying and closed the page? Enter the address you reserved with.'}),
    el('div',{class:'search'},who,el('button',{type:'button',class:'btn','data-action':'continue',text:'Continue',onclick:resume})),problem):null,
   el('section',{class:'section','data-section':'sales'},el('div',{class:'section-head'},el('h2',{text:'Recent sales'})),
-   table([{label:'Mordinal',cell:e=>mordinalLink(e.number)},{label:'Price',cell:e=>strong(xmr(e.price)+' XMR')},{label:'Seller',cell:e=>addr(e.seller)},
+   table([{label:'NFT',cell:e=>mordinalLink(e.number??e.nft)},{label:'Price',cell:e=>strong(xmr(e.price)+' XMR')},{label:'Seller',cell:e=>addr(e.seller)},
     {label:'Buyer',cell:e=>addr(e.buyer)},{label:'Block',num:true,cell:e=>count(e.height)},{label:'Time',num:true,cell:e=>when(e.time)}],s.events,'No sales yet.'))];
  add(ctx.main,
   el('div',{class:'head'},el('h1',{text:'Mordinals / XMR721'}),
@@ -81,8 +82,8 @@ export async function market(ctx){
 export async function lot(ctx,id){
  const info=service.info;
  const v=await api('/lot/'+id,{signal:ctx.signal}),t=terms(v.lot),height=v.height,held=running(t,height),ended=t.until<height;
- ctx.title('Listing of Mordinal #'+count(t.number));ctx.tip(height);
- const pic=pictures(ctx),s=splitOf(t.price);
+ const pic=pictures(ctx),s=splitOf(t.price),about=await subject(ctx,t,pic);
+ ctx.title('Listing of '+about.name);ctx.tip(height);
  const state=t.status==='sold'?pill('Sold','green'):t.status==='cancelled'?pill('Stopped'):ended?pill('Ended'):held?pill('Reserved','purple'):pill('Open','green');
  const buyBox=el('div',{class:'card stack','data-section':'buy'});
  if(t.status==='sold')add(buyBox,el('h2',{text:'Sold'}),el('p',{class:'muted'},'Bought by ',v.lot.buyer?addr(v.lot.buyer):'another address','.'));
@@ -103,14 +104,14 @@ export async function lot(ctx,id){
    el('p',{class:'dim',text:'Nothing is paid in this step.'}));}
  add(ctx.main,
   el('div',{class:'head'},el('a',{class:'crumb',href:'#/market',text:'Market'}),
-   el('h1',{class:'small'},'Mordinal #'+count(t.number))),
-  el('div',{class:'split'},pic(t.number,{size:'large'}),
+   el('h1',{class:'small'},about.name)),
+  el('div',{class:'split'},about.picture('large'),
    el('div',{class:'stack'},
     el('div',{class:'card stack answer','data-section':'terms'},el('div',{class:'section-head'},el('p',{class:'label',text:'Price'}),state),
      el('p',{class:'big','data-price':'',text:xmr(t.price)+' XMR'}),
      el('dl',{class:'kv'},fact('Seller',addr(t.seller)),fact(ended?'Ended at block':'Ends at block',count(t.until)),
       fact('Seller receives',formatXmr(s.seller)+' XMR'),fact('Protocol fee (5%)',formatXmr(s.fee)+' XMR'),
-      fact('Listing code',code(t.id)),fact('Mordinal',el('a',{href:'#/mordinal/'+t.number,text:'See its page and history'}))),
+      fact('Listing code',code(t.id)),fact(t.nft?'NFT':'Mordinal',el('a',{href:about.href,text:'See its page and history'}))),
      el('p',{class:'dim',text:'Price, seller and end block are read from the seller’s signed listing, checked against its code in your browser.'})),
     buyBox)),
   v.waiting.length?el('section',{class:'section'},notice('note','A record for this Mordinal is waiting for a block.')):null,
@@ -121,9 +122,9 @@ export async function lot(ctx,id){
 export async function buy(ctx,id,address){
  const info=service.info,me=canonical(address,info.network);
  const [v,mine]=await Promise.all([api('/lot/'+id,{signal:ctx.signal}),api('/address/'+me,{signal:ctx.signal})]);
- const t=terms(v.lot),height=v.height,r=t.reservation,n=t.number;
- ctx.title('Buy Mordinal #'+count(n));ctx.tip(height);
- const pic=pictures(ctx),stage=el('section',{class:'section card stack','data-stage':''});
+ const t=terms(v.lot),height=v.height,r=t.reservation,pic=pictures(ctx),about=await subject(ctx,t,pic),n=about.key,NAME=about.name;
+ ctx.title('Buy '+NAME);ctx.tip(height);
+ const stage=el('section',{class:'section card stack','data-stage':''});
  const reserveBody=payBy=>encodeBody(OP.reserve,{lot:t.id,payBy,buyer:me,rate:0},info.network);
  const buyJob=r&&r.buyer===me?[...v.waiting,...mine.waiting].find(j=>j.op===OP.buy&&j.number===n):null;
  const reserveJob=mine.waiting.find(j=>j.op===OP.reserve&&j.number===n);
@@ -132,8 +133,8 @@ export async function buy(ctx,id,address){
 
  if(!info.relay)set('read-only',notice('note',READ_ONLY));
  else if(t.status==='sold')set('sold',v.lot.buyer===me
-  ?[el('h2',{text:'Mordinal #'+count(n)+' is yours'}),notice('good','The purchase is in a block. It belongs to your address now.'),el('p',{},el('a',{class:'btn',href:'#/mordinal/'+n,text:'See Mordinal #'+count(n)}))]
-  :[el('h2',{text:'Sold'}),el('p',{class:'muted',text:'Mordinal #'+count(n)+' was sold to another buyer.'}),back]);
+  ?[el('h2',{text:NAME+' is yours'}),notice('good','The purchase is in a block. It belongs to your address now.'),el('p',{},el('a',{class:'btn',href:about.href,text:'See Mordinal #'+count(n)}))]
+  :[el('h2',{text:'Sold'}),el('p',{class:'muted',text:NAME+' was sold to another buyer.'}),back]);
  else if(t.status!=='open')set('stopped',el('h2',{text:'Not for sale'}),el('p',{class:'muted',text:'The seller stopped this sale.'}),back);
  else if(buyJob)set('finishing',el('h2',{text:'Finishing the purchase'}),
   sent(ctx,buyJob.id,{own:true,done:()=>{ctx.reload();return notice('good','Done.');},again:()=>ctx.reload()}));
@@ -148,8 +149,8 @@ export async function buy(ctx,id,address){
  else reserve();
 
  add(ctx.main,
-  el('div',{class:'head'},el('a',{class:'crumb',href:'#/lot/'+t.id,text:'Market · listing'}),el('h1',{class:'small',text:'Buy Mordinal #'+count(n)})),
-  el('div',{class:'card tight with-thumb','data-section':'summary'},pic(n,{size:'thumb'}),
+  el('div',{class:'head'},el('a',{class:'crumb',href:'#/lot/'+t.id,text:'Market · listing'}),el('h1',{class:'small',text:'Buy '+NAME})),
+  el('div',{class:'card tight with-thumb','data-section':'summary'},about.picture('thumb'),
    el('div',{},el('p',{},strong(xmr(t.price)+' XMR'),' from ',addr(t.seller)),el('p',{class:'muted'},'Buying as ',addr(me)))),
   stage);
 
@@ -159,10 +160,10 @@ export async function buy(ctx,id,address){
   const key=`reserve:${t.id}:${me}`,fresh=Math.min(height+RULES.maxReserve,t.until),kept=draft.get(key);
   const payBy=kept&&Number.isInteger(kept.payBy)&&kept.payBy<=fresh&&kept.payBy>=Math.min(fresh,height+20)?kept.payBy:fresh;
   draft.set(key,{payBy});
-  const body={lot:t.id,payBy,buyer:me,rate:0},bodyBytes=reserveBody(payBy),rctx={domain:info.domain,number:n,lot:{price:t.price,seller:t.seller},feeAddress:info.feeAddress};
+  const body={lot:t.id,payBy,buyer:me,rate:0},bodyBytes=reserveBody(payBy),rctx={domain:info.domain,number:t.number,what:about.what,lot:{price:t.price,seller:t.seller},feeAddress:info.feeAddress};
   const a=amounts({price:t.price,rate:0,code:codeOf(recordId(info.domain,bodyBytes))});
   set('reserve',el('h2',{text:'Step 1 of 3: reserve it'}),
-   el('p',{class:'muted',text:`You reserve Mordinal #${count(n)} until block ${count(payBy)} (now block ${count(height)}). Nobody else can buy it while your reservation runs. Nothing is paid in this step.`}),
+   el('p',{class:'muted',text:`You reserve ${NAME} until block ${count(payBy)} (now block ${count(height)}). Nobody else can buy it while your reservation runs. Nothing is paid in this step.`}),
    el('p',{class:'muted',text:`After the reservation is in a block you pay exactly ${formatXmr(a.seller)} XMR to the seller and exactly ${formatXmr(a.protocol)} XMR to the fee address. The text below says the same; read it in your wallet before you sign.`}),
    signPanel(ctx,{bodyBytes,rctx,text:renderText(OP.reserve,body,bodyBytes,rctx),signer:me,backLabel:'Cancel',back:()=>{location.hash='#/lot/'+t.id;},
     done:()=>{ctx.reload();return notice('good','Your reservation is in a block.');}}));}

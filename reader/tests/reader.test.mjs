@@ -346,7 +346,7 @@ test('the service answers wallets and pages, and the check tools agree with it',
   const mine=(await get('/address/'+w.alice.address)).body;assert.deepEqual(mine.mordinals.map(m=>[m.number,m.claimed,m.owner,m.seq,m.lot]),[[0,true,w.alice.address,0,null]]);assert.deepEqual(mine.waiting,[]);
   const lot=make.list(0,w.alice,2n*XMR);await send(lot.record);await next();
   const shown=(await get('/listings')).body.listings;assert.equal(shown.length,1);
-  assert.deepEqual({...shown[0],until:0},{id:lot.id,number:0,reg:owners[0].registrationTx,seller:w.alice.address,price:String(2n*XMR),until:0,status:'open',body:hex(decodeRecord(lot.record).bodyBytes),reservation:null,buyer:null});
+  assert.deepEqual({...shown[0],until:0},{id:lot.id,number:0,nft:null,reg:owners[0].registrationTx,seller:w.alice.address,price:String(2n*XMR),until:0,status:'open',body:hex(decodeRecord(lot.record).bodyBytes),reservation:null,buyer:null});
   const res=make.reserve(lot.id,w.bob);await send(res.record);await next();
   const reserved=(await get('/lot/'+lot.id)).body.lot.reservation;assert.deepEqual({buyer:reserved.buyer,record:reserved.record,height:reserved.height,payBy:reserved.payBy},{buyer:w.bob.address,record:res.id,height:103,payBy:132});
   assert.deepEqual((await get('/address/'+w.bob.address)).body.buying.map(l=>l.id),[lot.id]);

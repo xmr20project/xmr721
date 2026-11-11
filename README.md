@@ -137,9 +137,9 @@ them and build the relay's wallet first with `sh reader/carrier/build.sh`.
   on mainnet.
 - **Wallets are not in this repository.** Claim, send and sell screens exist for the XMR20
   wallets as test builds and will be published with those wallets.
-- **New NFTs are in the rules, not in the pages.** Draft 4 adds collections, mints of up to
-  about 800 bytes in one transaction, and burning (RULES.md section 9). The rule library,
-  reader and relay handle them; the pages and wallets do not show or make them yet.
+- **New NFTs.** Draft 4 adds collections, mints of up to about 800 bytes in one
+  transaction, and burning (RULES.md section 9). The pages can create, show, send, sell and
+  burn them by signed message; the wallets cannot yet.
 - **Anyone can run a competing index.** Ownership here rests on people agreeing to these
   rules. That is why the index, the rules and the reader are public and reproducible.
 

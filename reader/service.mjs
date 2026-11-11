@@ -13,18 +13,18 @@
 import {createServer} from 'node:http';
 import {existsSync,readFileSync,statSync} from 'node:fs';
 import {join,normalize,extname,sep} from 'node:path';
-import {RULES,heldUntil,canonical} from '../rules/lib/records.mjs';
+import {RULES,NO_COLLECTION,heldUntil,canonical,decodeRecord} from '../rules/lib/records.mjs';
 import {createChain} from './lib/chain.mjs';
 import {openReader} from './lib/reader.mjs';
 import {createRelay,createCarrier} from './lib/relay.mjs';
-import {createContent,dirContent,archiveContent} from './lib/content.mjs';
+import {createContent,dirContent,archiveContent,pictureType} from './lib/content.mjs';
 import {served,readOwners} from './lib/owners.mjs';
 import {loadCollections} from '../xmr20-nfts/lib/collection.mjs';
 
 const TYPES={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.woff2':'font/woff2'};
 const PAGE_CSP="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const VIEWS=join(import.meta.dirname,'views');
-const KINDS=new Set(['claim','move','list','cancel','reserve','sale']);
+const KINDS=new Set(['claim','move','list','cancel','reserve','sale','collection','mint','burn']);
 const fail=(message,status=400)=>{const e=Error(message);e.status=status;return e;};
 const int=(v,fallback,min,max)=>{const n=v==null||v===''?NaN:Number(v);return Number.isInteger(n)?Math.min(max,Math.max(min,n)):fallback;};
 
@@ -36,9 +36,14 @@ export function createService({reader,relay=null,owners,transfers=[],content=nul
  const once=(key,make)=>{const at=reader.height+':'+reader.journal.length+':'+reader.hash;if(at!==memoAt){memoAt=at;memo=new Map();}if(!memo.has(key))memo.set(key,make());return memo.get(key);};
  const L=()=>reader.ledger;
  const lotView=id=>{const l=L().lot(id),r=l.reservations.at(-1)||null;
-  return {id:l.id,number:l.number,reg:l.reg,seller:l.seller,price:l.price.toString(),until:l.until,status:l.status,body:reader.body(l.id),
+  return {id:l.id,number:l.number,nft:l.number==null?l.reg:null,reg:l.reg,seller:l.seller,price:l.price.toString(),until:l.until,status:l.status,body:reader.body(l.id),
    reservation:r?{record:r.record,buyer:r.buyer,height:r.height,payBy:r.payBy,rate:r.rate}:null,buyer:l.sale?.buyer||null};};
  const state=n=>{const x=L().mordinal(n);return {number:x.number,reg:x.reg,claimed:x.claimed,owner:x.owner,seq:x.seq,lot:x.lot?lotView(x.lot):null};};
+// A minted NFT. `record` is its mint record, so a page can check every field against the NFT's id itself.
+ const minted=id=>{const x=L().nft(id);if(!x)return null;const c=x.minted.collection===NO_COLLECTION?null:L().collection(x.minted.collection),e=reader.entryById(id);
+  return {id,...x.minted,collectionName:c?.name??null,owner:x.owner,burned:Boolean(x.burned),seq:x.seq,height:e?.height??null,txid:e?.txid??null,lot:x.lot?lotView(x.lot):null};};
+ const mintedIds=()=>once('minted',()=>reader.events.filter(e=>e.kind==='mint').map(e=>e.nft));
+ const madeCollection=c=>({id:c.id,name:c.name,max:c.max,creator:c.creator,height:c.height,minted:c.editions.length});
  const open=()=>once('open',()=>reader.lots.map(lotView).filter(l=>l.status==='open'));
  const claimed=()=>once('claimed',()=>numbers.filter(n=>L().mordinal(n).claimed));
  const card=n=>{const o=entry.get(n),s=state(n);return {number:n,reg:s.reg,claimed:s.claimed,owner:s.owner,bodySize:o.bodySize??null,
@@ -60,9 +65,9 @@ export function createService({reader,relay=null,owners,transfers=[],content=nul
    if(path==='/owners'){const from=int(q.get('from'),0,0,list.length),limit=int(q.get('limit'),chunk,1,chunk);return {from,total:list.length,entries:list.slice(from,from+limit)};}
    if(path==='/claimed')return {height,numbers:claimed()};
    if(path.startsWith('/address/')){const a=canonical(decodeURIComponent(path.slice(9)),m.network);
-    return {height,mordinals:L().owned(a).map(state),buying:open().filter(l=>l.reservation?.buyer===a),waiting:waitingFor({signer:a})};}
+    return {height,mordinals:L().owned(a).map(state),nfts:L().nftsOf(a).map(minted),buying:open().filter(l=>l.reservation?.buyer===a),waiting:waitingFor({signer:a})};}
    if(path==='/listings')return {height,listings:open().filter(l=>l.until>=height)};
-   if(path.startsWith('/lot/')){const id=path.slice(5);if(!/^[0-9a-f]{64}$/.test(id)||!L().lot(id))throw fail('This listing does not exist.',404);return {height,lot:lotView(id),waiting:waitingFor({number:L().lot(id).number})};}
+   if(path.startsWith('/lot/')){const id=path.slice(5);if(!/^[0-9a-f]{64}$/.test(id)||!L().lot(id))throw fail('This listing does not exist.',404);return {height,lot:lotView(id),waiting:waitingFor({number:L().lot(id).number??L().lot(id).reg})};}
    if(path==='/records'){const all=reader.journal.filter(e=>e.ok),from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),1000,1,5000);
     return {height,total:all.length,from,records:all.slice(from,from+limit).map(e=>e.record)};}
    if(path.startsWith('/status/')){const id=path.slice(8);if(!/^[0-9a-f]{64}$/.test(id))throw fail('A record code is 64 hexadecimal characters.');
@@ -95,6 +100,17 @@ export function createService({reader,relay=null,owners,transfers=[],content=nul
      history,waiting:waitingFor({number:o.number})};}
    if(path==='/log'){const all=reader.journal,from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),200,1,500);
     return {height,hash:reader.hash,from,total:all.length,entries:all.slice(from,from+limit)};}
+   // Minted NFTs (RULES.md section 9), newest first, and the collections made on this ledger.
+   if(path==='/nfts'){const all=mintedIds(),from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),60,1,200),c=q.get('collection');
+    const pick=c?all.filter(id=>L().nft(id).minted.collection===c):all;
+    return {height,total:pick.length,from,items:pick.slice().reverse().slice(from,from+limit).map(minted)};}
+   if(path.startsWith('/nft/')){const id=path.slice(5),x=/^[0-9a-f]{64}$/.test(id)?minted(id):null;if(!x)throw fail('This NFT does not exist.',404);
+    const e=reader.entryById(id),c=x.collection===NO_COLLECTION?null:reader.entryById(x.collection);
+    return {height,nft:x,record:e.record,collectionRecord:c?.record??null,
+     history:reader.events.filter(v=>v.nft===id).map(v=>({...v,confirmations:height-v.height+1})),waiting:waitingFor({number:id})};}
+   if(path==='/nft-collections')return {height,collections:L().collections().map(madeCollection).reverse()};
+   if(path.startsWith('/nft-collection/')){const c=L().collection(path.slice(16));if(!c)throw fail('This collection does not exist.',404);
+    return {height,collection:madeCollection(c),record:reader.entryById(c.id).record,items:mintedIds().filter(id=>L().nft(id).minted.collection===c.id).map(minted).sort((a,b)=>a.edition-b.edition)};}
    // Collections shown next to the Mordinals (read-only; see xmr20-nfts/).
    if(path==='/collections')return {height,collections:[...collections.values()].map(c=>({key:c.key,...c.header}))};
    if(path.startsWith('/collections/')){const [key,edition]=path.slice(13).split('/'),c=collections.get(key);if(!c)throw fail('This collection is not known here.',404);
@@ -136,6 +152,13 @@ export function createService({reader,relay=null,owners,transfers=[],content=nul
   try{
    const url=new URL(req.url,'http://127.0.0.1');
    if(req.method==='GET'&&url.pathname.startsWith('/content/')){if(headers['access-control-allow-origin'])for(const k of ['access-control-allow-origin','access-control-expose-headers','vary'])res.setHeader(k,headers[k]);return await picture(res,url.pathname.slice(9));}
+   // The inscribed bytes of a minted NFT: pictures by their first bytes, plain text as text; nothing else is served.
+   const made=/^\/nft\/([0-9a-f]{64})\/content$/.exec(url.pathname);
+   if(req.method==='GET'&&made){const x=reader.ledger.nft(made[1]),e=x&&reader.entryById(made[1]);
+    if(!x){res.writeHead(404,headers);res.end(JSON.stringify({error:'This NFT does not exist.'}));return;}
+    const bytes=Buffer.from(decodeRecord(Buffer.from(e.record,'hex'),m.network).body.content),type=pictureType(bytes)||(x.minted.type===5?'text/plain; charset=utf-8':null);
+    if(!type){res.writeHead(415,headers);res.end(JSON.stringify({error:'This content is not shown.'}));return;}
+    res.writeHead(200,{'content-type':type,'content-length':bytes.length,'cache-control':'public, max-age=31536000, immutable','x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox",'cross-origin-resource-policy':'cross-origin'});res.end(bytes);return;}
    const shot=/^\/collections\/([a-z0-9-]{1,40})\/(\d{1,5})\/picture$/.exec(url.pathname);
    if(req.method==='GET'&&shot){const file=await collections.get(shot[1])?.picture(Number(shot[2]),{plain:url.searchParams.get('plain')==='1'});
     if(!file){res.writeHead(404,headers);res.end(JSON.stringify({error:'No such picture.'}));return;}

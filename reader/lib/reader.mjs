@@ -54,9 +54,10 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
   if(d.op===OP.move)return {...base,kind:'move',number:out.number,...(out.number==null?{nft:b.reg}:{}),from:b.from,to:b.to};
   if(d.op===OP.list)return {...base,kind:'list',number:out.number,...(out.number==null?{nft:b.reg}:{}),lot:e.id,seller:b.seller,price:b.price.toString(),until:b.until};
   const l=ledger.lot(b.lot);
-  if(d.op===OP.cancel)return {...base,kind:'cancel',number:l.number,lot:l.id,seller:l.seller};
-  if(d.op===OP.reserve)return {...base,kind:'reserve',number:l.number,lot:l.id,buyer:b.buyer,payBy:b.payBy};
-  return {...base,kind:'sale',number:l.number,lot:l.id,seller:l.seller,buyer:out.owner,price:l.price.toString(),fee:(l.price*BigInt(RULES.feeBps)/10000n).toString(),payments:[...new Set(b.payments.map(p=>p.txid))]};}
+  const which=l.number==null?{nft:l.reg}:{};
+  if(d.op===OP.cancel)return {...base,kind:'cancel',number:l.number,...which,lot:l.id,seller:l.seller};
+  if(d.op===OP.reserve)return {...base,kind:'reserve',number:l.number,...which,lot:l.id,buyer:b.buyer,payBy:b.payBy};
+  return {...base,kind:'sale',number:l.number,...which,lot:l.id,seller:l.seller,buyer:out.owner,price:l.price.toString(),fee:(l.price*BigInt(RULES.feeBps)/10000n).toString(),payments:[...new Set(b.payments.map(p=>p.txid))]};}
  function note(e,d,out){events.push(describe(e,d,out));if(d.op===OP.list){lots.push(e.id);bodies.set(e.id,hex(d.bodyBytes));}}
  const index=e=>{if(e.id&&e.ok)byId.set(e.id,e);if(!byTx.has(e.txid))byTx.set(e.txid,e);};
  // The ledger from the owner list and the journal alone. No node is asked.

@@ -219,7 +219,8 @@ Wallets:
 | Wallet lab: real wallet2 wallets on a local test chain (`rules/tests/lab.test.mjs`) | passed: 22 records accepted, 27 refused as expected; Feather and Cake claim lab passed (6 accepted, 1 refused) |
 | Reader, relay, service, check tools, offline (`reader/tests/reader.test.mjs`) | 11 of 11 |
 | Reader lab: local Monero test chain, real carrier transactions (`reader/tests/lab.test.mjs`) | passed |
-| Pages in a browser (`reader/tests/views.test.mjs`) | 15 of 15 |
+| Pages in a browser (`reader/tests/views.test.mjs`) | 17 of 17 |
+| Minted NFTs through the pages (`reader/tests/mint-views.test.mjs`) | 6 of 6 |
 
 The saved lab cases hold no transaction key.
 

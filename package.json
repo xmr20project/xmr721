@@ -10,7 +10,7 @@
   },
   "scripts": {
     "test": "node --test rules/tests/rules.test.mjs rules/tests/mint.test.mjs reader/tests/reader.test.mjs xmr20-nfts/tests/nfts.test.mjs",
-    "test:views": "node --test reader/tests/views.test.mjs",
+    "test:views": "node --test reader/tests/views.test.mjs reader/tests/mint-views.test.mjs",
     "test:lab": "node --test rules/tests/lab.test.mjs rules/tests/lab-wallet-apps.test.mjs reader/tests/lab.test.mjs",
     "build:views": "node reader/views/build.mjs",
     "demo": "node reader/tests/demo.mjs"

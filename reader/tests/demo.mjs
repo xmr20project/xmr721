@@ -43,13 +43,14 @@ function png(size,pixel){
  const chunk=(type,data)=>{const body=Buffer.concat([Buffer.from(type),data]),out=Buffer.alloc(8+body.length);out.writeUInt32BE(data.length,0);body.copy(out,4);out.writeUInt32BE(crc32(body),4+body.length);return out;};
  const head=Buffer.alloc(13);head.writeUInt32BE(size,0);head.writeUInt32BE(size,4);head[8]=8;head[9]=2;
  return Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),chunk('IHDR',head),chunk('IDAT',deflateSync(raw,{level:9})),chunk('IEND',Buffer.alloc(0))]);}
-function picture(n){
- const h=createHash('sha256').update('demo picture '+n).digest(),cells=8,scale=12,size=cells*scale;
+function picture(n,scale=12){
+ const h=createHash('sha256').update('demo picture '+n).digest(),cells=8,size=cells*scale;
  const hue=h[0]/255*360,colour=(l,s=0.62)=>{const a=s*Math.min(l,1-l),f=k=>{const t=(k+hue/30)%12;return Math.round(255*(l-a*Math.max(-1,Math.min(t-3,9-t,1))));};return [f(0),f(8),f(4)];};
  const back=colour(0.14,0.35),front=colour(0.62),mark=colour(0.82,0.8);
  return png(size,(x,y)=>{const cx=Math.floor(x/scale),cy=Math.floor(y/scale),mx=cx<cells/2?cx:cells-1-cx,bit=h[1+cy*4+mx];return bit>150?front:bit>118&&(cx+cy)%2?mark:back;});}
 
-export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=[],network='mainnet',views=undefined,log=()=>{}}={}){
+// mints: the made-up ledger allows minting from its first block, and a collection and a few minted NFTs are added.
+export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=[],network='mainnet',views=undefined,mints=false,log=()=>{}}={}){
  const names=['alice','bob','carol','dave','erin'],w=Object.fromEntries([...names,'fee','other'].map(n=>[n,wallet('demo '+n,network)])),by=new Map(Object.values(w).map(x=>[x.address,x]));
  const given=new Map();for(const g of give){const a=decodeAddress(g.address,network);for(const n of g.numbers)given.set(n,{spend:a.spend,view:a.view,sub:a.kind==='sub'});}
  // Who holds what at the start: the demo wallets hold the low numbers, everything else sits with a wallet nobody uses.
@@ -66,7 +67,7 @@ export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=
 
  const dir=mkdtempSync(join(tmpdir(),'mordinals-demo-')),start=100,story=14;
  const chain=fakeChain({start,time:Math.floor(Date.now()/1000)-story*120});
- const reader=openReader({dir:join(dir,'state'),chain,network,domain:DOMAIN,feeAddress:w.fee.address,owners,start,checkpointEvery:5,log});
+ const reader=openReader({dir:join(dir,'state'),chain,network,domain:DOMAIN,feeAddress:w.fee.address,owners,start,checkpointEvery:5,...(mints?{mintFrom:start+1}:{}),log});
  const carrier=fakeCarrier(chain,{coins:40});
  const relay=createRelay({dir:join(dir,'relay'),reader,chain,carrier,network,domain:DOMAIN,limits:{resendMs:60000,settleBlocks:3,holdBlocks:60},log});
  const L=()=>reader.ledger,key=(n,h)=>outputSecret({viewSecret:h.viewSecret,spendSecret:h.spendSecret,txPub:owners[n].ownerTxPubKeys[0],subScalar:h.subScalar});
@@ -94,8 +95,16 @@ export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=
  if(have(10)){const l=make.list(10,w.erin,45n*XMR/100n);await block(l.record);await block(make.reserve(l.id,w.dave).record);}
  if(have(12)&&have(14))await block(make.claim(12,w.carol),make.claim(14,w.dave));
 
+ if(mints){
+  const signed=(p,who)=>L().sign(p.bodyBytes,who.sign(p.text)),set=L().prepareCollection({creator:w.erin.address,name:'Demo Blocks',max:12});
+  await block(signed(set,w.erin));
+  const ids=[];for(const n of [1,2,3]){const p=L().prepareMint({collection:set.id,edition:n,creator:w.erin.address,name:'Block '+n,type:1,content:picture(900+n,2),...(n===3?{to:w.carol.address}:{})});ids.push(p.id);await block(signed(p,w.erin));}
+  const note=L().prepareMint({creator:w.bob.address,name:'A note',type:5,content:Buffer.from('Made on Monero. Owned by an address, moved by a signature.')});await block(signed(note,w.bob));
+  await block(signed(L().prepareList({mordinal:ids[0],seller:w.erin.address,price:3n*XMR/10n}),w.erin));}
  let busy=Promise.resolve(),failNext=null,ahead=0;const held=new Map(),lost=new Map();
  const extra=(method,path,body,step)=>{
+  // Bytes of a small made-up picture, for trying the Create page.
+  if(method==='GET'&&path==='/test/picture')return {hex:picture(Date.now()%100000,2).toString('hex')};
   if(method==='GET'&&path==='/test/wallets')return {wallets:Object.fromEntries(names.map(n=>[n,w[n].address])),feeAddress:w.fee.address};
   if(method!=='POST')return undefined;
   if(path==='/test/mine'){const n=Math.min(200,Math.max(1,Number(body.blocks)||1));

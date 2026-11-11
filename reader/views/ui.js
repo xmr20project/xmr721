@@ -43,8 +43,9 @@ export async function api(path,{signal,body}={}){
 export function terms(l){
  const info=service.info;let d,bytes;
  try{bytes=unhex(l.body);d=decodeRecord(bytes,info.network,{sig:false});}catch{d=null;}
- if(!d||d.op!==OP.list||recordId(info.domain,bytes)!==l.id||!Number.isInteger(l.number))throw Error('The service sent a listing that does not fit its code.');
- return {id:l.id,number:l.number,reg:d.body.reg,seq:d.body.seq,price:d.body.price,until:d.body.until,seller:d.body.seller,
+ // A Mordinal is known by its number; a minted NFT has none and is known by its id, which the listing itself names.
+ if(!d||d.op!==OP.list||recordId(info.domain,bytes)!==l.id||!(Number.isInteger(l.number)||(l.number===null&&l.nft===d.body.reg)))throw Error('The service sent a listing that does not fit its code.');
+ return {id:l.id,number:l.number,nft:l.number===null?d.body.reg:null,reg:d.body.reg,seq:d.body.seq,price:d.body.price,until:d.body.until,seller:d.body.seller,
   status:l.status,reservation:l.reservation||null,buyer:l.buyer||null};}
 // The reservation that holds a listing now, or null.
 // The reservation that holds this listing now: until it runs out and 10 blocks more, nobody else can reserve it.
@@ -71,7 +72,8 @@ export function copyButton(value,label='Copy',what=''){
 export const addr=a=>el('span',{class:'chip'},el('a',{class:'v',href:'#/address/'+a,title:a,text:short(a)}),copyButton(a,'Copy','address'));
 export const txid=t=>el('span',{class:'chip'},el('span',{class:'v',title:t,text:short(t)}),copyButton(t,'Copy','transaction id'));
 export const code=id=>el('span',{class:'chip'},el('a',{class:'v',href:'#/record/'+id,title:id,text:short(id)}),copyButton(id,'Copy','record code'));
-export const mordinalLink=n=>el('a',{class:'strong',href:'#/mordinal/'+n,text:'#'+count(n)});
+// A link to what a row is about: a Mordinal by number, a minted NFT by its id (64 hex), nothing when there is neither.
+export const mordinalLink=n=>n==null?'':typeof n==='string'?el('a',{class:'strong',href:'#/nft/'+n,title:n,text:'NFT '+n.slice(0,8)}):el('a',{class:'strong',href:'#/mordinal/'+n,text:'#'+count(n)});
 // A value that must be copied exactly (an amount, an address, a text to sign), shown in full.
 export const exact=(value,{big=false,what='',label='Copy'}={})=>el('div',{class:'exact'+(big?' big':'')},el('span',{class:'v',text:value}),copyButton(value,label,what));
 
@@ -93,7 +95,7 @@ export function table(columns,rows,empty='Nothing here yet.'){
 const c0=r=>r&&(r.id||r.txid)||null;
 
 export const KIND={inscribed:['Inscribed',''],transfer:['Moved in 2023',''],claim:['Claimed','green'],move:['Sent','cyan'],list:['Listed','yellow'],
- cancel:['Sale stopped',''],reserve:['Reserved','purple'],sale:['Sold','green']};
+ cancel:['Sale stopped',''],reserve:['Reserved','purple'],sale:['Sold','green'],collection:['Collection','cyan'],mint:['Minted','green'],burn:['Burned','red']};
 export const kindPill=kind=>pill(...(KIND[kind]||[kind,'']));
 // One event in plain words. Amounts here are for reading only; nothing is signed or paid from them.
 export function eventText(e){
@@ -105,18 +107,21 @@ export function eventText(e){
   case 'list':return ['Put up for sale by ',addr(e.seller),' for ',strong(xmr(e.price)+' XMR'),', until block '+count(e.until)];
   case 'cancel':return ['Sale stopped by ',addr(e.seller)];
   case 'reserve':return ['Reserved by ',addr(e.buyer),', to pay by block '+count(e.payBy)];
+  case 'collection':return ['Collection “'+e.name+'” of '+count(e.max)+' created by ',addr(e.creator)];
+  case 'mint':return ['Minted'+(e.name?' “'+e.name+'”':'')+' by ',addr(e.creator),...(e.to!==e.creator?[' to ',addr(e.to)]:[])];
+  case 'burn':return ['Burned by ',addr(e.owner)];
   case 'sale':return ['Sold for ',strong(xmr(e.price)+' XMR'),' by ',addr(e.seller),' to ',addr(e.buyer)];
   default:return [String(e.kind)];}}
 // Columns shared by every list of events.
 export const eventColumns=({number=true}={})=>[
  {label:'Event',cell:e=>kindPill(e.kind)},
- ...(number?[{label:'Mordinal',cell:e=>mordinalLink(e.number)}]:[]),
+ ...(number?[{label:'NFT',cell:e=>mordinalLink(e.number??e.nft)}]:[]),
  {label:'What happened',cell:eventText},
  {label:'Transaction',cell:e=>e.txid?txid(e.txid):''},
  {label:'Block',num:true,cell:e=>e.height==null?'':count(e.height)},
  {label:'Time',num:true,cell:e=>when(e.time)}];
 
-export const OPNAME={1:'Claim',2:'Send',3:'Listing',4:'Stop selling',5:'Reservation',6:'Purchase'};
+export const OPNAME={1:'Claim',2:'Send',3:'Listing',4:'Stop selling',5:'Reservation',6:'Purchase',7:'Collection',8:'Mint',9:'Burn'};
 export const JOB={queued:['Waiting to be sent','yellow'],built:['Waiting to be sent','yellow'],held:['Waiting for a payment to be in a block','yellow'],
  sent:['Sent, waiting for a block','yellow'],done:['In a block','green'],refused:['Refused','red'],stuck:['Did not reach a block','red'],unknown:['Not known to this service','']};
 export const jobPill=state=>pill(...(JOB[state]||[state,'']));
@@ -124,7 +129,7 @@ export const jobPill=state=>pill(...(JOB[state]||[state,'']));
 export function waitingList(jobs){
  return table([
   {label:'Record',cell:j=>OPNAME[j.op]||'Record'},
-  {label:'Mordinal',cell:j=>j.number==null?'':mordinalLink(j.number)},
+  {label:'NFT',cell:j=>mordinalLink(j.number)},
   {label:'State',cell:j=>[jobPill(j.state),j.error?' '+j.error:'']},
   {label:'Code',cell:j=>code(j.id)},
   {label:'Transaction',cell:j=>j.txid?txid(j.txid):''}],jobs);}

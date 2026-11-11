@@ -90,7 +90,7 @@ export async function address(ctx,a){
   el('div',{class:'head'},el('a',{class:'crumb',href:'#/',text:'Explorer'}),el('h1',{class:'small',text:'Address'}),
    el('div',{class:'section'},exact(me,{what:'address'}))),
   buying.length?el('section',{class:'section','data-section':'buying'},el('div',{class:'section-head'},el('h2',{text:'Purchases to continue'})),
-   table([{label:'Mordinal',cell:t=>mordinalLink(t.number)},{label:'Price',cell:t=>strong(xmr(t.price)+' XMR')},
+   table([{label:'NFT',cell:t=>mordinalLink(t.number??t.nft)},{label:'Price',cell:t=>strong(xmr(t.price)+' XMR')},
     {label:'Reservation',cell:t=>t.reservation.payBy<height?'Ran out at block '+count(t.reservation.payBy):'Pay by block '+count(t.reservation.payBy)},
     {label:'',cell:t=>el('a',{class:'btn small',href:`#/buy/${t.id}/${me}`,text:'Continue'})}],buying)):null,
   own.waiting.length?el('section',{class:'section','data-section':'waiting'},el('div',{class:'section-head'},el('h2',{text:'Waiting for a block'}),

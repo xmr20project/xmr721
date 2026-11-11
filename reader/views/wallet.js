@@ -24,12 +24,13 @@ export async function walletPanel(ctx,pic){
    el('p',{class:'muted',text:'Connect the wallet that holds your Mordinals. It finds them on your device, and you claim, sell and buy with one approval each. This page never sees your keys.'}),
    el('div',{class:'row'},go,el('a',{class:'btn',href:'#/xmr721',text:'How it works'})),problem);
   return box;}
- let mine=[];try{mine=(await api('/address/'+canonical(s.address,service.info.network),{signal:ctx.signal})).mordinals;}catch(e){if(e.name==='AbortError')throw e;}
+ let mine=[],made=[];try{const a=await api('/address/'+canonical(s.address,service.info.network),{signal:ctx.signal});mine=a.mordinals;made=a.nfts||[];}catch(e){if(e.name==='AbortError')throw e;}
  const find=el('button',{type:'button',class:'btn primary','data-action':'find',text:'Find my Mordinals'}),open=el('button',{type:'button',class:'btn','data-action':'open-wallet',text:'Sell, send or buy'});
  const leave=el('button',{type:'button',class:'btn','data-action':'disconnect',text:'Disconnect'});
  for(const b of [find,open])b.addEventListener('click',act(b,async()=>w.openMordinals()));leave.addEventListener('click',act(leave,async()=>w.disconnect()));
  add(box,el('div',{class:'section-head'},el('h2',{text:'Your Mordinals'}),el('span',{class:'row'},s.demo?pill('Demo wallet','yellow'):null,addr(s.address))),
-  mine.length?el('div',{class:'owned'},mine.map(m=>el('a',{class:'owned-item','data-number':m.number,href:'#/mordinal/'+m.number},pic(m.number,{size:'thumb'}),
+  mine.length||made.length?el('div',{class:'owned'},made.map(x=>el('a',{class:'owned-item','data-nft':x.id,href:'#/nft/'+x.id},
+    el('span',{},el('span',{class:'strong',text:x.name||'NFT '+x.id.slice(0,8)}),el('span',{class:'dim',text:x.lot?'For sale, '+xmr(x.lot.price)+' XMR':'XMR721 NFT'})))),mine.map(m=>el('a',{class:'owned-item','data-number':m.number,href:'#/mordinal/'+m.number},pic(m.number,{size:'thumb'}),
     el('span',{},el('span',{class:'strong',text:'#'+count(m.number)}),el('span',{class:'dim',text:m.lot?'For sale, '+xmr(m.lot.price)+' XMR':'XMR721 NFT'})))))
    :el('p',{class:'muted',text:'This address holds no XMR721 NFTs yet. Mordinals you inscribed or received in 2023 are found and claimed inside the wallet.'}),
   el('div',{class:'row'},find,open,leave),
