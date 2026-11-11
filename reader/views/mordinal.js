@@ -25,6 +25,7 @@ export async function mordinal(ctx,number,action){
 
  const fact=(label,value)=>el('div',{},el('dt',{text:label}),el('dd',{},value));
  const facts=el('dl',{class:'kv'},
+  m.group?fact('Collection',el('a',{href:'#/collection/'+m.group.id,text:m.group.name.length>60?m.group.name.slice(0,58)+'…':m.group.name})):null,
   fact('Registration transaction',txid(m.reg)),
   fact('Inscribed at block',m.registrationHeight==null?'Not known':count(m.registrationHeight)),
   fact('Owner transaction at the start',txid(m.ownerTx)),

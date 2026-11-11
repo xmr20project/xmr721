@@ -4,7 +4,7 @@
 // list and the chain with this same code.
 //
 //   node service.mjs --owners <owners.jsonl> --domain <hex32> --fee-address <address> --node <url> --start <height> --state <dir>
-//        [--start-hash <hash>] [--network mainnet|stagenet] [--port 18951] [--every <ms>] [--transfers <transfers.jsonl>] [--block-times <file>]
+//        [--start-hash <hash>] [--network mainnet|stagenet] [--port 18951] [--every <ms>] [--transfers <transfers.jsonl>] [--block-times <file>] [--groups <collections.json>]
 //        [--carrier-bin <path> --carrier-state <dir> --carrier-network offline-fakechain|stagenet]   relay on
 //        [--mint-fee <atomic units> --collection-fee <atomic units>]   what this relay charges to carry a mint or a collection record
 //        [--content-dir <dir> | --content-archive [url]] [--collections <dir>] [--views <dir>] [--allow-origin <origin>] [--allow-extension <id>] [--behind-proxy] [--test-hooks]
@@ -24,12 +24,12 @@ import {loadCollections} from '../xmr20-nfts/lib/collection.mjs';
 
 const TYPES={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.woff2':'font/woff2'};
 const PAGE_CSP="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
-const VIEWS=join(import.meta.dirname,'views'),BLOCK_TIMES=join(import.meta.dirname,'..','ownership-index','result','block-times.json');
+const VIEWS=join(import.meta.dirname,'views'),BLOCK_TIMES=join(import.meta.dirname,'..','ownership-index','result','block-times.json'),GROUPS=join(import.meta.dirname,'..','ownership-index','collections','collections.json');
 const KINDS=new Set(['claim','move','list','cancel','reserve','sale','collection','mint','burn']);
 const fail=(message,status=400)=>{const e=Error(message);e.status=status;return e;};
 const int=(v,fallback,min,max)=>{const n=v==null||v===''?NaN:Number(v);return Number.isInteger(n)?Math.min(max,Math.max(min,n)):fallback;};
 
-export function createService({reader,relay=null,owners,transfers=[],blockTimes=null,content=null,collections=new Map(),views=null,origins=[],extensions=null,behindProxy=false,testHooks=false,extra=null,chunk=4000,rate={perSecond:2,burst:60},log=()=>{}}){
+export function createService({reader,relay=null,owners,transfers=[],blockTimes=null,groups=null,content=null,collections=new Map(),views=null,origins=[],extensions=null,behindProxy=false,testHooks=false,extra=null,chunk=4000,rate={perSecond:2,burst:60},log=()=>{}}){
  const m=reader.meta,list=owners.map(served),numbers=owners.map(o=>o.number),entry=new Map(owners.map(o=>[o.number,o])),byReg=new Map(owners.map(o=>[o.registrationTx,o]));
  // When the blocks of the original history were made: exact for the blocks in the list, and between two listed blocks
  // from the blocks on either side. Outside the list there is no date.
@@ -38,6 +38,15 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
   let lo=0,hi=known.length-1;while(lo<hi){const mid=(lo+hi+1)>>1;if(known[mid][0]<=h)lo=mid;else hi=mid-1;}
   const [h0,t0]=known[lo];if(h0===h||lo===known.length-1)return t0;const [h1,t1]=known[lo+1];return Math.round(t0+(t1-t0)*(h-h0)/(h1-h0));};
  const old=new Map();for(const t of transfers){if(t.result!=='updated')continue;if(!old.has(t.mordinal))old.set(t.mordinal,[]);old.get(t.mordinal).push({kind:'transfer',height:t.height,time:timeAt(t.height),txid:t.tx});}
+ // Collections of Mordinals (ownership-index/collections): display groups from published titles and links. They
+ // decide nothing about ownership. Ranges are opened here; numbers this owner list does not have are left out.
+ const groupList=[],groupOf=new Map(),labelled=new Set();
+ if(groups){const open=list=>list.flatMap(x=>Array.isArray(x)?Array.from({length:x[1]-x[0]+1},(_,i)=>x[0]+i):[x]).filter(n=>entry.has(n));
+  for(const g of groups.groups||[]){if(!/^[0-9a-f]{24}$/.test(g.id)||typeof g.name!=='string')continue;const members=open(g.numbers||[]);if(members.length<2)continue;
+   groupList.push({id:g.id,name:g.display||g.name,fullName:g.name,basis:g.basis,members});for(const n of members)if(!groupOf.has(n))groupOf.set(n,g.id);}
+  const first=new Map((groups.featured||[]).map((id,i)=>[id,i]));groupList.sort((a,b)=>(first.get(a.id)??1e9)-(first.get(b.id)??1e9)||b.members.length-a.members.length||a.name.localeCompare(b.name));
+  for(const n of open(groups.sensitiveByLabel||[]))labelled.add(n);}
+ const groupById=new Map(groupList.map(g=>[g.id,g]));
  // The original Mordinals history, oldest first: every registration and every transfer under the 2023 rules.
  const legacy=[...owners.map(o=>({kind:'inscribed',number:o.number,height:o.registrationHeight??null,time:timeAt(o.registrationHeight),txid:o.registrationTx,size:o.bodySize??null})),
   ...[...old].flatMap(([number,list])=>list.map(t=>({...t,number})))].sort((a,b)=>(a.height??0)-(b.height??0)||a.number-b.number);
@@ -56,7 +65,7 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
  const madeCollection=c=>({id:c.id,name:c.name,max:c.max,creator:c.creator,height:c.height,minted:c.editions.length});
  const open=()=>once('open',()=>reader.lots.map(lotView).filter(l=>l.status==='open'));
  const claimed=()=>once('claimed',()=>numbers.filter(n=>L().mordinal(n).claimed));
- const card=n=>{const o=entry.get(n),s=state(n);return {number:n,reg:s.reg,claimed:s.claimed,owner:s.owner,bodySize:o.bodySize??null,
+ const card=n=>{const o=entry.get(n),s=state(n);return {number:n,reg:s.reg,claimed:s.claimed,owner:s.owner,bodySize:o.bodySize??null,group:groupOf.get(n)??null,
   lot:s.lot?{id:s.lot.id,price:s.lot.price,until:s.lot.until,seller:s.lot.seller,reserved:Boolean(s.lot.reservation&&heldUntil(s.lot.reservation)>=reader.height)}:null};};
  const which=text=>{const t=decodeURIComponent(text);const o=/^\d{1,9}$/.test(t)?entry.get(Number(t)):/^[0-9a-f]{64}$/.test(t)?byReg.get(t):null;if(!o)throw fail('This is not a Mordinal on the owner list.',404);return o;};
  const stats=()=>once('stats',()=>{const by={};let volume=0n,fees=0n;for(const e of reader.events){by[e.kind]=(by[e.kind]||0)+1;if(e.kind==='sale'){volume+=BigInt(e.price);fees+=BigInt(e.fee);}}
@@ -102,6 +111,17 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
     const limit=int(q.get('limit'),50,1,200),before=int(q.get('before'),legacy.length,0,legacy.length),out=[];let at=before;
     while(at>0&&out.length<limit){const e=legacy[--at];if(kind&&e.kind!==kind)continue;out.push({at,...e});}
     return {height,total:legacy.length,inscriptions:owners.length,transfers:legacy.length-owners.length,next:at>0&&(kind?legacy.slice(0,at).some(e=>e.kind===kind):true)?at:null,events:out};}
+   // Collections: each with its figures and a few members to show, and one collection's members by pages.
+   if(path==='/groups')return once('groups',()=>{const listed=new Map();for(const l of open())if(l.until>=height&&l.number!=null)listed.set(l.number,l);const done=new Set(claimed());
+    return {height,groups:groupList.map(g=>{const sale=g.members.filter(n=>listed.has(n)).map(n=>BigInt(listed.get(n).price)).sort((a,b)=>a<b?-1:a>b?1:0);
+     return {id:g.id,name:g.name,fullName:g.fullName,basis:g.basis,count:g.members.length,claimed:g.members.filter(n=>done.has(n)).length,forSale:sale.length,floor:sale.length?sale[0].toString():null,
+      sample:g.members.filter(n=>entry.get(n).bodySize!=null).slice(0,3)};})};});
+   if(path.startsWith('/group/')){const g=groupById.get(path.slice(7));if(!g)throw fail('This collection does not exist.',404);
+    const filter=q.get('filter')||'all',listed=new Set(open().filter(l=>l.until>=height&&l.number!=null).map(l=>l.number)),done=new Set(claimed());
+    const pick=filter==='all'?g.members:filter==='listed'?g.members.filter(n=>listed.has(n)):filter==='claimed'?g.members.filter(n=>done.has(n)):null;if(!pick)throw fail('Unknown filter.');
+    const from=int(q.get('from'),0,0,pick.length),limit=int(q.get('limit'),60,1,200);
+    return {height,group:{id:g.id,name:g.name,fullName:g.fullName,basis:g.basis,count:g.members.length,claimed:g.members.filter(n=>done.has(n)).length,forSale:g.members.filter(n=>listed.has(n)).length},
+     filter,from,total:pick.length,items:pick.slice(from,from+limit).map(card)};}
    if(path==='/gallery'){const filter=q.get('filter')||'all';
     const pick=filter==='claimed'?claimed():filter==='unclaimed'?once('unclaimed',()=>{const c=new Set(claimed());return numbers.filter(n=>!c.has(n));})
      :filter==='listed'?once('listed',()=>open().filter(l=>l.until>=height&&l.number!=null).map(l=>l.number).sort((a,b)=>a-b)):filter==='all'?numbers:null;
@@ -111,7 +131,8 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
     // The whole public story of one Mordinal: inscribed, moved by spending (2023), then claimed and moved by record.
     const history=[{kind:'inscribed',height:o.registrationHeight??null,time:timeAt(o.registrationHeight),txid:o.registrationTx},...(old.get(o.number)||[]),
      ...reader.events.filter(e=>e.number===o.number).map(e=>({...e,confirmations:height-e.height+1}))];
-    return {height,mordinal:{...s,registrationHeight:o.registrationHeight??null,ownerTx:o.ownerTx,ownerHeight:o.ownerHeight??null,bodySize:o.bodySize??null,bodySha256:o.bodySha256||null},
+    const gid=groupOf.get(o.number);
+    return {height,mordinal:{...s,group:gid?{id:gid,name:groupById.get(gid).name}:null,registrationHeight:o.registrationHeight??null,ownerTx:o.ownerTx,ownerHeight:o.ownerHeight??null,bodySize:o.bodySize??null,bodySha256:o.bodySha256||null},
      history,waiting:waitingFor({number:o.number})};}
    if(path==='/log'){const all=reader.journal,from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),200,1,500);
     return {height,hash:reader.hash,from,total:all.length,entries:all.slice(from,from+limit)};}
@@ -155,7 +176,7 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
   const o=which(text),got=content?await content(o):{status:404,error:'This service has no pictures.'};
   const head={'x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox",'cross-origin-resource-policy':'cross-origin'};
   if(got.status!==200){res.writeHead(got.status,{...head,'content-type':'application/json','cache-control':got.status===502?'no-store':'public, max-age=3600'});res.end(JSON.stringify({error:got.error}));return;}
-  res.writeHead(200,{...head,'content-type':got.type,'content-length':got.bytes.length,'cache-control':'public, max-age=31536000, immutable','x-mordinal-sensitive':got.sensitive?'1':'0','x-mordinal-sha256':o.bodySha256});res.end(got.bytes);}
+  res.writeHead(200,{...head,'content-type':got.type,'content-length':got.bytes.length,'cache-control':'public, max-age=31536000, immutable','x-mordinal-sensitive':got.sensitive||labelled.has(o.number)?'1':'0','x-mordinal-sha256':o.bodySha256});res.end(got.bytes);}
  function page(res,path){
   const rel=normalize(decodeURIComponent(path.slice(6))||'index.html'),file=join(views,rel.endsWith(sep)||rel==='.'?join(rel,'index.html'):rel);
   if(rel.startsWith('..')||!file.startsWith(views+sep)||!existsSync(file)||!statSync(file).isFile()||!TYPES[extname(file)]){res.writeHead(404,{'content-type':'text/plain'});res.end('Not found');return;}
@@ -203,15 +224,15 @@ export async function startService(o){
  if(o.carrierBin){const carrier=createCarrier({bin:o.carrierBin,stateDir:o.carrierState,node:o.node,network:o.carrierNetwork||'offline-fakechain',start:Number(o.carrierStart||o.start)});
   relay=createRelay({dir:join(o.state,'relay'),reader,chain,carrier,network,domain:o.domain,limits:o.limits,fees:o.fees,...(o.now?{now:o.now}:{}),log:o.log});}
  const source=o.contentDir?dirContent(o.contentDir):o.contentArchive?archiveContent(o.contentArchive===true?undefined:o.contentArchive):null;
- const times=o.blockTimes!==undefined?o.blockTimes:existsSync(BLOCK_TIMES)?BLOCK_TIMES:null;
- const service=createService({reader,relay,owners,transfers:o.transfers?readOwners(o.transfers):[],blockTimes:times?JSON.parse(readFileSync(times,'utf8')).times:null,content:source?createContent({source}):null,collections:o.collections?loadCollections(o.collections):new Map(),views:o.views||(existsSync(VIEWS)?VIEWS:null),origins:o.origins||[],extensions:o.extensions?.length?o.extensions:null,behindProxy:Boolean(o.behindProxy),testHooks:Boolean(o.testHooks),...(o.rate?{rate:o.rate}:{}),log:o.log});
+ const times=o.blockTimes!==undefined?o.blockTimes:existsSync(BLOCK_TIMES)?BLOCK_TIMES:null,groupFile=o.groups!==undefined?o.groups:existsSync(GROUPS)?GROUPS:null;
+ const service=createService({reader,relay,owners,transfers:o.transfers?readOwners(o.transfers):[],blockTimes:times?JSON.parse(readFileSync(times,'utf8')).times:null,groups:groupFile?JSON.parse(readFileSync(groupFile,'utf8')):null,content:source?createContent({source}):null,collections:o.collections?loadCollections(o.collections):new Map(),views:o.views||(existsSync(VIEWS)?VIEWS:null),origins:o.origins||[],extensions:o.extensions?.length?o.extensions:null,behindProxy:Boolean(o.behindProxy),testHooks:Boolean(o.testHooks),...(o.rate?{rate:o.rate}:{}),log:o.log});
  const port=await service.listen(o.port==null?18951:Number(o.port));return {...service,port,chain,owners};}
 
 if(process.argv[1]===import.meta.filename){
  const arg=name=>{const i=process.argv.indexOf('--'+name);return i<0?null:process.argv[i+1];},has=name=>process.argv.includes('--'+name);
  for(const need of ['owners','domain','fee-address','node','start','state'])if(!arg(need)){console.error('Missing --'+need+'. See the top of this file.');process.exit(2);}
  const archive=has('content-archive')?(arg('content-archive')?.startsWith('http')?arg('content-archive'):true):null;
- const s=await startService({owners:arg('owners'),transfers:arg('transfers'),...(arg('block-times')?{blockTimes:arg('block-times')}:{}),domain:arg('domain'),feeAddress:arg('fee-address'),node:arg('node'),start:arg('start'),startHash:arg('start-hash'),mintFrom:arg('mint-from'),state:arg('state'),network:arg('network'),
+ const s=await startService({owners:arg('owners'),transfers:arg('transfers'),...(arg('block-times')?{blockTimes:arg('block-times')}:{}),...(arg('groups')?{groups:arg('groups')}:{}),domain:arg('domain'),feeAddress:arg('fee-address'),node:arg('node'),start:arg('start'),startHash:arg('start-hash'),mintFrom:arg('mint-from'),state:arg('state'),network:arg('network'),
   port:arg('port'),fees:{mint:arg('mint-fee')||0,collection:arg('collection-fee')||0},carrierBin:arg('carrier-bin'),carrierState:arg('carrier-state'),carrierNetwork:arg('carrier-network'),contentDir:arg('content-dir'),collections:arg('collections'),contentArchive:archive,views:arg('views'),
   origins:process.argv.flatMap((a,i)=>a==='--allow-origin'?[process.argv[i+1]]:[]),extensions:process.argv.flatMap((a,i)=>a==='--allow-extension'?[process.argv[i+1]]:[]),behindProxy:has('behind-proxy'),testHooks:has('test-hooks'),log:v=>console.log(new Date().toISOString(),JSON.stringify(v))});
  console.log(`Mordinals reader on http://127.0.0.1:${s.port} (${s.owners.length} Mordinals, block ${s.reader.height}${s.relay?', relay on':', reader only'})`);

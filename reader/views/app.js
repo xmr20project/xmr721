@@ -7,7 +7,7 @@ import {market,lot,buy} from './market.js';
 import {about} from './about.js';
 import {xmr721} from './xmr721.js';
 import {nft} from './collection.js';
-import {collections,archiveCollection} from './collections.js';
+import {collections,groupCollection} from './collections.js';
 import {minted,madeCollection,nft as mintedNft,create} from './nft.js';
 
 const ADDRESS='([1-9A-HJ-NP-Za-km-z]{95})',ID='([0-9a-f]{64})';
@@ -27,7 +27,7 @@ const ROUTES=[
  [/^\/set\/([0-9a-f]{64})$/,madeCollection,'nfts'],
  [/^\/create$/,create,'create'],
  [/^\/collections$/,collections,'collections'],
- [/^\/collection\/([0-9a-f]{24})$/,archiveCollection,'collections'],
+ [/^\/collection\/([0-9a-f]{24})$/,groupCollection,'collections'],
  [/^\/xmr721$/,xmr721,'xmr721'],
  [/^\/about$/,about,'about']];
 

@@ -1,35 +1,29 @@
-// Collections: Mordinals as a whole, the collections this service carries (GENESIS), and, when the hosting page names
-// a public Mordinals archive (<meta name="xmr721-archive" content="/api/mordinals">), the collections that archive
-// infers among the 2023 inscriptions. Archive data is for browsing only: names and groupings are the archive's own
-// reading of titles and links, and nothing here decides who owns a Mordinal.
-import {el,add,api,service,count,notice,ROOT} from './ui.js';
+// Collections: Mordinals as a whole, the collections found among them (ownership-index/collections: display groups
+// made from each inscription's published title and links), GENESIS, and collections made on this ledger. A
+// collection is a guide for browsing; nothing here decides who owns a Mordinal.
+import {el,add,api,service,count,xmr,pills,ROOT} from './ui.js';
 import {loadMedia,nftPicture} from './collection.js';
+import {card} from './gallery.js';
+import {pictures} from './ui.js';
+// Pictures of a collection's members come through the same loader as everywhere: checked, and hidden when marked sensitive.
 
-const ARCHIVE=document.querySelector('meta[name="xmr721-archive"]')?.content||null,PAGE=24;
-const IMAGES=new Set(['image/png','image/jpeg','image/webp','image/gif']),HEX=/^[0-9a-f]{64}$/,GROUP=/^[0-9a-f]{24}$/;
-const RUDE=/\b(nsfw|porn(?:star|ographic|ography)?|hentai|nudity|nudes?|naked|erotic|xxx|cunny|retard(?:ed)?)\b/i;
-const hidden=t=>t.sensitive===true||RUDE.test(t.title||'');
-// Groups of a handful of inscriptions are mostly one person's uploads; the list starts at this size.
-const SMALLEST=10;
-const showable=t=>Number.isSafeInteger(t.id)&&HEX.test(t.sha256||'')&&IMAGES.has(t.mime)&&t.size<=3145728&&!hidden(t);
-const fileOf=t=>new URL(`${ARCHIVE}?route=file&id=${t.id}&sha=${t.sha256}`,location.href).href;
-async function archive(args,signal){
- const r=await fetch(new URL(ARCHIVE+'?'+new URLSearchParams({route:'catalog',q:'',sort:'oldest',...args}),location.href),{signal,credentials:'omit'});
- if(!r.ok)throw Error('The Mordinals archive did not answer.');
- const d=await r.json();if(!Array.isArray(d.items)||!Array.isArray(d.collections))throw Error('The Mordinals archive sent something else.');
- d.collections=d.collections.filter(g=>GROUP.test(g.id)&&typeof g.name==='string'&&Number.isSafeInteger(g.count));return d;}
+const PAGE=60,SMALLEST=10;
 const shortName=name=>name.length>44?name.slice(0,42).trimEnd()+'…':name;
 
-// One collection as a card: three pictures, a name, a count.
-function tile(href,name,note,kind){
+// One collection as a card: three pictures, a name, figures.
+function tile(href,name,note,kind,extra=null){
  const mosaic=el('span',{class:'mosaic'},el('span',{}),el('span',{}),el('span',{}));
- return {mosaic,card:el('a',{class:'ccard','data-kind':kind,href,title:name},mosaic,el('span',{class:'cmeta'},el('span',{class:'n',text:shortName(name)}),el('span',{class:'s',text:note})))};}
+ return {mosaic,card:el('a',{class:'ccard','data-kind':kind,href,title:name},mosaic,el('span',{class:'cmeta'},el('span',{class:'n',text:shortName(name)}),el('span',{class:'s',text:note}),extra))};}
 const put=(mosaic,urls,pixel=false)=>[...mosaic.children].forEach((slot,i)=>{if(urls[i])slot.replaceChildren(el('img',{alt:'',loading:'lazy',class:pixel?'pixel':null,src:urls[i]}));});
+const figures=g=>[`${count(g.count)} Mordinals`,g.forSale?`${count(g.forSale)} for sale`:null].filter(Boolean).join(' · ');
+const floorTag=g=>g.floor!=null?el('span',{class:'cfloor'},el('span',{text:'Floor '}),el('b',{text:xmr(g.floor)+' XMR'})):null;
+const groupTile=(g,pic)=>{const t=tile('#/collection/'+g.id,g.name,figures(g),'group',floorTag(g));[...t.mosaic.children].forEach((slot,i)=>{if(g.sample[i]!=null)slot.replaceChildren(pic(g.sample[i]));});return t.card;};
 
 // The cards. `limit` keeps the strip on the market short.
 export async function collectionCards(ctx,{limit=Infinity}={}){
- const info=service.info,cards=[],[held,map]=await Promise.all([api('/collections',{signal:ctx.signal}).then(v=>v.collections),loadMedia(ctx.signal)]);
- const all=tile('#/gallery','Mordinals',`${count(info.count)} inscriptions from 2023`,'mordinals');cards.push(all.card);
+ const info=service.info,cards=[],[held,map,list]=await Promise.all([api('/collections',{signal:ctx.signal}).then(v=>v.collections),loadMedia(ctx.signal),
+  api('/groups',{signal:ctx.signal}).then(v=>v.groups).catch(()=>[])]);
+ const all=tile('#/gallery','Mordinals',`All ${count(info.count)} inscriptions`,'mordinals');cards.push(all.card);
  api('/gallery?filter=all&from=0&limit=12',{signal:ctx.signal}).then(g=>put(all.mosaic,g.items.filter(m=>m.bodySize!==null).slice(0,3).map(m=>new URL('content/'+m.number,ROOT).href),true)).catch(()=>{});
  for(const c of held){const t=tile('#/market?show='+c.key,c.name,`${count(c.minted)} of ${count(c.max)} · earlier format`,'held');
   [...t.mosaic.children].forEach((slot,i)=>slot.replaceChildren(nftPicture(map,c.key,[4,1,5][i])));cards.push(t.card);}
@@ -37,42 +31,39 @@ export async function collectionCards(ctx,{limit=Infinity}={}){
  const made=await api('/nft-collections',{signal:ctx.signal}).then(v=>v.collections).catch(()=>[]);
  for(const c of made){const t=tile('#/set/'+c.id,c.name,`${count(c.minted)} of ${count(c.max)} minted`,'made');
   api('/nfts?limit=3&collection='+c.id,{signal:ctx.signal}).then(v=>put(t.mosaic,v.items.filter(x=>x.type>=1&&x.type<=4).map(x=>new URL(`nft/${x.id}/content`,ROOT).href),true)).catch(()=>{});cards.push(t.card);}
- let groups=[],problem=null;
- if(ARCHIVE){try{groups=(await archive({page:'1'},ctx.signal)).collections.filter(g=>g.count>=SMALLEST&&!RUDE.test(g.name)).sort((a,b)=>b.count-a.count);}catch(e){if(e.name==='AbortError')throw e;problem=e.message;}}
- // A collection's pictures load when its card comes into view.
- const io='IntersectionObserver' in window?new IntersectionObserver(seen=>{for(const s of seen)if(s.isIntersecting){io.unobserve(s.target);s.target.fill?.();}},{rootMargin:'200px'}):null;
- ctx.onLeave(()=>io?.disconnect());
- for(const g of groups.slice(0,Math.max(0,limit-cards.length))){
-  const t=tile('#/collection/'+g.id,g.name,`${count(g.count)} Mordinals`,'archive');
-  t.card.fill=()=>archive({page:'1',collection:g.id},ctx.signal).then(d=>{const urls=d.items.filter(showable).slice(0,3).map(fileOf);
-   if(urls.length)put(t.mosaic,urls);else t.mosaic.replaceChildren(el('span',{class:'none',text:'No picture to show'}));}).catch(()=>{});
-  if(io)io.observe(t.card);else t.card.fill();cards.push(t.card);}
- return {cards,groups:groups.length,problem};}
+ const big=list.filter(g=>g.count>=SMALLEST),small=list.filter(g=>g.count<SMALLEST);
+ const pic=pictures(ctx);for(const g of big.slice(0,Math.max(0,limit-cards.length)))cards.push(groupTile(g,pic));
+ return {cards,big,small};}
 
 export async function collections(ctx){
  ctx.title('Collections');
- const {cards,groups,problem}=await collectionCards(ctx);
+ const {cards,big,small}=await collectionCards(ctx);
  add(ctx.main,
   el('div',{class:'head'},el('h1',{text:'Collections'}),
-   el('p',{class:'lede',text:'Mordinals, the collections found among them, and GENESIS. Every Mordinal can become an XMR721 NFT once its holder claims it.'})),
-  problem?notice('warn',problem):null,
+   el('p',{class:'lede',text:`Every collection among the ${count(service.info.count)} Mordinals, and GENESIS. Each Mordinal can become an XMR721 NFT once its holder claims it.`})),
   el('section',{class:'section','data-section':'collections'},el('div',{class:'cgrid'},cards)),
-  groups?el('p',{class:'dim section',text:`The ${count(groups)} Mordinal collections shown are groupings of ten or more, worked out from titles, descriptions and shared links of the 2023 inscriptions. They are a guide for browsing, not part of the ownership rules.`}):null);}
+  small.length?el('section',{class:'section card catalog','data-section':'small-groups'},
+   el('div',{class:'cat-head'},el('div',{},el('h2',{text:'Smaller groups'}),el('p',{class:'card-sub',text:`${count(small.length)} groups of fewer than ${SMALLEST} Mordinals.`}))),
+   el('div',{class:'chips-list'},small.map(g=>el('a',{class:'gchip',href:'#/collection/'+g.id,title:g.fullName},el('span',{text:shortName(g.name)}),el('b',{text:count(g.count)}))))):null,
+  big.length||small.length?el('p',{class:'dim section',text:'Collections are worked out from the titles, descriptions and shared links the inscriptions published, by the rule in the index (ownership-index/collections). They are a guide for browsing, not part of the ownership rules.'}):null);}
 
-// One archive collection, a page at a time.
-export async function archiveCollection(ctx,id){
- if(!ARCHIVE)throw Error('This copy of the pages has no Mordinals archive.');
- const page=Math.max(1,Math.floor(Number(ctx.query.get('page'))||1)),d=await archive({page:String(page),collection:id},ctx.signal),g=d.collections.find(x=>x.id===id);
- if(!g)throw Error('The archive knows no such collection.');
+const FILTERS=[['all','All'],['listed','For sale'],['claimed','Claimed']];
+// One collection of Mordinals, a page at a time.
+export async function groupCollection(ctx,id){
+ const asked=ctx.query.get('filter'),filter=FILTERS.some(([f])=>f===asked)?asked:'all',from=Math.max(0,Math.floor(Number(ctx.query.get('from'))||0));
+ const v=await api(`/group/${id}?filter=${filter}&from=${from}&limit=${PAGE}`,{signal:ctx.signal}),g=v.group,pic=pictures(ctx);ctx.tip(v.height);
  ctx.title(shortName(g.name));
- const at=p=>`#/collection/${id}`+(p>1?'?page='+p:''),step=(text,p,on)=>on?el('a',{class:'btn',href:at(p),text}):el('button',{type:'button',class:'btn',disabled:true,text});
+ const at=(f,start)=>`#/collection/${id}?filter=${f}`+(start>0?'&from='+start:'');
+ const step=(text,start,on)=>on?el('a',{class:'btn',href:at(filter,start),text}):el('button',{type:'button',class:'btn',disabled:true,text});
+ const where=v.items.length?`${count(v.from+1)}–${count(v.from+v.items.length)} of ${count(v.total)}`:`0 of ${count(v.total)}`;
+ const stat=(k,val)=>el('div',{class:'gstat'},el('span',{text:k}),el('b',{text:val}));
  add(ctx.main,
   el('p',{class:'crumb'},el('a',{href:'#/collections',text:'Collections'}),el('span',{text:'/'}),el('span',{text:'Mordinals'})),
   el('div',{class:'head'},el('h1',{class:'small',text:g.name.length>90?g.name.slice(0,88)+'…':g.name}),
-   el('p',{class:'lede',text:`${count(g.count)} Mordinals, grouped by ${g.basis}.`})),
-  service.info.test?notice('note','This preview runs on a test ledger, so these real Mordinals cannot be opened, claimed or bought here.'):null,
-  el('section',{class:'section','data-section':'archive-items'},
-   el('div',{class:'grid'},d.items.map(t=>el('article',{class:'mcard','data-archive':t.id},
-    el('a',{class:'pic',href:'#/search?q='+t.txid},showable(t)?el('img',{alt:'',loading:'lazy',src:fileOf(t)}):el('span',{text:hidden(t)?'Hidden':'Not a picture'})),
-    el('a',{class:'meta',href:'#/search?q='+t.txid},el('span',{class:'n',text:(t.title||'Untitled').slice(0,40)}),el('span',{class:'s'},el('span',{text:'Block '+count(t.height)})))))),
-   el('div',{class:'pager'},step('Newer',page-1,page>1),el('span',{class:'where',text:`Page ${count(d.page)} of ${count(d.pages)}`}),step('Older',page+1,page<d.pages))));}
+   g.fullName!==g.name?el('p',{class:'dim',text:g.fullName}):null,
+   el('div',{class:'gstats'},stat('Mordinals',count(g.count)),stat('Claimed',count(g.claimed)),stat('For sale',count(g.forSale)))),
+  el('section',{class:'section','data-section':'group-items'},
+   el('div',{class:'section-head'},pills(FILTERS,filter,f=>{location.hash=at(f,0);},'Show'),el('span',{class:'where dim',text:where})),
+   v.items.length?el('div',{class:'grid'},v.items.map(m=>card(pic,m,v.height))):el('p',{class:'empty',text:filter==='listed'?'Nothing from this collection is for sale right now.':filter==='claimed'?'No Mordinal of this collection is claimed yet.':'Nothing here.'}),
+   v.total>PAGE?el('div',{class:'pager'},step('Previous',Math.max(0,v.from-PAGE),v.from>0),el('span',{class:'where',text:where}),step('Next',v.from+PAGE,v.from+PAGE<v.total)):null),
+  el('p',{class:'dim section',text:`Grouped by ${g.basis}. A collection is a guide for browsing; ownership comes only from the records.`}));}

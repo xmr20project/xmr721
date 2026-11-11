@@ -388,10 +388,15 @@ test('the market shows the newest history beside the listings, and the GENESIS c
  await page.locator('[data-edition="4"] .meta').click();await shown('/nft/genesis/4');
  assert.match(await text('h1'),/The Scream/);assert.match(await text('.kv'),/Edvard Munch/);
  await go('/xmr721');assert.equal(await count('[data-section=steps] .guide > li'),3);
- // Collections: Mordinals as a whole and GENESIS; a copy of the pages without an archive lists no others.
- await go('/collections');assert.deepEqual(await page.locator('.ccard .n').allTextContents(),['Mordinals','GENESIS']);
+ // Collections: Mordinals as a whole, GENESIS, and the collections of the index (in the demo, real names on made-up numbers).
+ await go('/collections');assert.deepEqual((await page.locator('.ccard .n').allTextContents()).slice(0,2),['Mordinals','GENESIS']);
+ assert.equal(await count('.ccard[data-kind=group]'),10);assert.match(await text('.ccard[data-kind=group] .n'),/The First 1k NFT collection/);
  await page.waitForFunction(()=>document.querySelectorAll('.ccard[data-kind=held] .mosaic img').length===3);
- await go('/market');assert.equal(await count('[data-section=collections] .ccard'),2);assert.equal(await count('[data-section=wallet]'),0,'no wallet link, no wallet panel');});
+ const group=await page.locator('.ccard[data-kind=group]').nth(4).getAttribute('href');await page.locator(`.ccard[href="${group}"]`).click();await shown(group.slice(1));
+ assert.match(await text('h1'),/Retarded Rat/);assert.equal(await count('[data-section=group-items] .mcard'),24);
+ const member=await page.locator('[data-section=group-items] .mcard').first().getAttribute('data-number');
+ await go('/mordinal/'+member);assert.match(await text('.kv'),/Collection\s*Retarded Rat/);
+ await go('/market');assert.equal(await count('[data-section=collections] .ccard'),6);assert.equal(await count('[data-section=wallet]'),0,'no wallet link, no wallet panel');});
 
 test('activity pages through older events',async()=>{
  // Eight more records, so the newest activity no longer fits one page.

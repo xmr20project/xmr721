@@ -13,7 +13,8 @@ after(async()=>{await browser.close();await demo.close();});
 const problems=[];
 const page=await context.newPage();
 page.on('pageerror',e=>problems.push('page error: '+e.message));
-page.on('console',m=>{if(m.type()==='error')problems.push('console: '+m.text()+' '+(m.location().url||''));});
+// A Mordinal that is text, not a picture, answers 415 when a page asks for its picture; that is expected.
+page.on('console',m=>{if(m.type()!=='error')return;const url=m.location().url||'';if(/Failed to load resource.*status of 415/.test(m.text())&&/\/content\/\d+$/.test(url))return;problems.push('console: '+m.text()+' '+url);});
 page.on('request',r=>{if(new URL(r.url()).pathname.startsWith('/test/'))problems.push('the page called a test route');});
 
 const get=async path=>(await fetch(root+path)).json();

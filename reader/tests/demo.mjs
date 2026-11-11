@@ -131,7 +131,11 @@ export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=
  const content=createContent({source:async o=>pictures.get(o.bodySha256)||null});
  // Dates for the made-up history come from the real block times of the index (the demo's heights lie in the same range).
  const blockTimes=JSON.parse(readFileSync(join(import.meta.dirname,'../../ownership-index/result/block-times.json'),'utf8')).times;
- const service=createService({reader,relay,owners,transfers,blockTimes,content,collections:loadCollections(join(import.meta.dirname,'../../xmr20-nfts/collections')),origins,testHooks:true,extra,chunk:100,rate:{perSecond:50,burst:500},log,
+ // Collections: the real names of the index's collections, each given a made-up run of the demo's numbers.
+ const real=JSON.parse(readFileSync(join(import.meta.dirname,'../../ownership-index/collections/collections.json'),'utf8')),order=[...real.featured,...real.groups.map(g=>g.id)];
+ const chosen=[...new Set(order)].map(id=>real.groups.find(g=>g.id===id)).filter(Boolean).slice(0,10);let next=16;
+ const groups={featured:real.featured,groups:chosen.map(g=>{const size=Math.min(g.count,24),first=next;next+=size;return {...g,count:size,numbers:[[first,Math.min(first+size-1,count-1)]]};}).filter(g=>g.numbers[0][0]<count)};
+ const service=createService({reader,relay,owners,transfers,blockTimes,groups,content,collections:loadCollections(join(import.meta.dirname,'../../xmr20-nfts/collections')),origins,testHooks:true,extra,chunk:100,rate:{perSecond:50,burst:500},log,
   ...(views===undefined?{views:join(import.meta.dirname,'../views')}:{views})});
  const at=await service.listen(port);
  let timer=null;

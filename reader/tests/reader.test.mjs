@@ -365,7 +365,7 @@ test('the service answers wallets and pages, and the check tools agree with it',
   assert.deepEqual((await get('/activity?kind=claim')).body.events.map(e=>e.number),[2,0]);assert.deepEqual((await get('/activity?number=2')).body.events.map(e=>e.kind),['move','claim']);
   assert.deepEqual((await get('/activity?address='+w.carol.address)).body.events.map(e=>e.kind),['move']);assert.equal((await get('/activity?kind=nonsense')).status,400);
   const sales=(await get('/sales')).body.events;assert.equal(sales.length,1);assert.deepEqual([sales[0].price,sales[0].fee,sales[0].buyer],[String(2n*XMR),String(XMR/10n),w.bob.address]);
-  const g=(await get('/gallery')).body;assert.equal(g.total,8);assert.deepEqual(g.items[0],{number:0,reg:owners[0].registrationTx,claimed:true,owner:w.bob.address,bodySize:PNG.length,lot:null});
+  const g=(await get('/gallery')).body;assert.equal(g.total,8);assert.deepEqual(g.items[0],{number:0,reg:owners[0].registrationTx,claimed:true,owner:w.bob.address,bodySize:PNG.length,group:null,lot:null});
   assert.deepEqual((await get('/gallery?filter=claimed')).body.items.map(i=>i.number),[0,2]);assert.equal((await get('/gallery?filter=unclaimed')).body.total,6);
   assert.deepEqual((await get('/gallery?filter=unclaimed&from=4&limit=5')).body.items.map(i=>i.number),[6,7]);assert.equal((await get('/gallery?filter=else')).status,400);
   const m0=(await get('/mordinal/0')).body;assert.deepEqual(m0.history.map(h=>h.kind),['inscribed','transfer','claim','list','reserve','sale']);

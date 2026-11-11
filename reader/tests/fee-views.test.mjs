@@ -13,7 +13,8 @@ await context.addInitScript(()=>{try{localStorage.setItem('xmr721-tutorial-seen'
 after(async()=>{await browser.close();await demo.close();});
 const problems=[],page=await context.newPage();
 page.on('pageerror',e=>problems.push('page error: '+e.message));
-page.on('console',m=>{if(m.type()==='error')problems.push('console: '+m.text());});
+// A Mordinal that is text, not a picture, answers 415 when a page asks for its picture; that is expected.
+page.on('console',m=>{if(m.type()!=='error')return;const url=m.location().url||'';if(/Failed to load resource.*status of 415/.test(m.text())&&/\/content\/\d+$/.test(url))return;problems.push('console: '+m.text()+' '+url);});
 const get=async path=>(await fetch(root+path)).json();
 const post=async(path,body)=>{const r=await fetch(root+path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});const j=await r.json();if(!r.ok)throw Error(j.error||String(r.status));return j;};
 const {wallets:W}=await get('/test/wallets');
