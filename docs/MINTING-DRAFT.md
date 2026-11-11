@@ -64,7 +64,7 @@ With the record framing of RULES.md section 8, that leaves **1,000 bytes for a r
 | Owner is the creator | 177 | **823** |
 | Owner is another address (`to`) | 242 | **758** |
 
-(4 magic and op bytes … 32 collection, 4 edition, 65 creator, 1 flags, 1 + name, 1 type,
+(5 bytes of magic and op, 32 collection, 4 edition, 65 creator, 1 flags, 1 + name, 1 type,
 3 content length, 65 signature.)
 
 So a **standard mint** carries about 750 to 820 bytes of content: small pixel art, a small
