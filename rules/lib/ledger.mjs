@@ -11,9 +11,13 @@ import {checkPaymentProof,paymentMessage} from './payment.mjs';
 
 // mintFrom: the first block at which collection, mint and burn records count (a setting of the ledger, like the start
 // block). Without it those records are refused, and the ledger is one of Mordinals only.
-export function createLedger({network='mainnet',domain,feeAddress,owners,height=0,mintFrom=null}){
+export function createLedger({network='mainnet',domain,feeAddress,owners,height=0,mintFrom=null,minters=null}){
  if(!/^[0-9a-f]{64}$/.test(domain||''))throw Error('Ledger domain required');
  if(mintFrom!==null&&!(Number.isInteger(mintFrom)&&mintFrom>=1))throw Error('Bad first mint block');
+ // Who may make collections and mint: anyone (null), or the addresses the ledger's setup lists. Like the first mint
+ // block, the list is part of the setup every reader of one ledger shares.
+ if(minters!==null&&!(Array.isArray(minters)&&minters.length))throw Error('Bad minter list');
+ const mayMint=minters===null?null:new Set(minters.map(a=>canonical(a,network)));
  // The fee address is checked like every address in a record: both keys must be keys a wallet can use.
  {const a=decodeAddress(feeAddress,network);if(!usableSpendKey(a.spend)||!usableSpendKey(a.view))throw Error('The fee address has a key no wallet can use.');}
  const fee=canonical(feeAddress,network),mordinals=new Map(),byNumber=new Map(),lots=new Map(),open=new Set(),applied=new Set(),payments=new Set(),paidOutputs=new Set(),collections=new Map();let tip=height;
@@ -99,6 +103,7 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
   if(applied.has(id))throw Error('This record is already on the ledger.');
   const signedBy=address=>{const ctx=ctxFor(d);if(!verifySpendSignature(renderText(op,b,bodyBytes,ctx)+SUFFIX[proof.variant],address,{c:proof.c,r:proof.r},network))throw Error('The signature does not match this record.');};
   if((op===OP.collection||op===OP.mint||op===OP.burn)&&(mintFrom===null||tip<mintFrom))throw Error(mintFrom===null?'Minting and burning are not part of this ledger.':`Minting and burning start at block ${mintFrom}.`);
+  if((op===OP.collection||op===OP.mint)&&mayMint&&!mayMint.has(b.creator))throw Error('On this ledger only the listed addresses make collections and mint.');
   if(op===OP.collection){signedBy(b.creator);return out;}
   if(op===OP.mint){
    // Standard mints only: the whole record has to fit a relayed transaction.

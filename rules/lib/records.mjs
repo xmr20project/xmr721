@@ -48,9 +48,10 @@ export function parseXmr(text){const t=String(text).trim().replace(/[,\s_]/g,'')
 const party=(address,network)=>{const a=decodeAddress(address,network);if(!usableSpendKey(a.spend))throw Error('This address cannot sign');
  if(!usableSpendKey(a.view))throw Error('This address has an unusable view key');return concat(Uint8Array.of(a.kind==='sub'?1:0),a.spend,a.view);};
 export const canonical=(address,network='mainnet')=>encodeAddress(decodeAddress(address,network));
-// A name: printable ASCII with no space at either end, so it reads the same wherever it is shown or signed.
-const NAME=/^[\x21-\x7e](?:[\x20-\x7e]*[\x21-\x7e])?$/;
-const nameBytes=(text,least)=>{const t=String(text??'');if(t.length<least||t.length>MAX_NAME||(t&&!NAME.test(t)))throw Error(least?`A name is 1 to ${MAX_NAME} plain characters with no space at either end.`:`A name is at most ${MAX_NAME} plain characters with no space at either end.`);
+// A name: printable ASCII with no space at either end and no double quote, so it reads the same wherever it is shown
+// or signed and cannot close the quotes a signed text puts around it.
+const NAME=/^[\x21\x23-\x7e](?:[\x20\x21\x23-\x7e]*[\x21\x23-\x7e])?$/;
+const nameBytes=(text,least)=>{const t=String(text??'');if(t.length<least||t.length>MAX_NAME||(t&&!NAME.test(t)))throw Error(least?`A name is 1 to ${MAX_NAME} plain characters with no space at either end and no double quote.`:`A name is at most ${MAX_NAME} plain characters with no space at either end and no double quote.`);
  return concat(Uint8Array.of(t.length),enc.encode(t));};
 const readName=(r,least)=>{const n=r.u8(),t=String.fromCharCode(...r.take(n));if(n<least||n>MAX_NAME||(n&&!NAME.test(t)))throw Error('Bad name');return t;};
 function reader(b){let at=0;const take=n=>{if(at+n>b.length)throw Error('Record is truncated');const v=b.subarray(at,at+n);at+=n;return v;};

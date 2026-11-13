@@ -5,6 +5,7 @@
 //
 //   node service.mjs --owners <owners.jsonl> --domain <hex32> --fee-address <address> --node <url> --start <height> --state <dir>
 //        [--start-hash <hash>] [--network mainnet|stagenet] [--port 18951] [--every <ms>] [--transfers <transfers.jsonl>] [--block-times <file>] [--groups <collections.json>]
+//        [--mint-from <height> [--minters <address>,…]]   the ledger's first mint block, and who may mint (everyone when no list is given); part of the ledger's setup
 //        [--carrier-bin <path> --carrier-state <dir> --carrier-network offline-fakechain|stagenet|mainnet [--carrier-start <height>] [--relay-limits name=n,…]]   relay on (mainnet also needs MORDINALS_MAINNET=1)
 //        [--mint-fee <atomic units> --collection-fee <atomic units>]   what this relay charges to carry a mint or a collection record
 //        [--content-dir <dir> | --content-archive [url]] [--collections <dir>] [--views <dir>] [--allow-origin <origin>] [--allow-extension <id>] [--behind-proxy] [--test-hooks]
@@ -60,7 +61,7 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
  const lotView=id=>{const l=L().lot(id),r=l.reservations.at(-1)||null;
   return {id:l.id,number:l.number,nft:l.number==null?l.reg:null,reg:l.reg,seller:l.seller,price:l.price.toString(),until:l.until,status:l.status,body:reader.body(l.id),
    reservation:r?{record:r.record,buyer:r.buyer,height:r.height,payBy:r.payBy,rate:r.rate}:null,buyer:l.sale?.buyer||null};};
- const state=n=>{const x=L().mordinal(n);return {number:x.number,reg:x.reg,claimed:x.claimed,owner:x.owner,seq:x.seq,lot:x.lot?lotView(x.lot):null};};
+ const state=n=>{const x=L().mordinal(n);return {number:x.number,reg:x.reg,claimed:x.claimed,owner:x.owner,...(x.burned?{burned:true}:{}),seq:x.seq,lot:x.lot?lotView(x.lot):null};};
 // A minted NFT. `record` is its mint record, so a page can check every field against the NFT's id itself.
  const minted=id=>{const x=L().nft(id);if(!x)return null;const c=x.minted.collection===NO_COLLECTION?null:L().collection(x.minted.collection),e=reader.entryById(id);
   return {id,...x.minted,collectionName:c?.name??null,owner:x.owner,burned:Boolean(x.burned),seq:x.seq,height:e?.height??null,txid:e?.txid??null,lot:x.lot?lotView(x.lot):null};};
@@ -76,7 +77,7 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
   return {list,by:new Map(list.flatMap(t=>[[t.id,t],[String(t.number),t],...(t.mint?[[t.mint,t]]:[])]))};});
  const open=()=>once('open',()=>reader.lots.map(lotView).filter(l=>l.status==='open'));
  const claimed=()=>once('claimed',()=>numbers.filter(n=>L().mordinal(n).claimed));
- const card=n=>{const o=entry.get(n),s=state(n);return {number:n,reg:s.reg,claimed:s.claimed,owner:s.owner,bodySize:o.bodySize??null,group:groupOf.get(n)??null,
+ const card=n=>{const o=entry.get(n),s=state(n);return {number:n,reg:s.reg,claimed:s.claimed,owner:s.owner,...(s.burned?{burned:true}:{}),bodySize:o.bodySize??null,group:groupOf.get(n)??null,
   lot:s.lot?{id:s.lot.id,price:s.lot.price,until:s.lot.until,seller:s.lot.seller,reserved:Boolean(s.lot.reservation&&heldUntil(s.lot.reservation)>=reader.height)}:null};};
  const which=text=>{const t=decodeURIComponent(text);const o=/^\d{1,9}$/.test(t)?entry.get(Number(t)):/^[0-9a-f]{64}$/.test(t)?byReg.get(t):null;if(!o)throw fail('This is not a Mordinal on the owner list.',404);return o;};
  const stats=()=>once('stats',()=>{const by={};let volume=0n,fees=0n;for(const e of reader.events){by[e.kind]=(by[e.kind]||0)+1;if(e.kind==='sale'){volume+=BigInt(e.price);fees+=BigInt(e.fee);}}
@@ -90,7 +91,7 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
  async function route(method,url,body,req){
   const path=url.pathname,q=url.searchParams,height=reader.height;
   if(method==='GET'){
-   if(path==='/info')return {network:m.network,domain:m.domain,feeAddress:m.feeAddress,height,count:list.length,chunk,test:Boolean(testHooks),owners:m.owners,start:m.start,startHash:m.startHash,mintFrom:m.mintFrom??null,...(xmr20?{xmr20:{inscribers:xmr20.inscribers}}:{}),
+   if(path==='/info')return {network:m.network,domain:m.domain,feeAddress:m.feeAddress,height,count:list.length,chunk,test:Boolean(testHooks),owners:m.owners,start:m.start,startHash:m.startHash,mintFrom:m.mintFrom??null,...(m.minters?{minters:m.minters.split(',')}:{}),...(xmr20?{xmr20:{inscribers:xmr20.inscribers}}:{}),
     relay:relay?{networkFee:'relay',perAddress:relay.limits.perSigner,fees:relay.fees,payBlocks:relay.limits.payBlocks}:null,rules:{feeBps:RULES.feeBps,marketFeeCapBps:RULES.marketFeeCapBps,minPrice:RULES.minPrice.toString(),maxReserve:RULES.maxReserve,settle:RULES.settle}};
    if(path==='/owners'){const from=int(q.get('from'),0,0,list.length),limit=int(q.get('limit'),chunk,1,chunk);return {from,total:list.length,entries:list.slice(from,from+limit)};}
    if(path==='/claimed')return {height,numbers:claimed()};
@@ -208,6 +209,8 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
    // nothing else is served.
    const made=/^\/nft\/([0-9a-f]{64})\/content$/.exec(url.pathname);
    if(req.method==='GET'&&made){const x=reader.ledger.nft(made[1]),e=x&&reader.entryById(made[1]);
+    // A page on an allowed origin may read the bytes (text and JSON are shown by the page itself).
+    if(headers['access-control-allow-origin'])for(const k of ['access-control-allow-origin','vary'])res.setHeader(k,headers[k]);
     if(!x){res.writeHead(404,headers);res.end(JSON.stringify({error:'This NFT does not exist.'}));return;}
     const bytes=Buffer.from(decodeRecord(Buffer.from(e.record,'hex'),m.network).body.content),type=pictureType(bytes)||(x.minted.type===5?'text/plain; charset=utf-8':x.minted.type===TYPE_JSON&&isJson(bytes)?'application/json; charset=utf-8':null);
     if(!type){res.writeHead(415,headers);res.end(JSON.stringify({error:'This content is not shown.'}));return;}
@@ -236,10 +239,10 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
 // Everything from command-line style options: used by the command below and by tests.
 export async function startService(o){
  const owners=readOwners(o.owners),chain=createChain(o.node),network=o.network||'mainnet';
- const reader=openReader({dir:o.state,chain,network,domain:o.domain,feeAddress:o.feeAddress,owners,start:Number(o.start),startHash:o.startHash||null,mintFrom:o.mintFrom==null?null:Number(o.mintFrom),checkpointEvery:o.checkpointEvery??720,log:o.log});
+ const reader=openReader({dir:o.state,chain,network,domain:o.domain,feeAddress:o.feeAddress,owners,start:Number(o.start),startHash:o.startHash||null,mintFrom:o.mintFrom==null?null:Number(o.mintFrom),minters:o.minters?.length?o.minters:null,checkpointEvery:o.checkpointEvery??720,log:o.log});
  let relay=null;
  if(o.carrierBin){const carrier=createCarrier({bin:o.carrierBin,stateDir:o.carrierState,node:o.node,network:o.carrierNetwork||'offline-fakechain',start:Number(o.carrierStart||o.start)});
-  relay=createRelay({dir:join(o.state,'relay'),reader,chain,carrier,network,domain:o.domain,limits:o.limits,fees:o.fees,...(o.now?{now:o.now}:{}),log:o.log});}
+  relay=createRelay({dir:join(o.state,'relay'),reader,chain,carrier,network,domain:o.domain,limits:o.limits,fees:o.fees,lane:o.minters||[],...(o.now?{now:o.now}:{}),log:o.log});}
  const source=o.contentDir?dirContent(o.contentDir):o.contentArchive?archiveContent(o.contentArchive===true?undefined:o.contentArchive):null;
  const times=o.blockTimes!==undefined?o.blockTimes:existsSync(BLOCK_TIMES)?BLOCK_TIMES:null,groupFile=o.groups!==undefined?o.groups:existsSync(GROUPS)?GROUPS:null;
  const service=createService({reader,relay,owners,transfers:o.transfers?readOwners(o.transfers):[],blockTimes:times?JSON.parse(readFileSync(times,'utf8')).times:null,groups:groupFile?JSON.parse(readFileSync(groupFile,'utf8')):null,content:source?createContent({source}):null,collections:o.collections?loadCollections(o.collections):new Map(),views:o.views||(existsSync(VIEWS)?VIEWS:null),xmr20:o.xmr20Inscribers?.length?{inscribers:o.xmr20Inscribers.map(a=>canonical(a,network))}:null,origins:o.origins||[],extensions:o.extensions?.length?o.extensions:null,behindProxy:Boolean(o.behindProxy),testHooks:Boolean(o.testHooks),...(o.rate?{rate:o.rate}:{}),log:o.log});
@@ -251,7 +254,7 @@ if(process.argv[1]===import.meta.filename){
  const archive=has('content-archive')?(arg('content-archive')?.startsWith('http')?arg('content-archive'):true):null;
  // --relay-limits minReady=4,splitInto=12,buyReserve=2: whole numbers for the relay's limits (lib/relay.mjs DEFAULT_LIMITS).
  const limits=Object.fromEntries((arg('relay-limits')||'').split(',').filter(Boolean).map(kv=>{const [k,v]=kv.split('=');if(!/^[a-zA-Z]+$/.test(k)||!/^\d{1,12}$/.test(v||''))throw Error('--relay-limits: name=number,…');return [k,Number(v)];}));
- const s=await startService({...(Object.keys(limits).length?{limits}:{}),owners:arg('owners'),transfers:arg('transfers'),...(arg('block-times')?{blockTimes:arg('block-times')}:{}),...(arg('groups')?{groups:arg('groups')}:{}),domain:arg('domain'),feeAddress:arg('fee-address'),node:arg('node'),start:arg('start'),startHash:arg('start-hash'),mintFrom:arg('mint-from'),state:arg('state'),network:arg('network'),xmr20Inscribers:(arg('xmr20-inscribers')||'').split(',').filter(Boolean),
+ const s=await startService({...(Object.keys(limits).length?{limits}:{}),owners:arg('owners'),transfers:arg('transfers'),...(arg('block-times')?{blockTimes:arg('block-times')}:{}),...(arg('groups')?{groups:arg('groups')}:{}),domain:arg('domain'),feeAddress:arg('fee-address'),node:arg('node'),start:arg('start'),startHash:arg('start-hash'),mintFrom:arg('mint-from'),minters:(arg('minters')||'').split(',').filter(Boolean),state:arg('state'),network:arg('network'),xmr20Inscribers:(arg('xmr20-inscribers')||'').split(',').filter(Boolean),
   port:arg('port'),fees:{mint:arg('mint-fee')||0,collection:arg('collection-fee')||0},carrierBin:arg('carrier-bin'),carrierState:arg('carrier-state'),carrierStart:arg('carrier-start'),carrierNetwork:arg('carrier-network'),contentDir:arg('content-dir'),collections:arg('collections'),contentArchive:archive,views:arg('views'),
   origins:process.argv.flatMap((a,i)=>a==='--allow-origin'?[process.argv[i+1]]:[]),extensions:process.argv.flatMap((a,i)=>a==='--allow-extension'?[process.argv[i+1]]:[]),behindProxy:has('behind-proxy'),testHooks:has('test-hooks'),log:v=>console.log(new Date().toISOString(),JSON.stringify(v))});
  console.log(`Mordinals reader on http://127.0.0.1:${s.port} (${s.owners.length} Mordinals, block ${s.reader.height}${s.relay?', relay on':', reader only'})`);

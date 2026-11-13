@@ -121,3 +121,17 @@ test('a reader lists the tokens its ledger holds, and serves each by id, number 
   // A reader that was not given inscribers has no token routes.
   assert.equal((await get('/xmr20/tokens','http://127.0.0.1:'+port2)).status,404);assert.equal((await get('/info','http://127.0.0.1:'+port2)).body.xmr20,undefined);
  }finally{await service.close();await plain.close();}});
+
+test('found by review: a byte order mark is not ignored, and the hidden characters are a fixed list',()=>{
+ const text=deployText(CURVE),bytes=enc(text),cp=String.fromCodePoint;
+ assert.equal(readDeploy(Uint8Array.of(0xef,0xbb,0xbf,...bytes)),null);assert.ok(readDeploy(bytes));
+ // Each of these does not show, or changes how the text around it shows: none may be in a ticker or a name.
+ for(const c of [0x00,0x1f,0x7f,0x9f,0xa0,0xad,0x34f,0x600,0x61c,0x6dd,0x70f,0x890,0x8e2,0x115f,0x1160,0x1680,0x17b4,0x180b,0x180e,0x2000,0x200b,0x200c,0x200d,0x200e,0x2028,0x202e,0x202f,0x205f,0x2060,0x2066,0x206f,0x2800,0x3000,0x3164,
+  0xe000,0xf8ff,0xfdd0,0xfe00,0xfe0f,0xfeff,0xffa0,0xfff9,0xfffd,0xffff,0x110bd,0x110cd,0x13430,0x1bca0,0x1d173,0xe0001,0xe0041,0xe0100,0xf0000,0x10ffff]){
+  assert.throws(()=>deployText({...CURVE,tick:'A'+cp(c)+'B'}),/tick/,'U+'+c.toString(16));assert.throws(()=>deployText({...CURVE,name:'A'+cp(c)+'B'}),/name/,'U+'+c.toString(16));}
+ // What shows is taken, in any script; a single space inside is fine; a lone surrogate half is not text.
+ for(const good of ['A B','é','ß','Ω','門羅','모네로','монеро','😀','a-b_c.d',"it's"])assert.ok(deployText({...CURVE,tick:good,name:good}),good);
+ assert.throws(()=>deployText({...CURVE,name:'a'+String.fromCharCode(0xd83d)}),/name/);
+ // The limits the document states: 30 digits, 32 characters.
+ assert.ok(deployText({...CURVE,max:'9'.repeat(30),mode:'a'.repeat(32)}));assert.throws(()=>deployText({...CURVE,max:'9'.repeat(31)}),/max/);assert.throws(()=>deployText({...CURVE,mode:'a'.repeat(33)}),/mode/);
+ assert.ok(deployText({...CURVE,mode:'v2-curve-9'}));});

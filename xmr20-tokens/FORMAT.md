@@ -22,9 +22,9 @@ collections.
 | `op` | required | `"deploy"` |
 | `tick` | required | the ticker, 1 to 32 characters |
 | `name` | optional | the token's name, 1 to 64 characters |
-| `max` | required | the supply in whole tokens, a decimal number written as text |
+| `max` | required | the supply in whole tokens: 1 to 30 digits with no leading zero, written as text |
 | `dec` | required | decimals, `"0"` to `"18"` |
-| `mode` | required | how the token was launched: lower-case words joined by hyphens |
+| `mode` | required | how the token was launched: 1 to 32 characters, words of lower-case letters and digits joined by single hyphens |
 | `pair` | optional | what the launch trades against, 1 to 16 letters or digits |
 | `mint` | optional | the token's Solana mint address |
 | `col` | optional | the id of an XMR721 collection that belongs to the token |
@@ -33,9 +33,19 @@ Modes in use: `monero-curve` (the curve runs on Monero), `bonding-curve` (a Sola
 curve; `pair` is `wXMR` or `XMR20`), `sweep-burn` (`pair`, and `col` for its NFTs). A
 reader shows a mode it does not know as it is written.
 
-Every value is text. `tick` and `name` may be in any script; they have no control,
-formatting or direction characters and no space at either end. The text is at most 600
-bytes.
+Every value is text. The text is UTF-8 without a byte order mark and at most 600 bytes.
+
+`tick` and `name` may be in any script. Their lengths are counted in characters (code
+points). They have no space at either end, and none of the characters that do not show or
+that change how the text around them shows: control and formatting characters, direction
+marks, joiners, variation selectors, blank look-alikes, every space but U+0020, private-use
+code points and noncharacters. The list is fixed, so that every reader refuses the same
+texts whatever Unicode tables it has:
+
+> U+0000–U+001F, U+007F–U+00A0, U+00AD, U+034F, U+0600–U+0605, U+061C, U+06DD, U+070F, U+0890–U+0891, U+08E2, U+115F–U+1160, U+1680, U+17B4–U+17B5, U+180B–U+180F, U+2000–U+200F, U+2028–U+202F, U+205F–U+206F, U+2800, U+3000, U+3164, U+E000–U+F8FF, U+FDD0–U+FDEF, U+FE00–U+FE0F, U+FEFF, U+FFA0, U+FFF0–U+FFFF, U+110BD, U+110CD, U+13430–U+1343F, U+1BCA0–U+1BCA3, U+1D173–U+1D17A, U+E0000–U+E0FFF, U+F0000–U+10FFFF
+
+A name that holds one of these (an emoji joined from several, for example) cannot be
+written; the launch inscriber then leaves the name out, and the ticker stands alone.
 
 **One deploy has one text.** The fields are written in the order of the table, without
 spaces, and nothing else is in the object. A reader reads only that exact text: the same
@@ -71,15 +81,21 @@ Going through the minted NFTs in ledger order, a reader takes every NFT that
 2. is in no collection and has type 6,
 3. has content that is exactly a deploy text.
 
-Each of these takes the next **token number**, starting at 1, for good. It is listed as a
-token unless
+Each of these takes the next **token number**, starting at 1. It is listed as a token
+unless
 
 - it has been burned, or
 - it names a `mint` that an earlier listed token already names.
 
 So a Solana mint has at most one token: the earliest deploy inscription that still stands.
 An inscriber corrects a mistake by burning the inscription and inscribing the token anew;
-the burned one keeps its number and the new one gets the next.
+the burned one keeps its number and the new one gets the next. The new text has to differ
+from the burned one in a field: a record with the same content by the same inscriber has
+the same id, and the ledger takes a record once.
+
+Numbers follow the order of the ledger, so they are final when their block is: while a
+block can still be replaced (readers treat 10 blocks as final), the inscriptions in it can
+come back in another order and take other numbers.
 
 Tickers are not unique. A token is known by its inscription id, and by its mint when it
 has one.
@@ -116,7 +132,21 @@ launch through a relay:
 It holds one key, which signs mint records and nothing else, and no coin: the relay carries
 its records. It keeps a journal, so it can be stopped at any point; a launch's record has
 one id however often it is made, and the index lists one token per mint, so a launch is
-not inscribed twice. `--since` sets the time from which launches are inscribed; earlier
-launches are left alone. `--preview` prints the texts it would inscribe and sends nothing.
+not inscribed twice.
+
+What is inscribed stays on the chain, so the inscriber holds back rather than guess:
+
+- `--since` sets the time from which launches are inscribed; earlier launches are left
+  alone. A time more than two days back needs `--backfill`.
+- A launch it cannot describe fully and for certain is left out and logged: no whole
+  supply, a venue it does not know, a launch the launch list itself hides or halts.
+- The supply is the launch's own (for a launch on the Monero curve: what is listed now plus
+  what was burned when its pool opened), never a present default.
+- It makes at most `--per-day` records in 24 hours (50), and takes nothing from a list that
+  shows more than `--burst` new launches at once (20) until a person has looked.
+- A new journal waits two blocks before its first record.
+
+`--preview` prints the texts it would inscribe, and what it would leave out and why, and
+sends nothing.
 
 Tests: `node --test xmr20-tokens/tests/*.test.mjs` (offline).

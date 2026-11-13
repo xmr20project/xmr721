@@ -16,9 +16,13 @@ export function base58(text){
  for(const c of text){if(c!=='1')break;out.unshift(0);}
  return Uint8Array.from(out);}
 
-// Text a person reads as a name: no control, formatting or direction characters, no space at either end.
-const HIDDEN=/[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]/;
-const words=(v,max)=>typeof v==='string'&&v.length>0&&[...v].length<=max&&v===v.trim()&&!HIDDEN.test(v)&&v.isWellFormed();
+// Text a person reads as a name: no space at either end, and none of the characters that do not show or that change
+// how the text around them shows (FORMAT.md lists them: control and formatting characters, direction marks, joiners,
+// variation selectors, blank look-alikes, every space but U+0020, private-use and unassigned-for-good code points).
+// The list is fixed here rather than taken from the runtime's Unicode tables, so every reader refuses the same texts.
+const HIDDEN=/[\u0000-\u001f\u007f-\u00a0\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890-\u0891\u08e2\u115f-\u1160\u1680\u17b4-\u17b5\u180b-\u180f\u2000-\u200f\u2028-\u202f\u205f-\u206f\u2800\u3000\u3164\ue000-\uf8ff\ufdd0-\ufdef\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\u{110bd}\u{110cd}\u{13430}-\u{1343f}\u{1bca0}-\u{1bca3}\u{1d173}-\u{1d17a}\u{e0000}-\u{e0fff}\u{f0000}-\u{10ffff}]/u;
+export const readable=(v,max)=>typeof v==='string'&&v.length>0&&[...v].length<=max&&v===v.trim()&&v.isWellFormed()&&!HIDDEN.test(v);
+const words=readable;
 
 // The fields of a deploy, checked. Throws with the reason; returns them in written order with nothing else.
 export function checkDeploy(o){
@@ -45,7 +49,7 @@ export function deployText(fields){
 // on what a text says (no second spelling of the same token, no field read two ways).
 export function readDeploy(bytes){
  if(!bytes||bytes.length>MAX_TEXT)return null;
- try{const text=new TextDecoder('utf-8',{fatal:true}).decode(bytes),d=checkDeploy(JSON.parse(text));return JSON.stringify(d)===text?d:null;}catch{return null;}}
+ try{const text=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(bytes),d=checkDeploy(JSON.parse(text));return JSON.stringify(d)===text?d:null;}catch{return null;}}
 
 // The tokens among a ledger's minted NFTs, oldest first.
 //   nfts: every minted NFT in ledger order, each {id, creator, collection, type, burned, content: () => bytes, …}

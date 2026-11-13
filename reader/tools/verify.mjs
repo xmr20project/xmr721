@@ -30,7 +30,10 @@ const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 export async function verify({info,entries,checkpoints=[],owners,chain=null,published=[]}){
  const problems=[],bad=text=>{if(problems.length<50)problems.push(text);};
  if(ownersHash(owners)!==info.owners)return {ok:false,problems:['The owner list here is not the one this service uses (hash differs).'],accepted:0,refused:0,checkpoints:0,checkedOnNode:0};
- const ledger=createLedger({network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,height:info.start,mintFrom:info.mintFrom??null});
+ const ledger=createLedger({network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,height:info.start,mintFrom:info.mintFrom??null,minters:info.minters??null});
+ // A checkpoint names the first mint block and the minter list of its ledger; they have to be this service's.
+ const setup={mintFrom:info.mintFrom??null,minters:info.minters?[...info.minters].sort().join(','):null};
+ for(const c of checkpoints)if((c.mintFrom??null)!==setup.mintFrom||(c.minters??null)!==setup.minters){bad(`The checkpoint at block ${c.height} is for a ledger with another first mint block or minter list.`);break;}
  const marks=[...checkpoints].sort((a,b)=>a.height-b.height),accepted=[];let mark=0,last=[info.start,-1],ok=0,refused=0;
  const settle=upTo=>{for(;mark<marks.length&&marks[mark].height<=upTo;mark++){const c=marks[mark];ledger.setHeight(c.height);
   const mine={records:accepted.length,listHash:sha(accepted.map(e=>`${e.height}:${e.txid}\n`).join('')),stateHash:sha(JSON.stringify(ledger.toJSON()))};

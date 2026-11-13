@@ -295,7 +295,7 @@ kept for that.
 | Protocol fee | 5% of every sale, Mordinals and minted NFTs | `RULES.feeBps` | decided |
 | Mint fee | none | section 9 | decided |
 | Largest mint record | 1,000 bytes (824 of name and content) | `MAX_RECORD` | decided |
-| Who may mint | anyone; into a collection only its creator | section 9 | decided |
+| Who may mint | anyone, or only the addresses the ledger's setup lists; into a collection only its creator | section 9 | decided |
 | First mint block | not set | ledger setup | open |
 | Marketplace fee cap | 5% on top | `RULES.marketFeeCapBps` | decided |
 | Lowest price | 0.001 XMR | `RULES.minPrice` | decided |
@@ -343,14 +343,20 @@ Mordinal by its registration transaction, a minted NFT by the id of its mint rec
 work the same for both; the 5% protocol fee applies to every sale. Before the first mint
 block, or on a ledger that names none, records 7, 8 and 9 are refused.
 
-**Collection (op 7).** Anyone can create one. Its id is the record's id, its creator is the
+**Who may mint.** A ledger's setup may list its minters. Then only those addresses make
+collections and mint; without a list anyone does. Like the first mint block, the list is
+part of the setup that every reader of one ledger shares, and a checkpoint names both.
+Moving, selling and burning are not limited by the list: they belong to the owner.
+
+**Collection (op 7).** A minter can create one. Its id is the record's id, its creator is the
 signer, `max` is its number of editions (1 to 10,000). `name` is 1 to 64 printable ASCII
-characters with no space at either end. Two collections may have the same name.
+characters with no space at either end and no double quote (`"`), so a name cannot close
+the quotes a signed text puts around it. Two collections may have the same name.
 
 **Mint (op 8).** Makes one NFT, signed by `creator`.
 - `collection32` names a collection, and then `creator` must be that collection's creator,
   `edition` is 1 to `max` and not minted before. Or `collection32` is 32 zero bytes: the
-  NFT belongs to no collection, `edition` is 0, and anyone can be the creator.
+  NFT belongs to no collection, `edition` is 0, and any minter can be the creator.
 - The first owner is `to` when flags bit 0 is set, otherwise the creator. `to` is written
   only when it is another address.
 - `content` is the inscribed bytes, at least 1. `type` (1 to 255) says what they are:
@@ -380,7 +386,9 @@ XMR721 burn: destroy <NFT> for good; burn <seq>; code <code>
 
 In the texts of the other records a minted NFT is written `"<collection name>" #<edition>
 (NFT <code of its id>)`, or `NFT <code of its id>` when it has no collection, where a
-Mordinal is written `Mordinal #<number>`.
+Mordinal is written `Mordinal #<number>`. A reservation of a minted NFT ends `; NFT to
+<buyer>; code <code>` where a Mordinal's ends `; Mordinal to <buyer>; code <code>`. An NFT's
+own name follows the same rule as a collection's.
 
 No record here spends or names a coin. A mint, like every record, rides in an ordinary
 transaction that anyone can pay for.

@@ -21,23 +21,72 @@ on the rules.
 | 4 | **Record decoding.** Exact decoding, one spelling per record, replay protection by the per-Mordinal counter. | `records.mjs` |
 | 5 | **Reader and relay.** Chain order, replaced blocks, restart to the same state, what a relay can and cannot do to a record. | `reader/lib/reader.mjs`, `relay.mjs`, `transport.mjs`, `reader/tools/verify.mjs` |
 
-## New in draft 4, not reviewed
+## Minting: review before the first mint block (13 November 2026)
 
-Collections, mints and burns (records 7, 8 and 9; RULES.md section 9; `rules/lib/records.mjs`,
-`ledger.mjs`; tests in `rules/tests/mint.test.mjs`). Questions for a reviewer:
+Collections, mints and burns (records 7, 8 and 9; RULES.md section 9) were read
+independently before any ledger opened them: the rule library, the reader, relay and
+service with minting open, and the XMR20 token view with its launch inscriber
+(`xmr20-tokens/`). Tests that fail on the code before each fix are in
+`reader/tests/mint-review.test.mjs` and `xmr20-tokens/tests/`.
 
-- Are the new records decoded in one way only (flags, the optional first owner, names,
-  the origin field)?
-- Can anything but the collection's creator mint into it, or an edition be minted twice,
-  also after a burn?
-- A minted NFT shares `move`, `list`, `reserve` and `buy` with Mordinals through the same
-  32-byte field. Can a mint id ever collide with a registration transaction id, or one
-  NFT's signed record be used for another?
-- The 1,000-byte limit is checked on the whole record. Is there a way to carry more?
-- The signed texts for minted NFTs differ from those for Mordinals only in how the NFT is
-  named. The texts for Mordinals are unchanged from draft 3 (the saved lab cases replay).
-- Free and open minting means anyone can inscribe anything. The rules do not filter; pages
-  and wallets will have to.
+Found sound in the rule library (no change): each of the three records decodes in one way
+only and nothing over 1,000 bytes is taken; only a collection's creator mints into it, an
+edition is minted once (also after a burn and across replaced blocks); a mint cannot
+shadow a Mordinal and a signed record for one NFT does not serve another; only the owner
+burns, never while listed or reserved; a sale of a minted NFT pays the 5% fee like any
+other; replaying the log in any accepted order gives one state; no crafted record makes
+`check` throw anything but a refusal.
+
+Changed:
+
+- **A name could close its own quotes.** Names allowed `"`, so a collection named
+  `A" named "B` gave the same mint text as collection `A` with an NFT named `B` (up to the
+  code), and a name could put a made-up price in front of the real one in a buyer's
+  reservation text. Names take no double quote now.
+- **A limit of the relay did not apply.** The per-connection daily limit was passed by the
+  service and dropped by the relay. It applies now.
+- **A record marked stuck stayed stuck.** A record the relay could not get mined for 720
+  blocks answered "stuck" on every later try, so it could never be published through that
+  relay. It can be handed over again, like a refused one.
+- **Checkpoints did not name the first mint block.** Two readers with different first mint
+  blocks gave different state hashes with nothing in the checkpoint that differed. A
+  checkpoint names the first mint block and the minter list once the setup has them, and
+  `verify` compares them.
+- **A burned Mordinal was shown as claimed with no owner.** The service says `burned`, and
+  the page shows it.
+- **Minters.** A ledger's setup may list who makes collections and mints (RULES.md
+  section 9). The relay gives those addresses a lane of their own for their mints.
+- RULES.md said a reservation of a minted NFT ends "Mordinal to"; the signed text says
+  "NFT to". The text of the document follows the code.
+- The page of an allowed origin can read an NFT's text (the content route sent no
+  cross-origin header).
+
+Open, and the reason a ledger should list its minters until they are answered:
+
+- **The relay with minting open to everyone.** Signatures cost nothing and addresses are
+  free, so the per-address limit does not bound a sender. Without a relay fee one sender can
+  have about 2,000 mints a day carried at the relay's cost and fill the shared limits, so
+  that claims, moves and listings wait (purchases are exempt). With a fee, unpaid records
+  cost nothing and hold a fee address for 7 days: 5,000 of them stop every new mint for a
+  week. And a fee on mints does not bound the rest: a move, listing or burn of a minted NFT
+  is carried free, one per NFT per block. Needed before open minting: a bound per
+  connection on unpaid records, fee addresses freed when nothing was paid, a daily bound per
+  NFT or a charge for records of minted NFTs.
+- **Replaced blocks replay every record.** The reader rebuilds from its journal, checking
+  every signature again: measured about 52 s for 10,000 full mints, with nothing answered
+  meanwhile. `/nft-collection/<id>` and `/address/<a>` are not paged. The journal is read
+  and rewritten as one text, which stops working near 244,000 full mints. None of this is
+  new with minting (any record is journalled), but open minting makes it cheap to reach.
+- **Records published before the first mint block.** A burn is refused before that block,
+  but the same bytes can be published again afterwards by anyone while the owner and the
+  counter are unchanged. It is the owner's own signature, and any move ends it. The first
+  mint block has to be above every block a reader has read when it is set.
+- **Switching a running service.** A state folder is made for one setup, so a first mint
+  block needs a new folder. Fill it with a second, reader-only instance up to the tip, stop
+  both, copy the old folder's `relay` into the new one, then start on the new folder. A
+  relay that starts on an empty folder would pay again for records already on the chain.
+- Smaller: a failing wallet call is repeated per unpaid record in one pass; a relayed mint
+  whose block is replaced more than 10 blocks later is not sent again.
 
 ## Found in review and changed
 

@@ -18,8 +18,8 @@ export function inscriberFrom(secret,network='mainnet'){
  const key=leBytes(b),spend=G.multiply(b).toRawBytes(),view=G.multiply(Hs(key)).toRawBytes();
  return {address:encodeAddress({spend,view,kind:'main',network}),sign:text=>signWithSpendKey(text,{spend,view},key)};}
 
-// A mint record takes a name of printable ASCII; a ticker in another script is carried by the text alone.
-const recordName=tick=>/^[\x21-\x7e]([\x20-\x7e]{0,62}[\x21-\x7e])?$/.test(tick)?tick:'';
+// A mint record takes a name of printable ASCII without a double quote; any other ticker is carried by the text alone.
+const recordName=tick=>/^[\x21\x23-\x7e]([\x20\x21\x23-\x7e]{0,62}[\x21\x23-\x7e])?$/.test(tick)?tick:'';
 
 // The signed mint record of a deploy: an NFT in no collection, owned by the inscriber, whose content is the deploy text.
 // The same fields by the same inscriber on the same ledger always give the same record id, whenever it is made.

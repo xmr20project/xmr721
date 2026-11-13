@@ -15,7 +15,11 @@ export async function mordinal(ctx,number,action){
  if(m.lot){try{t=terms(m.lot);}catch(e){unfit=e.message;}}
  const held=t?running(t,height):null,ended=Boolean(t&&t.until<height);
 
- const answer=m.claimed
+ // A burned Mordinal has no owner: it is shown as burned, with nothing to send or sell.
+ const answer=m.burned
+  ?el('div',{class:'card answer stack','data-answer':'burned'},el('p',{class:'label',text:'Is it claimed?'}),
+    el('p',{class:'big no',text:'Burned'}),el('p',{class:'muted',text:'Its last owner destroyed this Mordinal for good. It has no owner and cannot be sent or sold.'}))
+  :m.claimed
   ?el('div',{class:'card answer stack','data-answer':'claimed'},el('p',{class:'label',text:'Is it claimed?'}),
     el('p',{class:'big',text:'Claimed'}),el('p',{class:'muted',text:'owned by'}),exact(m.owner,{what:'owner address'}),
     el('p',{},el('a',{href:'#/address/'+m.owner,text:'Everything this address owns'})))
@@ -46,7 +50,7 @@ export async function mordinal(ctx,number,action){
  add(ctx.main,
   el('div',{class:'head'},el('a',{class:'crumb',href:'#/gallery',text:'Gallery'}),el('h1',{class:'small',text:'Mordinal #'+count(n)})),
   el('div',{class:'split item'},pic(n,{size:'large',hasContent:m.bodySize!==null}),el('div',{class:'stack'},sale,answer,el('div',{class:'card'},facts))),
-  m.claimed?owner():null,
+  m.claimed&&!m.burned?owner():null,
   v.waiting.length?el('section',{class:'section','data-section':'waiting'},el('div',{class:'section-head'},el('h2',{text:'Waiting for a block'}),
    el('span',{class:'dim',text:'These records do not count yet.'})),waitingList(v.waiting)):null,
   el('section',{class:'section','data-section':'history'},el('div',{class:'section-head'},el('h2',{text:'History'})),

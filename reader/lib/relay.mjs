@@ -24,7 +24,7 @@ import {execFile} from 'node:child_process';
 import {createHash,randomBytes} from 'node:crypto';
 import {existsSync,mkdirSync,readdirSync,readFileSync,renameSync,unlinkSync,openSync,writeSync,fsyncSync,closeSync} from 'node:fs';
 import {join} from 'node:path';
-import {OP,decodeRecord,recordId,signerOf} from '../../rules/lib/records.mjs';
+import {OP,decodeRecord,recordId,signerOf,canonical} from '../../rules/lib/records.mjs';
 import {unhex} from '../../rules/lib/monero.mjs';
 import {MAX_RECORD} from './transport.mjs';
 
@@ -45,7 +45,8 @@ export const DEFAULT_LIMITS={perSigner:3,waiting:200,perDay:2000,margin:5,resend
 // A purchase is never held back by the shared limits: once a buyer has paid, the record that makes the Mordinal
 // theirs goes first, with coins kept back for it (buyReserve), so nobody can crowd it out until the reservation runs out.
 
-export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,limits:given={},fees:asked={},now=()=>Date.now(),log=()=>{}}){
+export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,limits:given={},fees:asked={},lane=[],now=()=>Date.now(),log=()=>{}}){
+ const laneOf=new Set(lane.map(a=>canonical(a,network)));
  const limits={...DEFAULT_LIMITS,...given},jobsDir=join(dir,'jobs'),splitFile=join(dir,'split.json'),payFile=join(dir,'pay.json');
  const fees={collection:BigInt(asked.collection||0),mint:BigInt(asked.mint||0)},priceOf=op=>op===OP.collection?fees.collection:op===OP.mint?fees.mint:0n;
  mkdirSync(jobsDir,{recursive:true});
@@ -116,7 +117,8 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
  async function submit(recordHex,{caller=null}={}){
   if(typeof recordHex!=='string'||!/^([0-9a-f]{2})+$/.test(recordHex)||recordHex.length>2*MAX_RECORD)throw bad('A record is hexadecimal and at most '+MAX_RECORD+' bytes.');
   const bytes=unhex(recordHex),d=decodeRecord(bytes,network),id=recordId(domain,d.bodyBytes);
-  const known=jobs.get(id);if(known&&known.state!=='refused')return view(known);
+  // A record this relay gave up on (refused, or not mined for so long that it was marked stuck) may be handed over again.
+  const known=jobs.get(id);if(known&&known.state!=='refused'&&known.state!=='stuck')return view(known);
   const entry=reader.entryById(id);if(entry)return {id,state:'done',op:d.op,txid:entry.txid,error:null,note:null};
   // The rules' own answers go back as they are; a node that cannot be reached is the relay's trouble, not the record's.
   let isReady;try{({ready:isReady}=await judge(bytes,d,{fresh:true}));}catch(e){if(!e.rule&&!e.status)e.status=503;throw e;}
@@ -128,7 +130,10 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   if(price&&all.length-open.length>=limits.unpaid)throw bad('The relay is busy. Try again in a few minutes.',503);
   if(all.filter(j=>j.signer===signer).length>=limits.perSigner)throw bad('This address already has '+limits.perSigner+' records waiting for a block. Try again in a few minutes.',429);
   const day=now()-86400000,who=callerKey(caller);
-  if(d.op!==OP.buy){
+  // The ledger's listed minters (the launchpad's inscriber) have a lane of their own for their collections and mints:
+  // like a purchase, such a record is not held back by what everyone else has waiting. The per-address limit still applies.
+  const ownLane=(d.op===OP.mint||d.op===OP.collection)&&laneOf.has(signer);
+  if(d.op!==OP.buy&&!ownLane){
    if(open.length>=limits.waiting)throw bad('The relay is busy. Try again in a few minutes.',503);
    if([...jobs.values()].filter(j=>j.createdAt>day&&j.txid&&j.op!==OP.buy).length>=limits.perDay)throw bad('The relay reached its daily limit. Try again later, or publish the record yourself.',503);
    if(who&&[...jobs.values()].filter(j=>j.caller===who&&j.createdAt>day).length>=limits.perCallerDay)throw bad('This connection sent many records today. Try again tomorrow, or publish the record yourself.',429);}
@@ -202,7 +207,7 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   catch(e){log({coins:String(e.message).slice(0,200)});return {tip,waiting:waiting().length,ready:null,balance:null};}}
 
  return {limits,fees:{collection:fees.collection.toString(),mint:fees.mint.toString()},
-  submit:recordHex=>alone(()=>submit(recordHex)),tick:()=>alone(tick),
+  submit:(recordHex,o)=>alone(()=>submit(recordHex,o)),tick:()=>alone(tick),
   // What became of a record: a waiting job, or an accepted record in a block.
   status(id){const j=jobs.get(id),e=reader.entryById(id);
    if(e)return {id,state:'done',txid:e.txid,height:e.height,confirmations:reader.height-e.height+1,error:null};
