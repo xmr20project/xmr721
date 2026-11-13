@@ -109,6 +109,7 @@ legacy; new inscriptions are planned to use XMR721.
 | [`reader/`](reader) | Reader, relay, HTTP service, explorer/gallery/market pages, check tools |
 | [`ownership-index/`](ownership-index) | The owner list, how it was made and checked, and the added entry |
 | [`xmr20-nfts/`](xmr20-nfts) | The GENESIS collection of XMR20 NFTs, their earlier format and decoder |
+| [`xmr20-tokens/`](xmr20-tokens) | XMR20 tokens as inscriptions on this ledger: the [deploy text](xmr20-tokens/FORMAT.md), the token list a reader serves, and the launch inscriber |
 | [`docs/OPEN-POINTS.md`](docs/OPEN-POINTS.md) | What review has changed so far and what is still open |
 
 ## Try it

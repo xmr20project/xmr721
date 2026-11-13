@@ -8,6 +8,7 @@
 //        [--carrier-bin <path> --carrier-state <dir> --carrier-network offline-fakechain|stagenet|mainnet [--carrier-start <height>] [--relay-limits name=n,…]]   relay on (mainnet also needs MORDINALS_MAINNET=1)
 //        [--mint-fee <atomic units> --collection-fee <atomic units>]   what this relay charges to carry a mint or a collection record
 //        [--content-dir <dir> | --content-archive [url]] [--collections <dir>] [--views <dir>] [--allow-origin <origin>] [--allow-extension <id>] [--behind-proxy] [--test-hooks]
+//        [--xmr20-inscribers <address>,…]   list the XMR20 tokens these addresses inscribed (xmr20-tokens/FORMAT.md)
 //
 // Lists are served whole (the owner list in pieces, every claimed number), so a wallet never has to name the
 // Mordinals it holds before it claims them.
@@ -21,15 +22,17 @@ import {createRelay,createCarrier} from './lib/relay.mjs';
 import {createContent,dirContent,archiveContent,pictureType} from './lib/content.mjs';
 import {served,readOwners} from './lib/owners.mjs';
 import {loadCollections} from '../xmr20-nfts/lib/collection.mjs';
+import {projectTokens,TYPE_JSON} from '../xmr20-tokens/lib/token.mjs';
 
 const TYPES={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.woff2':'font/woff2'};
 const PAGE_CSP="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const VIEWS=join(import.meta.dirname,'views'),BLOCK_TIMES=join(import.meta.dirname,'..','ownership-index','result','block-times.json'),GROUPS=join(import.meta.dirname,'..','ownership-index','collections','collections.json');
 const KINDS=new Set(['claim','move','list','cancel','reserve','sale','collection','mint','burn']);
 const fail=(message,status=400)=>{const e=Error(message);e.status=status;return e;};
+const isJson=bytes=>{try{JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));return true;}catch{return false;}};
 const int=(v,fallback,min,max)=>{const n=v==null||v===''?NaN:Number(v);return Number.isInteger(n)?Math.min(max,Math.max(min,n)):fallback;};
 
-export function createService({reader,relay=null,owners,transfers=[],blockTimes=null,groups=null,content=null,collections=new Map(),views=null,origins=[],extensions=null,behindProxy=false,testHooks=false,extra=null,chunk=4000,rate={perSecond:2,burst:60},log=()=>{}}){
+export function createService({reader,relay=null,owners,transfers=[],blockTimes=null,groups=null,content=null,collections=new Map(),views=null,origins=[],extensions=null,behindProxy=false,testHooks=false,extra=null,xmr20=null,chunk=4000,rate={perSecond:2,burst:60},log=()=>{}}){
  const m=reader.meta,list=owners.map(served),numbers=owners.map(o=>o.number),entry=new Map(owners.map(o=>[o.number,o])),byReg=new Map(owners.map(o=>[o.registrationTx,o]));
  // When the blocks of the original history were made: exact for the blocks in the list, and between two listed blocks
  // from the blocks on either side. Outside the list there is no date.
@@ -63,6 +66,14 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
   return {id,...x.minted,collectionName:c?.name??null,owner:x.owner,burned:Boolean(x.burned),seq:x.seq,height:e?.height??null,txid:e?.txid??null,lot:x.lot?lotView(x.lot):null};};
  const mintedIds=()=>once('minted',()=>reader.events.filter(e=>e.kind==='mint').map(e=>e.nft));
  const madeCollection=c=>({id:c.id,name:c.name,max:c.max,creator:c.creator,height:c.height,minted:c.editions.length});
+ // XMR20 tokens (xmr20-tokens/FORMAT.md): the deploy inscriptions of the listed addresses, read from the minted NFTs.
+ // A view of the ledger, like the collections: it changes no record and no owner.
+ const contentOf=id=>decodeRecord(Buffer.from(reader.entryById(id).record,'hex'),m.network).body.content;
+ // `inscription` counts every minted NFT on from the Mordinals' numbers, in ledger order: a number to show, where records use ids.
+ const firstMinted=numbers.reduce((a,b)=>Math.max(a,b),-1)+1;
+ const tokens=()=>once('xmr20',()=>{const list=projectTokens(reader.events.filter(e=>e.kind==='mint').map((e,i)=>{const x=L().nft(e.nft);
+   return {id:e.nft,inscription:firstMinted+i,creator:x.minted.creator,collection:x.minted.collection,type:x.minted.type,burned:Boolean(x.burned),owner:x.owner,height:e.height,time:e.time,txid:e.txid,content:()=>contentOf(e.nft)};}),xmr20.inscribers);
+  return {list,by:new Map(list.flatMap(t=>[[t.id,t],[String(t.number),t],...(t.mint?[[t.mint,t]]:[])]))};});
  const open=()=>once('open',()=>reader.lots.map(lotView).filter(l=>l.status==='open'));
  const claimed=()=>once('claimed',()=>numbers.filter(n=>L().mordinal(n).claimed));
  const card=n=>{const o=entry.get(n),s=state(n);return {number:n,reg:s.reg,claimed:s.claimed,owner:s.owner,bodySize:o.bodySize??null,group:groupOf.get(n)??null,
@@ -79,7 +90,7 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
  async function route(method,url,body,req){
   const path=url.pathname,q=url.searchParams,height=reader.height;
   if(method==='GET'){
-   if(path==='/info')return {network:m.network,domain:m.domain,feeAddress:m.feeAddress,height,count:list.length,chunk,test:Boolean(testHooks),owners:m.owners,start:m.start,startHash:m.startHash,mintFrom:m.mintFrom??null,
+   if(path==='/info')return {network:m.network,domain:m.domain,feeAddress:m.feeAddress,height,count:list.length,chunk,test:Boolean(testHooks),owners:m.owners,start:m.start,startHash:m.startHash,mintFrom:m.mintFrom??null,...(xmr20?{xmr20:{inscribers:xmr20.inscribers}}:{}),
     relay:relay?{networkFee:'relay',perAddress:relay.limits.perSigner,fees:relay.fees,payBlocks:relay.limits.payBlocks}:null,rules:{feeBps:RULES.feeBps,marketFeeCapBps:RULES.marketFeeCapBps,minPrice:RULES.minPrice.toString(),maxReserve:RULES.maxReserve,settle:RULES.settle}};
    if(path==='/owners'){const from=int(q.get('from'),0,0,list.length),limit=int(q.get('limit'),chunk,1,chunk);return {from,total:list.length,entries:list.slice(from,from+limit)};}
    if(path==='/claimed')return {height,numbers:claimed()};
@@ -147,6 +158,11 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
    if(path==='/nft-collections')return {height,collections:L().collections().map(madeCollection).reverse()};
    if(path.startsWith('/nft-collection/')){const c=L().collection(path.slice(16));if(!c)throw fail('This collection does not exist.',404);
     return {height,collection:madeCollection(c),record:reader.entryById(c.id).record,items:mintedIds().filter(id=>L().nft(id).minted.collection===c.id).map(minted).sort((a,b)=>a.edition-b.edition)};}
+   // XMR20 tokens, newest first; one token by its inscription id, its number or its Solana mint.
+   if(xmr20&&path==='/xmr20/tokens'){const mode=q.get('mode'),all=mode?tokens().list.filter(t=>t.mode===mode):tokens().list,from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),60,1,200);
+    return {height,total:all.length,from,inscribers:xmr20.inscribers,items:all.slice().reverse().slice(from,from+limit).map(t=>({...t,confirmations:height-t.height+1}))};}
+   if(xmr20&&path.startsWith('/xmr20/token/')){const t=tokens().by.get(decodeURIComponent(path.slice(13)));if(!t)throw fail('This is not an XMR20 token on this ledger.',404);
+    return {height,token:{...t,confirmations:height-t.height+1},record:reader.entryById(t.id).record,text:Buffer.from(contentOf(t.id)).toString('utf8')};}
    // Collections shown next to the Mordinals (read-only; see xmr20-nfts/).
    if(path==='/collections')return {height,collections:[...collections.values()].map(c=>({key:c.key,...c.header}))};
    if(path.startsWith('/collections/')){const [key,edition]=path.slice(13).split('/'),c=collections.get(key);if(!c)throw fail('This collection is not known here.',404);
@@ -188,11 +204,12 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
   try{
    const url=new URL(req.url,'http://127.0.0.1');
    if(req.method==='GET'&&url.pathname.startsWith('/content/')){if(headers['access-control-allow-origin'])for(const k of ['access-control-allow-origin','access-control-expose-headers','vary'])res.setHeader(k,headers[k]);return await picture(res,url.pathname.slice(9));}
-   // The inscribed bytes of a minted NFT: pictures by their first bytes, plain text as text; nothing else is served.
+   // The inscribed bytes of a minted NFT: pictures by their first bytes, plain text as text, JSON that parses as JSON;
+   // nothing else is served.
    const made=/^\/nft\/([0-9a-f]{64})\/content$/.exec(url.pathname);
    if(req.method==='GET'&&made){const x=reader.ledger.nft(made[1]),e=x&&reader.entryById(made[1]);
     if(!x){res.writeHead(404,headers);res.end(JSON.stringify({error:'This NFT does not exist.'}));return;}
-    const bytes=Buffer.from(decodeRecord(Buffer.from(e.record,'hex'),m.network).body.content),type=pictureType(bytes)||(x.minted.type===5?'text/plain; charset=utf-8':null);
+    const bytes=Buffer.from(decodeRecord(Buffer.from(e.record,'hex'),m.network).body.content),type=pictureType(bytes)||(x.minted.type===5?'text/plain; charset=utf-8':x.minted.type===TYPE_JSON&&isJson(bytes)?'application/json; charset=utf-8':null);
     if(!type){res.writeHead(415,headers);res.end(JSON.stringify({error:'This content is not shown.'}));return;}
     res.writeHead(200,{'content-type':type,'content-length':bytes.length,'cache-control':'public, max-age=31536000, immutable','x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox",'cross-origin-resource-policy':'cross-origin'});res.end(bytes);return;}
    const shot=/^\/collections\/([a-z0-9-]{1,40})\/(\d{1,5})\/picture$/.exec(url.pathname);
@@ -225,7 +242,7 @@ export async function startService(o){
   relay=createRelay({dir:join(o.state,'relay'),reader,chain,carrier,network,domain:o.domain,limits:o.limits,fees:o.fees,...(o.now?{now:o.now}:{}),log:o.log});}
  const source=o.contentDir?dirContent(o.contentDir):o.contentArchive?archiveContent(o.contentArchive===true?undefined:o.contentArchive):null;
  const times=o.blockTimes!==undefined?o.blockTimes:existsSync(BLOCK_TIMES)?BLOCK_TIMES:null,groupFile=o.groups!==undefined?o.groups:existsSync(GROUPS)?GROUPS:null;
- const service=createService({reader,relay,owners,transfers:o.transfers?readOwners(o.transfers):[],blockTimes:times?JSON.parse(readFileSync(times,'utf8')).times:null,groups:groupFile?JSON.parse(readFileSync(groupFile,'utf8')):null,content:source?createContent({source}):null,collections:o.collections?loadCollections(o.collections):new Map(),views:o.views||(existsSync(VIEWS)?VIEWS:null),origins:o.origins||[],extensions:o.extensions?.length?o.extensions:null,behindProxy:Boolean(o.behindProxy),testHooks:Boolean(o.testHooks),...(o.rate?{rate:o.rate}:{}),log:o.log});
+ const service=createService({reader,relay,owners,transfers:o.transfers?readOwners(o.transfers):[],blockTimes:times?JSON.parse(readFileSync(times,'utf8')).times:null,groups:groupFile?JSON.parse(readFileSync(groupFile,'utf8')):null,content:source?createContent({source}):null,collections:o.collections?loadCollections(o.collections):new Map(),views:o.views||(existsSync(VIEWS)?VIEWS:null),xmr20:o.xmr20Inscribers?.length?{inscribers:o.xmr20Inscribers.map(a=>canonical(a,network))}:null,origins:o.origins||[],extensions:o.extensions?.length?o.extensions:null,behindProxy:Boolean(o.behindProxy),testHooks:Boolean(o.testHooks),...(o.rate?{rate:o.rate}:{}),log:o.log});
  const port=await service.listen(o.port==null?18951:Number(o.port));return {...service,port,chain,owners};}
 
 if(process.argv[1]===import.meta.filename){
@@ -234,7 +251,7 @@ if(process.argv[1]===import.meta.filename){
  const archive=has('content-archive')?(arg('content-archive')?.startsWith('http')?arg('content-archive'):true):null;
  // --relay-limits minReady=4,splitInto=12,buyReserve=2: whole numbers for the relay's limits (lib/relay.mjs DEFAULT_LIMITS).
  const limits=Object.fromEntries((arg('relay-limits')||'').split(',').filter(Boolean).map(kv=>{const [k,v]=kv.split('=');if(!/^[a-zA-Z]+$/.test(k)||!/^\d{1,12}$/.test(v||''))throw Error('--relay-limits: name=number,…');return [k,Number(v)];}));
- const s=await startService({...(Object.keys(limits).length?{limits}:{}),owners:arg('owners'),transfers:arg('transfers'),...(arg('block-times')?{blockTimes:arg('block-times')}:{}),...(arg('groups')?{groups:arg('groups')}:{}),domain:arg('domain'),feeAddress:arg('fee-address'),node:arg('node'),start:arg('start'),startHash:arg('start-hash'),mintFrom:arg('mint-from'),state:arg('state'),network:arg('network'),
+ const s=await startService({...(Object.keys(limits).length?{limits}:{}),owners:arg('owners'),transfers:arg('transfers'),...(arg('block-times')?{blockTimes:arg('block-times')}:{}),...(arg('groups')?{groups:arg('groups')}:{}),domain:arg('domain'),feeAddress:arg('fee-address'),node:arg('node'),start:arg('start'),startHash:arg('start-hash'),mintFrom:arg('mint-from'),state:arg('state'),network:arg('network'),xmr20Inscribers:(arg('xmr20-inscribers')||'').split(',').filter(Boolean),
   port:arg('port'),fees:{mint:arg('mint-fee')||0,collection:arg('collection-fee')||0},carrierBin:arg('carrier-bin'),carrierState:arg('carrier-state'),carrierStart:arg('carrier-start'),carrierNetwork:arg('carrier-network'),contentDir:arg('content-dir'),collections:arg('collections'),contentArchive:archive,views:arg('views'),
   origins:process.argv.flatMap((a,i)=>a==='--allow-origin'?[process.argv[i+1]]:[]),extensions:process.argv.flatMap((a,i)=>a==='--allow-extension'?[process.argv[i+1]]:[]),behindProxy:has('behind-proxy'),testHooks:has('test-hooks'),log:v=>console.log(new Date().toISOString(),JSON.stringify(v))});
  console.log(`Mordinals reader on http://127.0.0.1:${s.port} (${s.owners.length} Mordinals, block ${s.reader.height}${s.relay?', relay on':', reader only'})`);
