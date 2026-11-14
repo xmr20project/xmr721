@@ -93,7 +93,8 @@ export function openFollower({dir,chain,reader,pick,name='',keep=100,log=()=>{}}
   // Before the reader's first pass there is no chain to follow.
   if(!startHash)return {height:covered?.height??start,added:0,complete:false};
   // A folder that could not be read is read again; while it cannot be, nothing is done and nothing is overwritten.
-  if(folder==='unreadable'){folder=load();if(folder==='unreadable')throw Error('The follower folder cannot be read now.');}
+  // What it holds then is new to every view made before.
+  if(folder==='unreadable'){folder=load();if(folder==='unreadable')throw Error('The follower folder cannot be read now.');version++;epoch++;}
   // A folder read before the reader knew its start block's hash, and made on another chain: start over.
   if(covered&&covered.startHash!==startHash){forget();log({follower:name,startingOver:'another start block hash'});}
   if(!covered){const c=seal({schema:SCHEMA,name,network,start,startHash,height:start,hash:startHash,size:0,sum:NONE,recent:[]});mkdirSync(dir,{recursive:true});save(c);forget();covered=c;}

@@ -77,8 +77,8 @@ pictures need the optional `sharp` package, which `npm install` adds.
 
 A mainnet reader also keeps the owners current. The files end at its start block, so from
 there it looks for transfers of these 100 NFTs in every block it has read
-([`../reader/lib/earlier.mjs`](../reader/lib/earlier.mjs)), and applies them by the
-[ownership rules](FORMAT.md) once they are 10 blocks deep. `/collections/genesis` then
+([`../reader/lib/earlier.mjs`](../reader/lib/earlier.mjs)), and applies them, and the saved
+records, by the [ownership rules](FORMAT.md) once they are 10 blocks deep. `/collections/genesis` then
 gives each NFT's owner, latest transaction and number of transfers as of the block named
 in `ownersAsOf`; `following` says whether that is the newest block the reader holds
 (`complete`) and how many transfers are not deep enough yet (`pending`).

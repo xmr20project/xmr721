@@ -10,9 +10,11 @@
 // owners worked out here, and any difference stops the run. --extras also saves the raw extra fields, so the same
 // result can be rebuilt offline (tests/nfts.test.mjs).
 // With --scan nothing is asked of anyone: the transactions are those a scan of every block of a range found, and the
-// files then say that the owners are those at the range's last block (`ownersAsOf`) and which blocks were read. A scan
-// also finds records that name the collection and are not valid (anyone can publish one); they stay in the saved
-// transactions, change nothing, and are counted in what this prints.
+// files then say that the owners are those at the range's last block (`ownersAsOf`) and which blocks were read. Those
+// owners are what the format gives there: only records 10 blocks deep at that block count. Every scanned transaction is
+// saved (--extras), the ones that do not count yet as well, so that a reader can apply them once they do. A scan also
+// finds records that name the collection and are not valid (anyone can publish one); they are saved too, change
+// nothing, and are counted in what this prints.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { recordOf } from '../lib/format.mjs';
@@ -67,6 +69,13 @@ export async function build(extras, collectionId, { allowRefused = false } = {})
   };
 }
 
+// The collection as a scan file (scan-collection.mjs) gives it: only records 10 blocks deep at the scan's last block
+// count. -> build()'s result, with `notDeepYet`, the number of scanned transactions that do not count yet.
+export async function buildFromScan(scan) {
+  const counted = scan.transactions.filter(t => scan.to - t.height + 1 >= 10);
+  return { ...(await build(counted, scan.collection, { allowRefused: true })), notDeepYet: scan.transactions.length - counted.length };
+}
+
 if (process.argv[1] === import.meta.filename) {
   const scan = arg('scan') ? JSON.parse(readFileSync(arg('scan'), 'utf8')) : null;
   const node = arg('node'), id = scan ? scan.collection : arg('collection'), name = arg('name');
@@ -89,7 +98,7 @@ if (process.argv[1] === import.meta.filename) {
     ids = [...ids];
   } else ids = [...new Set([id, ...readFileSync(arg('txids'), 'utf8').split(/\s+/).filter(Boolean)])];
 
-  const extras = scan ? scan.transactions : await fetchExtras(node, ids), out = await build(extras, id, { allowRefused: Boolean(scan) });
+  const extras = scan ? scan.transactions : await fetchExtras(node, ids), out = scan ? await buildFromScan(scan) : await build(extras, id);
   if (theirs) {
     const mine = new Map(out.items.map(t => [t.id, t]));
     for (const t of theirs) {
@@ -102,5 +111,5 @@ if (process.argv[1] === import.meta.filename) {
   writeFileSync(join(HERE, '..', 'collections', name + '.json'), JSON.stringify(header, null, 1) + '\n');
   writeFileSync(join(HERE, '..', 'collections', name + '.jsonl'), out.items.map(t => JSON.stringify(t) + '\n').join(''));
   if (arg('extras')) writeFileSync(arg('extras'), JSON.stringify({ collection: id, transactions: extras.map(({ txid, height, pos, extra }) => ({ txid, height, pos, extra })) }) + '\n');
-  console.log(JSON.stringify({ ...header, transactions: extras.length, refused: out.refused, comparedWithReader: Boolean(theirs), fromScan: Boolean(scan) }));
+  console.log(JSON.stringify({ ...header, transactions: extras.length, notDeepYet: out.notDeepYet ?? 0, refused: out.refused, comparedWithReader: Boolean(theirs), fromScan: Boolean(scan) }));
 }

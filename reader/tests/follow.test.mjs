@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash,randomBytes} from 'node:crypto';
-import {mkdtempSync,rmSync,writeFileSync,readFileSync,appendFileSync,existsSync,mkdirSync,truncateSync,chmodSync} from 'node:fs';
+import {mkdtempSync,rmSync,writeFileSync,readFileSync,appendFileSync,existsSync,mkdirSync,truncateSync,chmodSync,renameSync} from 'node:fs';
 import {createServer} from 'node:http';
 import {deflateRawSync} from 'node:zlib';
 import {tmpdir} from 'node:os';
@@ -22,7 +22,7 @@ import {reduce,signedBy} from '../../xmr20-nfts/lib/ledger.mjs';
 import {encodeMap} from '../../xmr20-nfts/lib/map-codec.mjs';
 import {loadCollection,loadCollections} from '../../xmr20-nfts/lib/collection.mjs';
 import {scanCollection} from '../../xmr20-nfts/tools/scan-collection.mjs';
-import {build} from '../../xmr20-nfts/tools/build-collection.mjs';
+import {build,buildFromScan} from '../../xmr20-nfts/tools/build-collection.mjs';
 
 const dirs=[];test.after(()=>{for(const d of dirs)rmSync(d,{recursive:true,force:true});});
 const temp=name=>{const d=mkdtempSync(join(tmpdir(),name));dirs.push(d);return d;};
@@ -333,10 +333,10 @@ test('the views take nothing in the follower\'s folder on trust, and odd collect
  const made=await build(txs,id,{allowRefused:true});assert.deepEqual([made.refused,made.items.map(x=>x.id)],[1,[txs[2].txid]]);
  const scanned={key:'s',header:{...made.collection,ownersAsOf:asOf},items:made.items,transactions:txs},view=collectionOwners({collection:scanned,follower:{entries:[],version:0,epoch:0,height:START,hash:asOf.hash,complete:true},reader});
  assert.equal(view.on(),true);const r=await view.refresh();assert.deepEqual([r.tokens.size,r.tokens.get(txs[2].txid).owner,r.events.map(e=>e.status)],[1,w.b.address,['accepted','refused','accepted']]);
- // Files whose last record is not 10 blocks deep at the start block name owners the format would not name there yet:
- // they are served as they are and not continued.
+ // Saved records less than 10 blocks deep at the start block count once they are deep enough, like kept ones.
  const late=await collectionFiles({max:2,asOf}),l=loadCollection(late.dir,'test');l.transactions=l.transactions.map((x,i)=>i===2?{...x,height:START-3}:x);
- assert.equal(collectionOwners({collection:l,follower,reader}).on(),false);
+ const lv=collectionOwners({collection:l,follower:{entries:[],version:0,epoch:0,height:START,hash:asOf.hash,complete:true},reader});
+ assert.equal(lv.on(),true);const ls=await lv.refresh();assert.deepEqual([ls.tokens.size,lv.status.pending],[1,1]);
  // Collection objects that are not what the loader gives: the service is made, steps and answers.
  const odd=new Map([['none',{key:'none',header:null,items:[null],transactions:[]}],['half',{key:'half',header:{id:'x'},items:[],transactions:[{}]}],['test',collection]]);
  const real=openFollower({dir:temp('follower-'),chain,reader,pick:picker({nfts:[t1]}).pick,name:'t'}),service=createService({reader,owners,collections:odd,follower:real});
@@ -344,6 +344,42 @@ test('the views take nothing in the follower\'s folder on trust, and odd collect
  try{await service.ready;chain.mine();const step=await service.step();assert.equal(step.height,START+1);
   const all=await (await fetch(at+'/collections')).json();assert.deepEqual(all.collections.map(x=>[x.key,Boolean(x.following)]),[['none',false],['half',false],['test',true]]);
  }finally{await service.close();}});
+
+test('found by the outside review: what counts is always the exact set of records, and a folder read late is news',async()=>{
+ // A transfer refused once it counted, then the next block's valid transfer comes 10 deep with the same number of
+ // records counting as before: the owners are made again.
+ {const {chain,reader}=await world(),asOf={height:START,hash:reader.meta.startHash},c=await collectionFiles({max:2,asOf}),collection=loadCollection(c.dir,'test'),[t1]=c.items.map(t=>t.id);
+  const choice=picker({nfts:[t1]}),follower=openFollower({dir:temp('follower-'),chain,reader,pick:choice.pick,name:choice.name}),view=collectionOwners({collection,follower,reader});
+  const A=tx(nftExtra(move(w.b,t1,t1,w.c))),B=tx(nftExtra(move(w.b,t1,t1,w.artist)));chain.mine([A,B]);const C=tx(nftExtra(move(w.c,t1,A.txid,w.artist)));chain.mine([C]);
+  for(let i=0;i<FINAL;i++)chain.mine();await reader.sync();
+  await follower.run({limit:FINAL});let s=await view.refresh();assert.deepEqual([view.status.asOf.height,s.tokens.get(t1).owner,view.status.pending],[START+FINAL,w.c.address,1]);
+  await follower.run({limit:1});s=await view.refresh();assert.deepEqual([view.status.asOf.height,s.tokens.get(t1).owner,s.tokens.get(t1).last,view.status.pending],[START+FINAL+1,w.artist.address,C.txid,0]);
+  await follower.run();s=await view.refresh();assert.deepEqual([s.tokens.get(t1).owner,view.status.complete],[w.artist.address,true]);}
+ // A follower folder that could not be read when the service started is read at a later pass: the views take in what
+ // it holds, though no new block brings anything.
+ {const {chain,reader}=await world(),hash=reader.meta.startHash,list=loadEarlier(listDir([line(1,110,deploy({tick:'ONE'}))],{toHash:hash}));
+  const choice=picker({deployers:[w.deployer.address]}),dir=temp('follower-');
+  chain.mine([tx(deployExtra(deploy({tick:'TWO',mint:MINTS[1]})))]);await reader.sync();await openFollower({dir,chain,reader,pick:choice.pick,name:choice.name}).run();
+  renameSync(join(dir,'covered.json'),join(dir,'covered.keep'));mkdirSync(join(dir,'covered.json'));
+  const follower=openFollower({dir,chain,reader,pick:choice.pick,name:choice.name}),view=earlierTokens({base:list,follower,reader});
+  assert.deepEqual(view.view.tokens.map(x=>x.tick),['ONE']);await assert.rejects(follower.run(),/cannot be read now/);
+  rmSync(join(dir,'covered.json'),{recursive:true});renameSync(join(dir,'covered.keep'),join(dir,'covered.json'));
+  assert.deepEqual(await follower.run(),{height:START+1,added:0,complete:true});assert.deepEqual(view.view.tokens.map(x=>x.tick),['ONE','TWO']);}
+ // A collection built from a scan names the owners the format gives at the scan's last block: a transfer less than 10
+ // blocks deep there does not count yet. It is saved all the same, and a reader that continues the files applies it
+ // once it is deep enough.
+ {const {chain}=await world(),id=sha('scanned with a late transfer'),dep={txid:id,tx:{version:2,extra:[...nftExtra(signed({...base('nft_deploy',w.artist),name:'TEST',max:1,meta:'00'.repeat(32)},w.artist))],vout:[]}};
+  const m=tx(nftExtra(mintOf(w.artist,id,1,w.b,1)));chain.mine([dep,m]);for(let i=0;i<FINAL;i++)chain.mine();const late=tx(nftExtra(move(w.b,m.txid,m.txid,w.c)));chain.mine([late]);chain.mine();chain.mine();
+  const to=chain.tip,scan=await scanCollection(h=>blockExtras(chain,h),id,START+1,to),made=await buildFromScan(scan);
+  assert.deepEqual([scan.transactions.length,made.notDeepYet,made.items[0].owner,made.items[0].transfers],[3,1,w.b.address,0]);
+  // That collection, continued by a reader that starts at the scan's last block.
+  const reader=openReader({dir:temp('follow-reader-'),chain,domain:DOMAIN,feeAddress:w.fee.address,owners,start:to,mintFrom:to});await reader.sync();
+  const collection={key:'s',header:{...made.collection,ownersAsOf:{height:to,hash:scan.toHash}},items:made.items,transactions:scan.transactions};
+  const follower=openFollower({dir:temp('follower-'),chain,reader,pick:picker({nfts:[m.txid]}).pick,name:'s'}),view=collectionOwners({collection,follower,reader});
+  await follower.run();let s=await view.refresh();assert.deepEqual([s.tokens.get(m.txid).owner,view.status],[w.b.address,{asOf:{height:to,hash:scan.toHash},pending:1,complete:true}]);
+  // The transfer is 3 blocks deep at the scan's last block; 6 blocks later it is 9 deep, one more and it counts.
+  for(let i=0;i<FINAL-4;i++)chain.mine();await reader.sync();await follower.run();s=await view.refresh();assert.deepEqual([s.tokens.get(m.txid).owner,view.status.pending],[w.b.address,1],'9 blocks deep');
+  chain.mine();await reader.sync();await follower.run();s=await view.refresh();assert.deepEqual([s.tokens.get(m.txid).owner,s.tokens.get(m.txid).last,view.status.pending],[w.c.address,late.txid,0]);}});
 
 // A node over HTTP, as lib/chain.mjs asks it, answering from the made-up chain.
 function nodeServer(chain){

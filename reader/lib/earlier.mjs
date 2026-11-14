@@ -64,19 +64,19 @@ export function earlierTokens({base,follower=null,reader}){
 
 // Who owns the NFTs of one saved collection (xmr20-nfts/lib/collection.mjs). The collection's saved records and the
 // transfers the follower found are applied in chain order by the format's own rules (xmr20-nfts/lib/ledger.mjs): the
-// result is that ledger at the follower's last block, where a record counts once it is 10 blocks deep. The files are
-// continued only when they hold every record up to the reader's start block (`ownersAsOf`), every edition is minted,
-// so that the collection's NFTs are the ones in the files, and their last record is 10 blocks deep at that block, so
-// that the owners they name are the ledger's there. The pictures were judged when the files were made (a saved WebP
-// mint that is among the NFTs had a valid picture, one that is not had none that counted); nothing here needs a
-// picture decoder.
+// result is that ledger at the follower's last block, where a record counts once it is 10 blocks deep, a saved one
+// as much as a kept one. The files are continued only when they hold every record up to the reader's start block
+// (`ownersAsOf`) and every edition is minted, so that the collection's NFTs are the ones in the files. The pictures
+// were judged when the files were made (a saved WebP mint that counted there and is among the NFTs had a valid
+// picture, one that is not had none that counted); nothing here needs a picture decoder: every edition is minted, so
+// any later mint is refused before its picture is looked at.
 // Only this collection's records are read: a nonce its signer used in a record of another collection is not seen.
 export function collectionOwners({collection,follower=null,reader}){
  const h=collection.header,ids=new Set(collection.items.map(t=>t.id)),cache=new Map(),checked=new Map(),dead=new Set();
  // Saved transactions that do not read as records leave nothing to continue.
  let base=[];try{base=(collection.transactions||[]).map(t=>({txid:t.txid,height:t.height,envelope:recordOf(Buffer.from(t.extra,'hex'))}));if(base.some(e=>!e.envelope||!Number.isSafeInteger(e.height)))base=[];}catch{base=[];}
- const known=new Map(base.filter(e=>e.envelope.record.op==='nft_mint'&&e.envelope.record.image.codec==='json-text-webp-1').map(e=>[e.txid,ids.has(e.txid)]));
- const on=()=>Boolean(follower)&&base.length>0&&h.minted===h.max&&atStart(h.ownersAsOf?.height,h.ownersAsOf?.hash,reader)&&base.every(e=>h.ownersAsOf.height-e.height+1>=FINAL);
+ const known=new Map(base.filter(e=>e.envelope.record.op==='nft_mint'&&e.envelope.record.image.codec==='json-text-webp-1'&&h.ownersAsOf?.height-e.height+1>=FINAL).map(e=>[e.txid,ids.has(e.txid)]));
+ const on=()=>Boolean(follower)&&base.length>0&&h.minted===h.max&&atStart(h.ownersAsOf?.height,h.ownersAsOf?.hash,reader);
  // A kept line counts as a transfer of this collection only if it reads as one and its signature is its signer's:
  // the follower's folder is checked again here, once for each line, a few at a time.
  const check=e=>{let v=null;try{v=recordOf(Buffer.from(e.extra,'hex'));}catch{v=null;}return v&&v.record.op==='nft_transfer'&&ids.has(v.record.token)&&signedBy(v)?v:null;};
@@ -89,12 +89,15 @@ export function collectionOwners({collection,follower=null,reader}){
   if(follower.epoch!==epoch){dead.clear();key=null;epoch=follower.epoch;}
   let n=0;for(const e of kept){if(checked.has(e.txid))continue;checked.set(e.txid,check(e));if(++n%20===0)await new Promise(done=>setImmediate(done));}
   const live=kept.map(e=>({txid:e.txid,height:e.height,envelope:checked.get(e.txid)})).filter(e=>e.envelope&&!dead.has(e.txid));
-  const deep=e=>at.height-e.height+1>=FINAL,final=live.filter(deep),k=at.version+':'+final.length;
-  if(k!==key||!state){const r=await reduce([...base,...final],{known,verified:new Set(final.map(e=>e.txid)),cache});
+  // The records that count at this block, saved and kept, in chain order; the state is made again whenever they are
+  // another set of records, and only then.
+  const deep=e=>at.height-e.height+1>=FINAL,final=live.filter(deep),applied=[...base.filter(deep),...final];
+  const k=createHash('sha256').update(applied.map(e=>e.txid).join(',')).digest('hex');
+  if(k!==key||!state){const r=await reduce(applied,{known,verified:new Set(final.map(e=>e.txid)),cache});
    // A transfer that was refused once it counted moves nothing and uses no nonce: it need not be looked at again.
    const mine=new Set(final.map(e=>e.txid));for(const e of r.events)if(e.status!=='accepted'&&mine.has(e.txid))dead.add(e.txid);
    state={tokens:new Map(r.tokens.map(t=>[t.id,t])),events:r.events};key=k;}
-  state.pending=live.filter(e=>!deep(e)).length;state.at=at;return state;}
+  state.pending=base.filter(e=>!deep(e)).length+live.filter(e=>!deep(e)).length;state.at=at;return state;}
  return {on,ids,refresh,
   // Null while the files are not continued (then they are served as they are) and until the first refresh.
   get state(){return state;},
