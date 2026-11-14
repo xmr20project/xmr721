@@ -62,6 +62,8 @@ test('create a collection, then mint a picture into it; too much content and ano
  await page.locator('[data-action=next]').click();assert.match(await text('[data-section=create] .error'),/76 bytes too large/);
  // A picture, a name, and the wrong creator first.
  const png=await picture();await page.locator('[data-field=text]').fill('');await page.locator('[data-field=file]').setInputFiles({name:'tiny.png',mimeType:'image/png',buffer:png});
+ // (The page reads the file before it counts it: the picture's preview shows that it has.)
+ await page.locator('[data-section=create] .nftpic img').waitFor();
  await page.locator('[data-field=name]').fill('First of five');
  assert.match(await text('[data-room]'),new RegExp(`^${png.length+13} of 824 bytes used`));
  await page.locator('[data-field=creator]').fill(W.bob);await page.locator('[data-action=next]').click();
