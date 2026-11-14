@@ -6,7 +6,7 @@
 //
 // What is inscribed stays on the chain, so the inscriber holds back rather than guess: it inscribes launches made
 // from a set time on, a bounded number a day, and stops taking launches from a list that suddenly shows many new ones.
-import {existsSync,mkdirSync,readFileSync,renameSync,writeFileSync} from 'node:fs';
+import {existsSync,mkdirSync,readFileSync,renameSync,writeFileSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {deployRecord} from '../lib/inscribe.mjs';
 import {deployText,readDeploy,TYPE_JSON} from '../lib/token.mjs';
@@ -24,6 +24,8 @@ import {unhex} from '../../rules/lib/monero.mjs';
 export const DEFAULT_LIMITS={inFlight:3,perTurn:10,resendAfter:20,settle:10,burst:20,perDay:50,quiet:2,skipped:200};
 // Times are milliseconds; a time before this one was given in seconds by mistake.
 export const EARLIEST=1e12;
+// How long a queued launch its list no longer shows is kept in case it comes back.
+const GONE_KEPT=30*86400000;
 
 // The index and relay of one reader service (reader/service.mjs), over HTTP.
 export function httpIndex(base,{timeout=20000}={}){
@@ -41,14 +43,20 @@ export function httpIndex(base,{timeout=20000}={}){
   records:async address=>need(await call('/address/'+encodeURIComponent(address)+'/records'),'records').records,
   // Every deploy inscription on the ledger that names this mint, listed or not: [{id, inscriber, listed, burned, …}].
   deploys:async mint=>need(await call('/xmr20/deploys/'+encodeURIComponent(mint)),'deploys').deploys,
-  // Records of this address the relay still has waiting for a block.
-  waiting:async address=>{const r=await call('/address/'+encodeURIComponent(address));return need(r,'address').waiting?.length||0;},
   status:async id=>{const r=await call('/status/'+id);if(r.status===404)return null;return need(r,'status');}};}
 
 export function createInscriber({dir,sources,index,inscriber,domain,network='mainnet',since,limits={},log=()=>{},now=Date.now}){
  if(!Number.isSafeInteger(since)||since<EARLIEST)throw Error('The inscriber needs the time from which launches are inscribed, in milliseconds.');
  if(!/^[0-9a-f]{64}$/.test(domain||''))throw Error('The inscriber needs the ledger domain.');
+ // Before it makes a record the inscriber has to learn what exists for the launch: an index that cannot say is not used.
+ if(typeof index?.deploys!=='function'||typeof index?.records!=='function')throw Error('The inscriber needs an index that lists the deploy inscriptions of a mint and the relay\'s records of an address.');
  const lim={...DEFAULT_LIMITS,...limits},file=join(dir,'journal.json');mkdirSync(dir,{recursive:true});
+ // One inscriber per journal: a second process on the same folder would make its own records for the same launches.
+ // (The same process may open the journal again; a lock left by a process that is gone is taken over.)
+ const lock=join(dir,'journal.lock'),alive=pid=>{try{process.kill(pid,0);return true;}catch(e){return e.code==='EPERM';}};
+ if(existsSync(lock)){const pid=Number(readFileSync(lock,'utf8'));if(Number.isInteger(pid)&&pid!==process.pid&&alive(pid))throw Error('Another inscriber (process '+pid+') is running on this journal.');}
+ writeFileSync(lock,String(process.pid),{mode:0o600});
+ const close=()=>{try{if(Number(readFileSync(lock,'utf8'))===process.pid)rmSync(lock);}catch{}};process.once('exit',close);
  const journal=existsSync(file)?JSON.parse(readFileSync(file,'utf8')):{version:1,inscriber:inscriber.address,domain,launches:{}};
  if(journal.version!==1||journal.inscriber!==inscriber.address||journal.domain!==domain)throw Error('This journal was made for another inscriber or ledger.');
  const save=()=>{writeFileSync(file+'.new',JSON.stringify(journal,null,1)+'\n',{mode:0o600});renameSync(file+'.new',file);};
@@ -65,7 +73,7 @@ export function createInscriber({dir,sources,index,inscriber,domain,network='mai
 
  // What the relay already holds of this inscriber, by the Solana mint each record names (refused records aside): the
  // deploy records of an earlier run, whatever became of its journal.
- async function earlier(){const out=new Map();if(!index.records)return out;
+ async function earlier(){const out=new Map();
   for(const j of await index.records(inscriber.address)){if(j.state==='refused'||typeof j.record!=='string')continue;
    try{const d=decodeRecord(unhex(j.record),network);if(d.op!==OP.mint||d.body.creator!==inscriber.address||d.body.collection!==NO_COLLECTION||d.body.type!==TYPE_JSON)continue;
     const f=readDeploy(d.body.content);if(!f?.mint||out.has(f.mint))continue;const {p,op,...fields}=f;out.set(f.mint,{id:j.id,record:j.record,state:j.state,fields});}catch{}}
@@ -106,40 +114,46 @@ export function createInscriber({dir,sources,index,inscriber,domain,network='mai
   // 2. New launches. Every launch a source lists from `since` on is first remembered (`journal.seen`: its fields as
   //    first seen), then gets its record: oldest launch first across all lists, within the day's bound.
   journal.born??=height;
-  const seen=journal.seen??={},listedNow=new Set(),read=new Set();
+  const seen=journal.seen??={},shown=new Map();
   for(const source of sources){
    let listed;try{listed=await source.list();}catch(e){log({source:source.name,error:String(e.message).slice(0,160)});continue;}
-   read.add(source.name);
    for(const s of listed.skipped)if(s.mint&&(s.at==null||s.at>=since))skip(s.mint,source.name,s.why);
-   const current=listed.launches.filter(l=>l.at>=since);for(const l of current)listedNow.add(l.mint);
+   const current=listed.launches.filter(l=>l.at>=since);shown.set(source.name,new Set(current.map(l=>l.mint)));
+   // A launch another list had and no longer shows, now on this list, is this list's launch.
+   for(const l of current){const s=seen[l.mint];if(s?.gone&&s.source!==source.name)seen[l.mint]={mint:l.mint,source:source.name,at:l.at,fields:l.fields};}
    const fresh=current.filter(l=>!journal.launches[l.mint]&&!seen[l.mint]);
    // Many new launches at once is not how launches arrive: a list that was tampered with, or a first run with a
    // wrong time. Nothing new is taken from this list until a person has looked (raise the limit to let them through).
    // What was seen before is not new: it stays in the queue below and goes on being made.
    if(fresh.length>lim.burst){out.held=(out.held||0)+fresh.length;once('burst:'+source.name+':'+fresh.length,{held:source.name,launches:fresh.length,why:`more than ${lim.burst} new launches at once`});continue;}
    for(const l of fresh)seen[l.mint]={mint:l.mint,source:source.name,at:l.at,fields:l.fields};}
-  // A launch its list no longer shows (hidden or cancelled since it was seen) leaves the queue.
-  for(const s of Object.values(seen))if(read.has(s.source)&&!listedNow.has(s.mint)){delete seen[s.mint];log({gone:s.mint,source:s.source});}
+  // A queued launch its own list does not show in this pass is set aside, not forgotten: it is not made while it is
+  // away, it is not new when it comes back, and it leaves the queue only after a long absence.
+  for(const s of Object.values(seen)){const list=shown.get(s.source);if(!list)continue;
+   if(list.has(s.mint)){if(s.gone){delete s.gone;log({back:s.mint,source:s.source});}}
+   else if(!s.gone){s.gone=now();log({gone:s.mint,source:s.source});}
+   else if(now()-s.gone>GONE_KEPT){delete seen[s.mint];log({dropped:s.mint,source:s.source});}}
   save();
-  // A new journal does not know what an earlier run left behind. It waits a few blocks; then, before a record is made
-  // for a launch, what already exists for its mint is taken over instead (below). An index that cannot tell (no list
-  // of the relay's records) is waited on for as long as the relay still holds anything of this address.
-  if(!journal.started){if(height<journal.born+lim.quiet||(!index.records&&await index.waiting(inscriber.address)>0)){save();return {...out,quiet:Math.max(height+1,journal.born+lim.quiet),counts:counts()};}journal.started=true;}
+  // A new journal does not know what an earlier run left behind: it waits a few blocks, and before a record is made
+  // for a launch, what already exists for its mint is taken over instead (below).
+  if(!journal.started){if(height<journal.born+lim.quiet){save();return {...out,quiet:journal.born+lim.quiet,counts:counts()};}journal.started=true;}
   const day=now()-86400000,madeToday=()=>entries().filter(e=>(e.madeAt||0)>day).length;
   let held=null;const atRelay=async()=>held??=await earlier();
   for(const s of Object.values(seen).sort((a,b)=>a.at-b.at||(a.mint<b.mint?-1:1))){
-   if(!read.has(s.source))continue;
+   if(s.gone||!shown.has(s.source))continue;
+   // The day's bound comes first: a launch past it waits in the queue, and what exists for it is looked up when its turn comes.
+   if(madeToday()>=lim.perDay){out.held=(out.held||0)+1;once('day:'+Math.floor(now()/3600000),{held:'the day\'s bound',why:`${lim.perDay} records were made in the last 24 hours`});continue;}
    const base={mint:s.mint,source:s.source,at:s.at,fields:s.fields};
    // On the ledger already (inscribed before this journal existed): taken over, and never inscribed a second time by
    // itself. An inscription the inscriber burned stays withdrawn; inscribing that launch anew is a person's decision.
-   const on=index.deploys?await index.deploys(s.mint):null,mine=on?.filter(d=>d.inscriber===inscriber.address)||[];
+   const mine=(await index.deploys(s.mint)).filter(d=>d.inscriber===inscriber.address);
    if(mine.length){const live=mine.find(d=>d.listed),d=live||mine.at(-1);
     journal.launches[s.mint]={...base,fields:fieldsOf(d),id:d.id,record:d.record??null,state:live?'done':'off',...(live?{number:d.number,inscription:d.inscription,height:d.height,txid:d.txid}:{note:'an earlier inscription of this launch was burned; it is not inscribed again by itself'})};
     delete seen[s.mint];log({taken:s.mint,id:d.id,state:journal.launches[s.mint].state});if(live)out.done++;continue;}
    // With the relay already (any state but refused): that record is the launch's record, whatever the list says now.
+   // One the relay still waits to be paid for is handed over again like a record just made.
    const old=(await atRelay()).get(s.mint);
-   if(old){journal.launches[s.mint]={...base,fields:old.fields,id:old.id,record:old.record,state:'sent',sentAt:height,tries:1};delete seen[s.mint];log({taken:s.mint,id:old.id,state:old.state});continue;}
-   if(madeToday()>=lim.perDay){out.held=(out.held||0)+1;once('day:'+Math.floor(now()/3600000),{held:'the day\'s bound',why:`${lim.perDay} records were made in the last 24 hours`});continue;}
+   if(old){journal.launches[s.mint]={...base,fields:old.fields,id:old.id,record:old.record,...(old.state==='unpaid'?{state:'made'}:{state:'sent',sentAt:height,tries:1})};delete seen[s.mint];log({taken:s.mint,id:old.id,state:old.state});continue;}
    const made=deployRecord({fields:s.fields,inscriber,domain,network});
    journal.launches[s.mint]={...base,id:made.id,record:made.record,state:'made',madeAt:now()};delete seen[s.mint];out.found++;
    log({launch:s.mint,tick:s.fields.tick,mode:s.fields.mode,id:made.id});}
@@ -151,6 +165,10 @@ export function createInscriber({dir,sources,index,inscriber,domain,network='mai
    if(e.state!=='made'||flying>=lim.inFlight||handed>=lim.perTurn)continue;
    // Already a token (inscribed before this journal existed, or by another run): nothing to send.
    const t=await index.token(e.mint);if(t){settled(e,t);out.done++;continue;}
+   // The relay holds another record for this launch (another run made one while this one waited for a place): that
+   // one is the launch's record, and this one is never sent.
+   const other=(await atRelay()).get(e.mint);
+   if(other&&other.id!==e.id){Object.assign(e,{fields:other.fields,id:other.id,record:other.record,state:'sent',sentAt:height,tries:1});delete e.note;log({taken:e.mint,id:other.id,state:other.state});flying++;continue;}
    const answer=await index.submit(e.record);handed++;
    if(answer.pay){e.note='the relay asks a fee for this record; it must carry this inscriber\'s records without one';once('unpaid:'+e.id,{unpaid:e.mint,id:e.id});continue;}
    if(answer.state==='refused'){e.note=String(answer.error||'refused').slice(0,200);e.tries=(e.tries||0)+1;once('refused:'+e.id+':'+e.note,{notTaken:e.mint,id:e.id,why:e.note});
@@ -161,7 +179,7 @@ export function createInscriber({dir,sources,index,inscriber,domain,network='mai
   save();
   return {...out,counts:counts()};}
 
- return {turn,journal,entries,counts,address:inscriber.address};}
+ return {turn,journal,entries,counts,close,address:inscriber.address};}
 
 // What would be inscribed for the launches the sources list now, and what would be left out and why. Reads the lists
 // and nothing else: no key, no journal, no index, nothing signed or sent.

@@ -353,11 +353,9 @@ test('a new journal waits for as long as the relay still holds records of an ear
   curve.push(curveLaunch('SLOW',SINCE+1,{name:'first name'}));const a=open();await a.turn();assert.equal(a.entries()[0].state,'sent');
   // The relay has no coin: the record waits there for many blocks. Meanwhile the journal is lost and the list changes the name.
   rmSync(join(x.dir,'inscriber'),{recursive:true});curve[0].name='second name';
-  // An index that cannot list the relay's records is waited on for as long as the relay holds anything of this address.
-  const blind=open({index:{...x.index,records:undefined,deploys:undefined},limits:{quiet:2}});
-  for(let i=0;i<4;i++){const out=await blind.turn();assert.equal(out.found,0,'pass '+i);assert.ok(out.quiet>out.height);await x.block();}
-  rmSync(join(x.dir,'inscriber'),{recursive:true});
-  // One that can takes the waiting record over as the launch's record: nothing new is made, whatever the list says now.
+  // An index that cannot say what exists for a launch is not used at all.
+  assert.throws(()=>open({index:{...x.index,records:undefined}}),/needs an index that lists/);assert.throws(()=>open({index:{...x.index,deploys:undefined}}),/needs an index that lists/);
+  // The new journal takes the waiting record over as the launch's record: nothing new is made, whatever the list says now.
   const b=open({limits:{quiet:2}});for(let i=0;i<5;i++){const out=await b.turn();assert.equal(out.found,0,'pass '+i);await x.block();}
   assert.deepEqual(b.entries().map(e=>[e.fields.name,e.state]),[['first name','sent']]);
   carrier.ready=5;for(let i=0;i<3;i++)await x.block();
@@ -394,14 +392,6 @@ test('a lost journal takes over a record the relay gave up on as stuck: one laun
   await x.block();await b.turn();
   assert.deepEqual(reader.journal.filter(e=>e.ok).map(e=>e.id),[original]);assert.deepEqual((await tokens()).map(t=>[t.id,t.name]),[[original,'first name']]);
   assert.equal(b.entries()[0].state,'done');
-  // The same holds for an index that cannot list the relay's records: a stuck record still counts as held, so it waits.
-  curve.push(curveLaunch('LONG2',SINCE+2,{name:'first'}));await b.turn();const second=b.journal.launches[mintOf('LONG2')].id;
-  for(let n=0;n<=relay.limits.stuckBlocks;n++){chain.mine([],{only:[]});await service.step();}
-  assert.equal(relay.status(second).state,'stuck');assert.equal(await index.waiting(x.signer.address),1);
-  rmSync(join(x.dir,'inscriber'),{recursive:true});curve[1].name='changed';
-  const blind=open({index:{...index,records:undefined,deploys:undefined},limits:{quiet:2}});
-  for(let i=0;i<4;i++){const out=await blind.turn();assert.equal(out.found,0);chain.mine([],{only:[]});await service.step();}
-  await x.block();assert.equal(reader.journal.filter(e=>e.ok).length,2);
  }finally{await service.close();}});
 
 test('an inscription its inscriber burned stays withdrawn: a new journal does not inscribe that launch again, even under another name',async()=>{
@@ -433,7 +423,52 @@ test('the day\'s bound is shared oldest launch first across the lists, and a lon
   assert.equal(Object.keys(a.journal.seen).length,601);
   let made=0;for(let d=0;d<3;d++){clock+=86_400_001;made+=(await a.turn()).found;}
   assert.equal(made,15);assert.equal(Object.keys(a.journal.seen).length,586);
-  // A launch its list no longer shows leaves the queue instead of being inscribed later.
-  const hidden=curve.findIndex(c=>c.symbol==='Q29x19');curve.splice(hidden,1);await a.turn();
-  assert.ok(x.logs.some(l=>l.gone===mintOf('Q29x19')));assert.equal(a.journal.seen[mintOf('Q29x19')],undefined);
+  // A launch its list does not show for a while is set aside: not made while away, not new when it is back.
+  const hidden=curve.findIndex(c=>c.symbol==='Q29x19'),[row]=curve.splice(hidden,1);await a.turn();
+  assert.ok(x.logs.some(l=>l.gone===mintOf('Q29x19')));assert.ok(a.journal.seen[mintOf('Q29x19')].gone);
+  // A whole list answering empty for a pass (and twenty new launches arriving with its return) trips nothing.
+  const all=curve.splice(0);await a.turn();assert.equal(Object.values(a.journal.seen).filter(s=>s.gone).length,586);
+  curve.push(...all,row);for(let j=0;j<20;j++)curve.push(curveLaunch('R'+j,SINCE+5000+j));const back=await a.turn();
+  assert.ok(!x.logs.some(l=>/at once/.test(l.why||'')));assert.equal(Object.values(a.journal.seen).filter(s=>s.gone).length,0);assert.equal(Object.keys(a.journal.seen).length,606);
+  clock+=86_400_001;assert.equal((await a.turn()).found,5);
+  // After a long absence a launch leaves the queue.
+  curve.splice(curve.findIndex(c=>c.symbol==='R19'),1);await a.turn();clock+=31*86_400_000;await a.turn();assert.equal(a.journal.seen[mintOf('R19')],undefined);
  }finally{await x.service.close();}});
+
+// ---- Found in a check of the fixes above ----
+
+test('one inscriber per journal; a record waiting for a place gives way to one another run handed over for the same launch',async()=>{
+ const x=await world(),{curve,open,block,tokens,index,reader}=x;
+ try{
+  curve.push(curveLaunch('ONCE',SINCE+1,{name:'first name'}));
+  // The relay is busy: the record is made and kept, not handed over.
+  const busy={...index,submit:async()=>({state:'refused',error:'The relay is busy.',status:503})},a=open({index:busy});await a.turn();
+  assert.deepEqual(a.entries().map(e=>e.state),['made']);const mine=a.entries()[0].id;
+  // Another run with the same key and its own journal folder inscribes the same launch after the list changed its name.
+  curve[0].name='second name';const b=open({dir:join(x.dir,'other-journal')});await b.turn();const theirs=b.entries()[0].id;assert.notEqual(theirs,mine);
+  // The first run looks again before it hands its record over, finds the other one with the relay, and takes it.
+  const c=open();await c.turn();assert.deepEqual(c.entries().map(e=>[e.id,e.state,e.fields.name]),[[theirs,'sent','second name']]);
+  await block();await c.turn();await b.turn();
+  assert.deepEqual(reader.journal.filter(e=>e.ok).map(e=>e.id),[theirs]);assert.deepEqual((await tokens()).map(t=>t.id),[theirs]);
+  // A journal folder is one process's: a live other process on it is refused, a lock left by a dead one is taken over.
+  const lock=join(x.dir,'inscriber','journal.lock');writeFileSync(lock,String(process.ppid));assert.throws(()=>open(),/Another inscriber \(process \d+\) is running on this journal/);
+  writeFileSync(lock,'4194000');const d=open();assert.equal(readFileSync(lock,'utf8'),String(process.pid));d.close();assert.ok(!existsSync(lock));
+ }finally{await x.service.close();}});
+
+test('a record the relay still waits to be paid for is taken over as made, not as sent; a launch that moves to the other list is that list\'s launch',async()=>{
+ const x=await world({fees:{mint:500000000n}}),{curve,bridge,open}=x;
+ try{
+  curve.push(curveLaunch('PAY',SINCE+1));const a=open();await a.turn();assert.equal(a.entries()[0].state,'made');const id=a.entries()[0].id;
+  rmSync(join(x.dir,'inscriber'),{recursive:true});
+  const b=open();await b.turn();assert.deepEqual(b.entries().map(e=>[e.id,e.state]),[[id,'made']]);
+  // (Nothing is paid: it stays made, with the note, and is not closed.)
+  for(let i=0;i<3;i++){await x.block();await b.turn();}assert.equal(b.entries()[0].state,'made');assert.match(b.entries()[0].note,/asks a fee/);
+ }finally{await x.service.close();}
+ const y=await world(),{curve:c2,bridge:b2}=y;let clock=NOW();
+ try{
+  for(let i=0;i<2;i++)c2.push(curveLaunch('M'+i,SINCE+1+i));const a=y.open({limits:{perDay:1},now:()=>clock});await a.turn();
+  // M1 waits for the next day. Meanwhile it leaves the first list and appears on the second.
+  c2.splice(1,1);b2.push({...bridgeLaunch('M1B',SINCE+9),mint:mintOf('M1')});await a.turn();await a.turn();
+  assert.deepEqual([a.journal.seen[mintOf('M1')].source,a.journal.seen[mintOf('M1')].fields.mode,a.journal.seen[mintOf('M1')].gone??null],['bonding-curve','bonding-curve',null]);
+  clock+=86_400_001;await a.turn();assert.deepEqual(a.journal.launches[mintOf('M1')].fields.tick,'M1B');
+ }finally{await y.service.close();}});

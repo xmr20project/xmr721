@@ -147,7 +147,9 @@ launch, the inscriber asks what already exists for its mint: a deploy inscriptio
 ledger (`/xmr20/deploys/<mint>`) is taken over as it is, and one its inscriber burned stays
 withdrawn (inscribing that launch anew is a person's decision); a record the relay still
 knows in any state, waiting or given up on (`/address/<address>/records`), is taken over
-as the launch's record, whatever the launch list says by then.
+as the launch's record, whatever the launch list says by then. It looks at the relay once
+more before it hands a record over, and it does not start on an index that cannot answer
+these two questions. A journal folder belongs to one running inscriber.
 
 What is inscribed stays on the chain, so the inscriber holds back rather than guess:
 
@@ -162,8 +164,10 @@ What is inscribed stays on the chain, so the inscriber holds back rather than gu
   pass.
 - It makes at most `--per-day` records in 24 hours (50), oldest launch first across all
   lists; every launch it has seen stays in its queue until its record is made, so launches
-  past the bound go out on the following days and none is passed over. A launch its list
-  no longer shows leaves the queue.
+  past the bound go out on the following days and none is passed over. A launch is
+  inscribed with the fields it had when it was first seen. A launch its list does not show
+  in a pass is set aside (not made while away, not new when it is back) and leaves the
+  queue after 30 days.
 - It takes nothing new from a list that shows more than `--burst` launches it has not seen
   before in one pass (20) until a person has looked; what it has seen keeps going out.
 - A new journal waits two blocks before its first record.

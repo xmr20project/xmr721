@@ -96,6 +96,13 @@ all changed:
   withdraws a token now.
 - The page build is pinned to the two live scripts by their whole content, not only by the
   places it changes.
+- A check of these three changes found more, also changed: a queued launch that its list
+  did not show for one pass was forgotten and counted as new on its return (it is set aside
+  now); a record waiting for a place at the relay could be doubled by a second run with
+  the same key (the inscriber looks at the relay again before handing over, and a journal
+  folder takes one process); the pages' "waiting for a block" list is unchanged (a stuck
+  record is not in it); the relay's per-signer list gives out collection and mint records
+  only.
 
 Open, and the reason a ledger should list its minters until they are answered:
 
