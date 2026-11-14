@@ -27,6 +27,8 @@ This is a legacy format. New inscriptions are planned to use XMR721
   latest transaction.
 - [`collections/genesis-transactions.json`](collections/genesis-transactions.json): the raw extra field
   of the deploy and the 100 mint transactions, so the two files can be rebuilt offline.
+- [`collections/genesis-txids.txt`](collections/genesis-txids.txt): the ids of those 101
+  transactions, one per line, for rebuilding the collection from your own node (below).
 
 ## How the files were made
 
@@ -46,6 +48,25 @@ What this does not show by itself: that no other transaction on the chain touche
 collection. That needs a scan of every transaction from block 3,777,673 on, which the
 reader service does and this repository does not do yet. The nonce rule also spans all
 collections, so a full check has to read every XMR20 NFT record, not only GENESIS.
+
+## Rebuilding it from your own node
+
+Nothing but a Monero node is needed. This reads the 101 transactions from the node, decodes
+and judges them with [`lib/`](lib), and writes the collection again:
+
+```
+node xmr20-nfts/tools/build-collection.mjs --node <your node> --name genesis \
+     --collection 48c2e05b20e3a704f374ed5bbae1c17b45523ed0ad1d0db772c05187a53b87e0 \
+     --txids xmr20-nfts/collections/genesis-txids.txt
+```
+
+`collections/genesis.jsonl` comes out byte for byte as it is here (`git diff` shows nothing
+for it). `collections/genesis.json` then says `comparedWithReader: false` and names no
+block for the owners, because no reader was asked; put it back with `git checkout`.
+
+An XMR721 reader started with `--collections xmr20-nfts/collections` serves the collection
+(`/collections`, `/collections/genesis`), pictures included. It serves these files: it does
+not yet look for transfers of these NFTs in the blocks it follows.
 
 ## Tools and tests
 

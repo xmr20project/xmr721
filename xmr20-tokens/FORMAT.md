@@ -5,7 +5,8 @@ XMR721 is the ledger of inscriptions on Monero: the Mordinals, and the NFTs mint
 token is announced by an inscription on Bitcoin: a short JSON text that says the token
 exists and what it is called.
 
-This document says what that text is and which inscriptions a reader lists as tokens. It
+This document says what that text is and which inscriptions a reader lists as tokens.
+Tokens announced before this, in the launchpad's earlier format, are in [EARLIER.md](EARLIER.md). It
 adds no rule to the ledger. A deploy inscription is an ordinary minted NFT (RULES.md
 section 9); the token list is a view a reader computes from the ledger, like the
 collections.

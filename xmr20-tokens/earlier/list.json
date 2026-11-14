@@ -1,0 +1,12 @@
+{
+ "format": "xmr20-earlier-deploys-v1",
+ "network": "mainnet",
+ "deployers": [
+  "4AMg1kDaXkWckE3uyd1YqoBKvn4z8ATxmWQVdtjF6aGU4sT278XoyhUV1Ve88ZMCXNXQJpjW2553NWERfMZcNsBtCkMLiNM"
+ ],
+ "from": 3772610,
+ "to": 3804029,
+ "toHash": "cddee72e248e6fc903d7850f73e29cceff64dd9a027f64afc7362d76784081cd",
+ "count": 80,
+ "sha256": "bc1c7f90225de06556df4d0e7236f18a9e0f3975a090212896b970b3f4626016"
+}
