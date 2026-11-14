@@ -414,10 +414,11 @@ Known limits:
   and at the wallet's start block when the newest block it had read was replaced since.
 - **Final means 10 blocks deep at the wallet's own node, plus the reader's word on what the ledger made of a
   record.** A settled transaction (final, or one whose coin was spent elsewhere) is kept and looked at for another
-  100 blocks: a final one whose block is replaced is sent again, and one whose coin is unspent again holds its
-  place once more. By then the wallet may have given that place to something else; a replacement deeper than 10
-  blocks can leave two transactions for one edition, and one of them is refused. A replacement deeper than 100
-  blocks is not looked for. Without a reader a record's transaction stays "in block N" in the list, and `wallet
+  100 blocks, whenever a command brings the list up to date: a final one whose block is replaced counts as sent
+  again and `wallet resend` hands it to the node, and one whose coin is unspent again holds its place once more. By
+  then the wallet may have given that place to something else; a replacement of 10 blocks or more can leave two
+  transactions for one edition, and one of them is refused. A replacement deeper than 100 blocks is not looked
+  for. Without a reader a record's transaction stays "in block N" in the list, and `wallet
   forget` takes it off once it is 100 blocks deep.
 - **A copy of a wallet folder is another wallet with the same coins.** Each copy lists only what it built itself.
   When two copies spend the same coin, one transaction gets into a block and the other copy sees its own as one

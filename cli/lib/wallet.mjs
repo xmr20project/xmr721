@@ -22,7 +22,7 @@
 // the ledger made of a record whose transaction the node shows in a block.
 //
 // Settled is not let go of: the wallet keeps a settled transaction for another 100 blocks and looks at it every time.
-// Should the chain be replaced more than 10 blocks deep, a final transaction whose block is gone, and a dead one whose
+// Should the chain be replaced 10 blocks deep or more, a final transaction whose block is gone, and a dead one whose
 // coin is unspent again, count as sent once more.
 //
 // The wallet hands its transactions to the node itself. The node's answer is one of three: it took it; it did not
@@ -52,10 +52,12 @@ export {clean,plain,ascii} from './text.mjs';
 
 const G=ed25519.ExtendedPoint.BASE,L=ed25519.CURVE.n,HEX64=/^[0-9a-f]{64}$/,HEX=/^([0-9a-f]{2})+$/;
 // A transaction is final 10 blocks deep. It is kept all the same until it is 100 blocks deep: should the chain be
-// replaced deeper than 10 blocks, the wallet still has it and sends it again. A reader more than a few blocks behind
+// replaced that deep or deeper, the wallet still has it and can send it again. A reader more than a few blocks behind
 // the wallet's node does not know the ledger as it is. A signature adds 65 bytes to a record.
 export const FINAL=10,KEEP=100,BEHIND=3;
 const SIGNATURE=65;
+// What the ledger says of a record it holds already (rules/lib/ledger.mjs).
+const DUPLICATE='This record is already on the ledger.';
 const need=(ok,why)=>{if(!ok)throw Error(why);};
 // A collection's name as the rules allow it: printable ASCII, no double quote, no space at either end.
 const NAME=/^[!#-~]([ !#-~]{0,62}[!#-~])?$/;
@@ -245,10 +247,9 @@ export function openWallet({dir,carrier,reader=null,chain,network='mainnet',nett
     if(e.kind==='split'){if(depth>=FINAL){Object.assign(e,{state:'done',height:where});if(depth>=KEEP)delete e.blob;}else live.set(e,{where,tip,depth});continue;}
     const [seen,asked]=await ask(e),view={where,tip,depth,seen:seen&&seen.height===where?seen:null,asked};
     if(depth>=FINAL&&view.seen&&seen.confirmations>=FINAL){
-     // A record the ledger refused because it holds that very record already got there in someone else's transaction.
-     let other=false;
-     if(!seen.ok&&(e.kind==='mint'||e.kind==='collection')){
-      try{other=Boolean(e.kind==='mint'?await reader.nft(e.id,network):await reader.collection(e.id,network));}catch(x){deaf(x);live.set(e,view);continue;}}
+     // A record the ledger refused because it holds that very record already got there before, in someone else's
+     // transaction: it is on the ledger.
+     const other=!seen.ok&&seen.error===DUPLICATE;
      Object.assign(e,{state:seen.ok||other?'done':'refused',height:where});
      if(seen.ok||other)delete e.error;else e.error=seen.error;if(other)e.other=true;else delete e.other;
      if(depth>=KEEP)delete e.blob;continue;}
@@ -345,10 +346,12 @@ export function openWallet({dir,carrier,reader=null,chain,network='mainnet',nett
   const id=recordId(ctx.domain,bodyBytes),out={kind,id,code:codeOf(id),bytes:record.length,text,...extra,domain:ctx.domain};
   // (A dry run shows what would be signed, not the signed record: a signed record counts in whoever's transaction.)
   if(dryRun){const {domain:_,...rest}=out;return {...rest,dryRun:true,...(notes.length?{notes}:{})};}
-  // The same record is never paid for twice: while its transaction is kept, that transaction is the record's. (It is
-  // looked for before the node is asked: one that turns out to be settled just now is still this record's.)
-  const kept=j.entries.find(e=>e.id===id&&KEPT.has(e.state));
+  // The same record is never paid for twice: while its transaction is kept, that transaction is the record's. It is
+  // looked for before the node is asked (one that turns out to be settled just now is still this record's) and after
+  // (one that was settled may count as sent again).
+  const before=j.entries.find(e=>e.id===id&&KEPT.has(e.state));
   live??=await refresh(j);
+  const kept=before??j.entries.find(e=>e.id===id&&KEPT.has(e.state));
   if(kept)return same(j,kept,live,notes);
   return first(j,await build(j,out,()=>carrier.carry(hex(record))),notes);}
 
@@ -464,7 +467,7 @@ export function openWallet({dir,carrier,reader=null,chain,network='mainnet',nett
   // block is replaced.
   forget:ref=>locked(async()=>{const j=load();clear(j);const live=await refresh(j),e=j.entries.find(e=>String(e.n)===String(ref)||e.id===ref||e.txid===ref);
    need(e,'There is no such entry. See: xmr721 wallet inscriptions');
-   const off=why=>{j.entries=j.entries.filter(x=>x!==e);save(j);return {...shown(e),forgotten:why};},v=live.get(e);
+   const v=live.get(e),off=why=>{j.entries=j.entries.filter(x=>x!==e);save(j);return {...shown(e,v),forgotten:why};};
    const later=(from,what)=>`It can leave the list at block ${from+KEEP}: until then the wallet keeps it, ${what}.`;
    if(SETTLED.has(e.state)){
     if(!e.blob)return off('removed from the list; the chain has settled it for good');

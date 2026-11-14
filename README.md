@@ -213,9 +213,11 @@ node cli/xmr721.mjs wallet inscriptions
   `wallet forget <n>` removes a transaction that was never sent (the node did not take it),
   and what it held is free at once. Check an address before you send to it.
 - **Settled is still kept.** The wallet keeps a settled transaction for another 100 blocks
-  and looks at it with every command. Should the chain be replaced more than 10 blocks deep,
-  it sends a final transaction again, and holds the place of one whose coin is unspent
-  again. After those 100 blocks `wallet forget <n>` takes it off the list.
+  and looks at it again whenever `wallet inscriptions`, `balance` or `resend` is run. Should
+  the chain be replaced 10 blocks deep or more, a final transaction whose block is gone
+  counts as sent again and `wallet resend` hands it to the node; one whose coin is unspent
+  again holds its place once more. After those 100 blocks `wallet forget <n>` takes it off
+  the list.
 - **A node that gives no answer.** If no answer comes while a transaction is handed to the
   node, nobody knows whether the node took it. The wallet says so, counts the transaction as
   sent, and `wallet resend` hands it over again when the node does not have it.

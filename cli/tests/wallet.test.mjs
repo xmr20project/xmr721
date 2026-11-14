@@ -248,6 +248,7 @@ test('forgetting: only what was never sent is given up; a sent transaction holds
   await assert.rejects(a.wallet.rescan(),/1 transaction\(s\) of this wallet are built and not sent\. Hand them to the node .* or give them up/);
   await assert.rejects(a.wallet.restore(50),/built and not sent/);
   const gone=await a.wallet.forget(2);assert.match(gone.forgotten,/^removed\. It was never sent, so what it held is free\. The coin it would have spent counts as used until: xmr721 wallet rescan$/);
+  assert.match(gone.state,/^built and not sent \(the node said no: double spend\)/);
   await assert.rejects(a.wallet.forget('99'),/no such entry/);
   // Sent, and the node has it: nothing takes it back, and the coins are not read anew beside it.
   const one=await a.wallet.inscribe({content:Buffer.from('one'),type:5,collection:c.id});assert.equal(one.edition,1);
@@ -353,6 +354,15 @@ test('a record that got onto the ledger in someone else\'s transaction is on the
   x.chain.mine([{txid:copy,tx:(await x.chain.txs([set.txid])).get(set.txid).tx}],{only:[copy]});await x.service.step();await x.blocks(FINAL+1);
   assert.deepEqual((await states(a.wallet)).at(-1),['collection','on the ledger, carried by another transaction (this one, in block N, was refused as a duplicate)']);
   await assert.rejects(a.wallet.collection({name:'Other',max:2}),/a collection of this name and size already/);
+  // A send carried by someone else moved the NFT all the same.
+  const own=await a.wallet.inscribe({content:Buffer.from('mine'),type:5});await x.block();
+  const send=await a.wallet.send({nft:own.id,to:x.bob.address}),third='fc'.repeat(32);
+  x.chain.mine([{txid:third,tx:(await x.chain.txs([send.txid])).get(send.txid).tx}],{only:[third]});await x.service.step();await x.blocks(FINAL+1);
+  assert.equal(x.reader.ledger.nft(own.id).owner,x.bob.address);assert.deepEqual((await states(a.wallet)).at(-1),['send','on the ledger, carried by another transaction (this one, in block N, was refused as a duplicate)']);
+  // Refused for any other reason, a record is refused, whatever a reader shows of it elsewhere.
+  const j=journal(a.dir),last=j.entries.at(-1);Object.assign(last,{state:'sent'});delete last.other;delete last.height;writeFileSync(join(a.dir,'journal.json'),JSON.stringify(j));
+  const twisted={...readerAt(x.base),entry:async id=>({...(await readerAt(x.base).entry(id)),error:'Minting is not open.'})};
+  assert.deepEqual((await states(a.open({reader:twisted}))).at(-1),['send','refused by the ledger: Minting is not open.']);
  }finally{await x.close();}});
 
 test('one command at a time on a wallet folder; a build that was cut short leaves a note until a rescan; a damaged journal stops everything',async()=>{

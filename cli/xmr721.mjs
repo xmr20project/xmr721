@@ -106,7 +106,7 @@ else if(!has('carrier.keys.json'))stop(command==='restore'?'There are no wallet 
 if(command==='restore'&&!settings&&!options.has('network'))stop('Say which network this wallet is for: add --network mainnet or --network stagenet.');
 // The commands that make a record need a reader and the ledger's domain. The others ask a reader, when one is given,
 // what the ledger made of the wallet's records, and go by the node alone without one.
-const makes=['inscribe','collection','send'].includes(command),looks=['inscriptions','resend','forget','rescan','restore'].includes(command);
+const makes=['inscribe','collection','send'].includes(command),looks=['inscriptions','balance','resend','forget','rescan','restore'].includes(command);
 const readerUrl=makes||looks?text('reader')||(network==='mainnet'?'https://api.xmr20.org/xmr721':null):null;if(makes&&!readerUrl)stop('On stagenet, give --reader <url> of your own reader.');
 const domain=text('domain');if(domain&&!/^[0-9a-f]{64}$/.test(domain))stop('--domain is 64 hex characters.');
 if(network!=='mainnet'&&!domain&&makes)stop('On stagenet, give --domain <hex>: the domain of the ledger to inscribe on.');
