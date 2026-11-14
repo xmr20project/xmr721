@@ -144,6 +144,6 @@ key is shown, making the view-only copy, signing with a subaddress).
   reader, replaced blocks) is in [`../reader`](../reader), which uses this library unchanged.
 - The one-time-key signing is new code and is not in any released wallet yet.
 - Feather and Cake were checked by reading source, not by using the apps.
-- No outside review. Fee cap, lowest price, reservation length and the other values listed
-  in `RULES.md` section 7 are drafts. See [`../docs/OPEN-POINTS.md`](../docs/OPEN-POINTS.md).
-- Test chain only: fee levels and timing on the real network were not measured.
+- Not audited. Fee cap, lowest price, reservation length and the other values listed in
+  `RULES.md` section 7 are those of the live ledger. See [`../docs/OPEN-POINTS.md`](../docs/OPEN-POINTS.md).
+- These tests run on a test chain: they do not measure fee levels and timing on the real network.

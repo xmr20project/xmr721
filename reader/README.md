@@ -2,7 +2,7 @@
 
 The programs that run XMR721 on the Monero chain.
 
-Draft. Not running anywhere yet; see the status in the [main README](../README.md).
+Live on Monero mainnet; see the status in the [main README](../README.md).
 
 A Mordinal that was inscribed in 2023 sits at a Monero output. Its holder can *claim* it with a signature (no coin
 is spent) and from then on it moves by signed records. Every record is a short byte string
@@ -36,8 +36,9 @@ is spent) and from then on it moves by signed records. Every record is a short b
 
 ```
 node service.mjs --owners <owners.jsonl[,added.jsonl]> --domain <hex32> --fee-address <address> --node <url> --start <height> --state <dir>
-     [--start-hash <hash>] [--mint-from <height>] [--network mainnet|stagenet] [--port 18951] [--every <ms>] [--transfers <transfers.jsonl>]
-     [--carrier-bin bin/mordinals-carrier --carrier-state <dir> --carrier-network offline-fakechain|stagenet]
+     [--start-hash <hash>] [--mint-from <height> [--minters <address>,…]] [--network mainnet|stagenet] [--port 18951] [--every <ms>] [--transfers <transfers.jsonl>]
+     [--collections <dir>] [--xmr20-inscribers <address>,…] [--xmr20-earlier <dir> | --no-xmr20-earlier] [--no-xmr20-follow]
+     [--carrier-bin bin/mordinals-carrier --carrier-state <dir> --carrier-network offline-fakechain|stagenet|mainnet]
      [--content-dir <dir> | --content-archive [url]] [--views views] [--allow-origin <origin>] [--allow-extension <id>]
      [--behind-proxy] [--test-hooks]
 ```
@@ -46,8 +47,12 @@ node service.mjs --owners <owners.jsonl[,added.jsonl]> --domain <hex32> --fee-ad
 ask. `--behind-proxy` is for a service behind its own proxy on the same machine: the request limit then follows
 the last address in `x-forwarded-for`; without it that header is ignored.
 
-Without `--carrier-bin` the service only reads. The carrier tool supports the offline test chain and stagenet; it
-has no mainnet mode yet. Build it with `sh carrier/build.sh` (Rust toolchain).
+The settings of the live mainnet ledger are in [`../docs/LAUNCH-SETTINGS.md`](../docs/LAUNCH-SETTINGS.md), and the full
+command is in the top README under "Run your own index".
+
+Without `--carrier-bin` the service only reads. The carrier tool runs on the offline test chain, stagenet and mainnet;
+on mainnet it also needs `MORDINALS_MAINNET=1` and an unrestricted node of its own. Build it with `sh carrier/build.sh`
+(Rust toolchain).
 
 ## Tests
 
@@ -145,7 +150,8 @@ replaced, the block is read again.
 
 Three waiting records per signing address, one waiting record per Mordinal, a total and a daily cap, and a request
 rate per network address. The relay's wallet pays the Monero network fee of each carrying transaction (measured
-size: about 2 kB for a claim with a payment proof). The relay charges nothing in this draft.
+size: about 2 kB for a claim with a payment proof). It can charge for collection and mint records
+(`--mint-fee`, `--collection-fee`); the project's relay charges nothing at present.
 
 ## Known limits
 

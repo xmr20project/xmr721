@@ -7,13 +7,14 @@ anyone's Monero spending is made public.
 Its first collection is **Mordinals**, the 2023 inscriptions on Monero. This repository holds
 the full ownership index of all of them, the rules, and the reader and relay that run the
 standard. With it a Mordinal can be claimed, sent and sold without spending the coin it was
-inscribed on.
+inscribed on, and new NFTs and XMR20 tokens are inscribed on the same ledger.
 
 The name follows the XMR20 token standard, the same way NFT standards on other chains
 follow their token standards.
 
-> **Draft.** Nothing here is live. No start block is set, the rules have not had an outside
-> review, and the relay runs on test chains only. See [Status](#status).
+> **Live on Monero mainnet.** The ledger starts at block 3,804,029. Mordinals are claimed,
+> sent and sold on it, and from block 3,805,946 NFTs and XMR20 tokens are inscribed on it by
+> the ledger's listed minters. See [Status](#status) and [Run your own index](#run-your-own-index).
 
 ![Gallery page of the reader, demonstration data](docs/img/gallery.png)
 
@@ -112,7 +113,39 @@ inscriptions are planned to use XMR721.
 | [`ownership-index/`](ownership-index) | The owner list, how it was made and checked, and the added entry |
 | [`xmr20-nfts/`](xmr20-nfts) | The GENESIS collection of XMR20 NFTs, their earlier format and decoder |
 | [`xmr20-tokens/`](xmr20-tokens) | XMR20 tokens as inscriptions on this ledger: the [deploy text](xmr20-tokens/FORMAT.md), the token list a reader serves, and the launch inscriber; and the [earlier XMR20 deploy inscriptions](xmr20-tokens/EARLIER.md) from before this ledger, as a checked list every reader serves |
+| [`docs/LAUNCH-SETTINGS.md`](docs/LAUNCH-SETTINGS.md) | The settings of the live ledger: start block, domain, fee address, first mint block, minters |
 | [`docs/OPEN-POINTS.md`](docs/OPEN-POINTS.md) | What review has changed so far and what is still open |
+
+## Run your own index
+
+Anyone can run the reader against their own Monero node and get the same ledger as every
+other reader with the same settings: the same records, the same owners, the same
+checkpoints. Nothing has to be trusted but the node, and the node can be your own.
+
+Node.js 22 or newer and a synchronized Monero node (`monerod`).
+
+```
+npm install
+node reader/service.mjs --network mainnet --node http://127.0.0.1:18081 --state xmr721-state \
+  --owners ownership-index/result/owners.jsonl,ownership-index/added/added.jsonl \
+  --transfers ownership-index/result/transfers.jsonl \
+  --domain ec7f7d26dba6725124df69417d43335c52e34557fc61c1d8d6b4736370e6ba1d \
+  --fee-address 45J4QMTbVoi61ZQoUzLVh7VkvjuRbqaaHW1AophY1Jbi9KzTzk8qoh43fT6JWYvkk6j6X1Stog7Xb9ZabzBrMr7tGzANudW \
+  --start 3804029 --start-hash cddee72e248e6fc903d7850f73e29cceff64dd9a027f64afc7362d76784081cd \
+  --mint-from 3805946 \
+  --minters 42zfMRhM9aQAXb4uZKw5gzVN9uTf3bUrgAz2cY7jpvbn8ZE4RWsBsKUECgXNiFKsqK9nBDPThFzTafsZX3bZ7socRQZU1qX,47hW3YWbqR5LrvJyfRSBAqArp8TcU1xnL29dn5xpEWJN9dmyohzaS4ug3e57yvSGmT3UWh47gfN4VW1soHSrXsmqD8haurE \
+  --xmr20-inscribers 42zfMRhM9aQAXb4uZKw5gzVN9uTf3bUrgAz2cY7jpvbn8ZE4RWsBsKUECgXNiFKsqK9nBDPThFzTafsZX3bZ7socRQZU1qX \
+  --collections xmr20-nfts/collections
+```
+
+It reads every block from the start block on and serves the ledger at
+`http://127.0.0.1:18951` (`/info`, `/owners`, `/nfts`, `/xmr20/tokens`, `/collections/genesis`
+and the rest in [`reader/README.md`](reader/README.md)). `/info` gives the latest checkpoint;
+two readers with the same settings at the same block give the same one.
+`node reader/tools/verify.mjs` replays a reader's log and checks it without trusting the reader.
+The settings are explained in [`docs/LAUNCH-SETTINGS.md`](docs/LAUNCH-SETTINGS.md).
+
+The XMR20 project runs one such reader at `https://api.xmr20.org/xmr721/`.
 
 ## Try it
 
@@ -132,19 +165,21 @@ them and build the relay's wallet first with `sh reader/carrier/build.sh`.
 
 ## Status
 
-- **Draft, not live.** No start block, ledger domain or fee address has been chosen.
-- **Not independently reviewed.** The claim signature and the payment proof are new code.
-  [`docs/OPEN-POINTS.md`](docs/OPEN-POINTS.md) lists what a reviewer should read first and
-  what is known to be open.
-- **Test chains only.** The relay's wallet refuses a mainnet node. No record has been put
-  on mainnet.
-- **Wallets are not in this repository.** Claim, send and sell screens exist for the XMR20
-  wallets as test builds and will be published with those wallets.
-- **New NFTs.** Draft 4 adds collections, mints of up to about 800 bytes in one
-  transaction, and burning (RULES.md section 9). The pages can create, show, send, sell and
-  burn them by signed message. A site that hosts the pages can give them a wallet
-  that approves such a record itself (`signRecord` in `reader/views/wallet.js`); the
-  released wallets do not have this yet.
+- **Live on mainnet.** The ledger starts at block 3,804,029: claims, moves, listings and
+  purchases of Mordinals. From block 3,805,946 NFTs and XMR20 tokens are minted on it.
+- **Minting is limited for now.** The ledger's setup lists two minters, the XMR20 launchpad's
+  inscriber and the Sweep and Burn issuer. Moving, selling and burning are open to every
+  owner. Opening minting to everyone from a later block is the next step.
+- **Reviewed in rounds, not audited.** Each step had review rounds before it went live;
+  [`docs/OPEN-POINTS.md`](docs/OPEN-POINTS.md) lists what they changed and what is still open.
+- **The relay** carries signed records for wallets that cannot build such a transaction
+  themselves and pays the network fee. It cannot change a record.
+- **Wallets.** Claim, send and sell screens are in the XMR20 wallets and on
+  [xmr20.org](https://xmr20.org/); any Monero wallet that can sign a message (Feather, Cake
+  Wallet, the command-line wallet) can sign the records.
+- **Earlier XMR20 formats.** The GENESIS NFTs and the XMR20 tokens deployed before this
+  ledger are read in their own formats and kept current by every mainnet reader
+  ([`xmr20-nfts/`](xmr20-nfts), [`xmr20-tokens/EARLIER.md`](xmr20-tokens/EARLIER.md)).
 - **Anyone can run a competing index.** Ownership here rests on people agreeing to these
   rules. That is why the index, the rules and the reader are public and reproducible.
 
