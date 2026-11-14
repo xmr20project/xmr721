@@ -344,9 +344,12 @@ work the same for both; the 5% protocol fee applies to every sale. Before the fi
 block, or on a ledger that names none, records 7, 8 and 9 are refused.
 
 **Who may mint.** A ledger's setup may list its minters. Then only those addresses make
-collections and mint; without a list anyone does. Like the first mint block, the list is
-part of the setup that every reader of one ledger shares, and from the first mint block
-on a checkpoint names both.
+collections and mint; without a list anyone does. A setup with a list may also name an
+**opening block** after the first mint block: from that block on anyone makes collections
+and mints, as on a ledger without a list. Like the first mint block, the list and the
+opening block are part of the setup that every reader of one ledger shares; from the first
+mint block on a checkpoint names the first mint block and the list, and from the opening
+block on also the opening block.
 Moving, selling and burning are not limited by the list: they belong to the owner.
 
 **Collection (op 7).** A minter can create one. Its id is the record's id, its creator is the

@@ -21,7 +21,9 @@ import {ownersHash} from './owners.mjs';
 
 // A state folder made for a ledger with a minter list has a schema name of its own, so code from before the list existed
 // refuses the folder instead of reading it without the list.
-export const SCHEMA='mordinals-reader-v3',SCHEMA_MINTERS='mordinals-reader-v3-minters';
+// A folder for a listed ledger that opens minting at a block has one more, so code from before the opening refuses it
+// instead of judging the blocks after it by the list alone.
+export const SCHEMA='mordinals-reader-v3',SCHEMA_MINTERS='mordinals-reader-v3-minters',SCHEMA_OPEN='mordinals-reader-v3-open';
 const sha=text=>createHash('sha256').update(text).digest('hex');
 // Only the parts of a payment transaction the rules read. A transaction of another kind is kept as it is not: the
 // rule library then refuses it by its own check.
@@ -32,16 +34,22 @@ const lines=file=>{if(!existsSync(file))return {rows:[],torn:false};const out=[]
 const replace=(file,rows)=>{const tmp=file+'.tmp',fd=openSync(tmp,'w',0o644);try{writeSync(fd,rows.map(r=>JSON.stringify(r)+'\n').join(''));fsyncSync(fd);}finally{closeSync(fd);}renameSync(tmp,file);};
 const append=(file,rows)=>{if(!rows.length)return;const fd=openSync(file,'a',0o644);try{writeSync(fd,rows.map(r=>JSON.stringify(r)+'\n').join(''));fsyncSync(fd);}finally{closeSync(fd);}};
 
-export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners,start,startHash=null,mintFrom=null,minters=null,checkpointEvery=720,maxReorg=10000,log=()=>{}}){
+export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners,start,startHash=null,mintFrom=null,minters=null,openFrom=null,checkpointEvery=720,maxReorg=10000,log=()=>{}}){
  if(!Number.isInteger(start)||start<1)throw Error('Start block required');
  mkdirSync(dir,{recursive:true});
  const files={meta:join(dir,'meta.json'),blocks:join(dir,'blocks.jsonl'),records:join(dir,'records.jsonl'),checkpoints:join(dir,'checkpoints.jsonl')};
  // The minter list is kept as one text (its addresses in order), so two setups compare as texts.
  if(minters!==null&&!(Array.isArray(minters)&&minters.length))throw Error('Bad minter list');
  const minterList=minters===null?null:[...new Set(minters.map(a=>canonical(a,network)))].sort();
- const want={schema:minterList?SCHEMA_MINTERS:SCHEMA,network,domain,feeAddress:canonical(feeAddress,network),start,owners:ownersHash(owners),...(mintFrom!==null?{mintFrom}:{}),...(minterList?{minters:minterList.join(',')}:{})};
+ if(openFrom!==null&&!(Number.isInteger(openFrom)&&minterList&&mintFrom!==null&&openFrom>mintFrom))throw Error('Bad opening block: it needs a minter list and comes after the first mint block');
+ const want={schema:openFrom!==null?SCHEMA_OPEN:minterList?SCHEMA_MINTERS:SCHEMA,network,domain,feeAddress:canonical(feeAddress,network),start,owners:ownersHash(owners),...(mintFrom!==null?{mintFrom}:{}),...(minterList?{minters:minterList.join(',')}:{}),...(openFrom!==null?{openFrom}:{})};
  let meta=existsSync(files.meta)?JSON.parse(readFileSync(files.meta,'utf8')):null;
- if(meta){for(const k of [...Object.keys(want),'mintFrom','minters'])if((meta[k]??null)!==(want[k]??null))throw Error(`This state folder was made for another ledger (${k} differs).`);
+ // A folder of the same listed ledger that has not read the opening block yet takes the opening in: up to that block
+ // the two setups judge every record alike.
+ if(meta&&openFrom!==null&&meta.openFrom==null&&meta.schema===SCHEMA_MINTERS&&[...Object.keys(want)].every(k=>k==='schema'||k==='openFrom'||(meta[k]??null)===(want[k]??null))){
+  const read=lines(files.blocks).rows.at(-1)?.height??start;
+  if(read<openFrom){meta={...meta,schema:SCHEMA_OPEN,openFrom};writeFileSync(files.meta+'.tmp',JSON.stringify(meta,null,1)+'\n');renameSync(files.meta+'.tmp',files.meta);log({opened:openFrom,at:read});}}
+ if(meta){for(const k of [...Object.keys(want),'mintFrom','minters','openFrom'])if((meta[k]??null)!==(want[k]??null))throw Error(`This state folder was made for another ledger (${k} differs).`);
   if(startHash&&meta.startHash&&meta.startHash!==startHash)throw Error('This state folder was made for another start block hash.');}
  else{meta={...want,startHash:startHash||null};writeFileSync(files.meta,JSON.stringify(meta,null,1)+'\n');}
 
@@ -67,7 +75,7 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
  const index=e=>{if(e.id&&e.ok)byId.set(e.id,e);if(!byTx.has(e.txid))byTx.set(e.txid,e);};
  // The ledger from the owner list and the journal alone. No node is asked.
  function rebuild(){
-  ledger=createLedger({network,domain,feeAddress,owners,height:start,mintFrom,minters:minterList});events=[];lots=[];bodies=new Map();byId=new Map();byTx=new Map();
+  ledger=createLedger({network,domain,feeAddress,owners,height:start,mintFrom,minters:minterList,openFrom});events=[];lots=[];bodies=new Map();byId=new Map();byTx=new Map();
   for(const e of journal){ledger.setHeight(e.height);index(e);if(!e.ok)continue;
    const bytes=unhex(e.record),d=decodeRecord(bytes,network),out=ledger.apply(bytes,e.facts);
    if(out.id!==e.id)throw Error('The journal does not match the rules at block '+e.height);note(e,d,out);}
@@ -90,8 +98,9 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
   const t=tipBlock(),accepted=journal.filter(e=>e.ok);
   // From the first mint block on a checkpoint names that block and the minter list, so two readers with different ones
   // never look alike. Before it, and on a ledger without one, a checkpoint is what it always was.
-  const minting=meta.mintFrom!=null&&t.height>=meta.mintFrom;
-  return {schema:'mordinals-checkpoint-v1',network,domain,owners:meta.owners,start,...(minting?{mintFrom:meta.mintFrom,...(meta.minters?{minters:meta.minters}:{})}:{}),height:t.height,blockHash:t.hash,records:accepted.length,
+  // From the opening block on it names that block too.
+  const minting=meta.mintFrom!=null&&t.height>=meta.mintFrom,opened=meta.openFrom!=null&&t.height>=meta.openFrom;
+  return {schema:'mordinals-checkpoint-v1',network,domain,owners:meta.owners,start,...(minting?{mintFrom:meta.mintFrom,...(meta.minters?{minters:meta.minters}:{}),...(opened?{openFrom:meta.openFrom}:{})}:{}),height:t.height,blockHash:t.hash,records:accepted.length,
    listHash:sha(accepted.map(e=>`${e.height}:${e.txid}\n`).join('')),stateHash:sha(JSON.stringify(ledger.toJSON()))};}
  // Payment transactions a buy record names, as the node has them now.
  // With `upTo`, only payments in a block at or below that height are returned, so every reader judging the same

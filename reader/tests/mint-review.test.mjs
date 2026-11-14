@@ -11,18 +11,18 @@ import {OP,decodeRecord,encodeBody,NO_COLLECTION} from '../../rules/lib/records.
 import {createLedger} from '../../rules/lib/ledger.mjs';
 import {outputSecret,signWithOutputKey} from '../../rules/lib/claim.mjs';
 import {wallet,makeTx,ownerEntry,DOMAIN} from '../../rules/tests/helpers.mjs';
-import {openReader,SCHEMA,SCHEMA_MINTERS} from '../lib/reader.mjs';
+import {openReader,SCHEMA,SCHEMA_MINTERS,SCHEMA_OPEN} from '../lib/reader.mjs';
 import {createRelay} from '../lib/relay.mjs';
 import {createService} from '../service.mjs';
-import {verify,scan} from '../tools/verify.mjs';
+import {verify,scan,download} from '../tools/verify.mjs';
 import {fakeChain,fakeCarrier,carried} from './fake.mjs';
 
 const dirs=[];test.after(()=>{for(const d of dirs)rmSync(d,{recursive:true,force:true});});
 const hex=b=>Buffer.from(b).toString('hex'),TEXT=5;
 
-function world({minters=null,mintFrom=100,coins=20,limits={},lane=[],origins=[]}={}){
+function world({minters=null,mintFrom=100,coins=20,limits={},lane=[],origins=[],holders=['alice','bob']}={}){
  const w=Object.fromEntries(['alice','bob','carol','fee',...Array.from({length:6},(_,i)=>'anon'+i)].map(n=>[n,wallet(n)]));
- const txs=[w.alice,w.bob].map((h,i)=>makeTx('reg'+i,[{to:h,amount:10n**9n}])),owners=txs.map((t,i)=>({...ownerEntry(i,t),registrationHeight:50+i,ownerHeight:50+i}));
+ const txs=holders.map(n=>w[n]).map((h,i)=>makeTx('reg'+i,[{to:h,amount:10n**9n}])),owners=txs.map((t,i)=>({...ownerEntry(i,t),registrationHeight:50+i,ownerHeight:50+i}));
  const dir=mkdtempSync(join(tmpdir(),'mint-review-'));dirs.push(dir);
  const chain=fakeChain({start:100}),setup={chain,domain:DOMAIN,feeAddress:w.fee.address,owners,start:100,mintFrom,checkpointEvery:2},pick=m=>m?m.map(n=>w[n].address):null;
  const reader=openReader({dir:join(dir,'state'),...setup,minters:pick(minters)}),carrier=fakeCarrier(chain,{coins});let clock=1_000_000;
@@ -79,7 +79,7 @@ test('the first mint block and the minter list are part of a state folder, of /i
   assert.ok(checkpoints.length>0&&checkpoints.every(c=>c.mintFrom===100));
   assert.equal((await verify({info,entries,checkpoints,owners:x.owners})).ok,true);
   const other=await verify({info,entries,checkpoints:checkpoints.map(c=>({...c,mintFrom:90})),owners:x.owners});
-  assert.equal(other.ok,false);assert.match(other.problems.join(' '),/another first mint block or minter list/);
+  assert.equal(other.ok,false);assert.match(other.problems.join(' '),/another first mint block, minter list or opening block/);
   // A ledger without a first mint block has the checkpoints it always had.
   const plain=world({mintFrom:null});await plain.reader.sync();assert.deepEqual(Object.keys(plain.reader.checkpoint()),['schema','network','domain','owners','start','height','blockHash','records','listHash','stateHash']);
  }finally{await x.service.close();}});
@@ -102,13 +102,16 @@ test('a record the relay gave up on as stuck can be handed over again',async()=>
  for(let i=0;i<4&&!x.L().nft(m.id);i++)await block();
  assert.equal(carrier.made.length,1);assert.equal(x.L().nft(m.id).owner,w.alice.address);assert.equal(relay.status(m.id).state,'done');});
 
-test('a listed minter\'s mints are not crowded out by what everyone else has waiting',async()=>{
- const x=world({coins:0,limits:{waiting:3,minReady:0},lane:['alice']});await x.reader.sync();const {relay,w}=x,send=async r=>{try{return (await relay.submit(hex(r.record))).state;}catch(e){return e.status;}};
- const got=[];for(let i=0;i<5;i++)got.push(await send(x.mint(w['anon'+i],'junk '+i)));
- assert.deepEqual(got,['queued','queued','queued',503,503]);
+test('a listed minter\'s mints are not crowded out by what everyone else has waiting, and a relay with a lane carries no one else\'s mints',async()=>{
+ const x=world({coins:0,limits:{waiting:2,minReady:0},lane:['alice'],holders:['alice','bob','carol']});await x.reader.sync();const {relay,w}=x,send=async r=>{try{return (await relay.submit(hex(r.record??r))).state;}catch(e){return e.status;}};
+ // Everyone else's records fill the relay's waiting places.
+ assert.deepEqual([await send(x.claim(1,w.bob)),await send(x.claim(2,w.carol))],['queued','queued']);
  // The lane is for the listed address's collections and mints, three at a time like any address; nobody else has it.
  assert.deepEqual([await send(x.mint(w.alice,'launch 1')),await send(x.mint(w.alice,'launch 2')),await send(x.mint(w.alice,'launch 3')),await send(x.mint(w.alice,'launch 4'))],['queued','queued','queued',429]);
- assert.equal(await send(x.mint(w.bob,'not in the lane')),503);});
+ // Collections and mints of anyone else are not carried by a relay with a lane: they come from wallets of their own.
+ const own=x.signed(x.L().prepareCollection({creator:w.bob.address,name:'mine',max:2}),w.bob);
+ for(const r of [x.mint(w.bob,'not in the lane'),x.mint(w['anon0'],'junk'),own])assert.equal(await send(r),403);
+ await assert.rejects(relay.submit(hex(x.mint(w.carol,'x').record)),/own minters only/);});
 
 test('a burned Mordinal says so wherever its state is served, and a page on an allowed origin can read an NFT\'s text',async()=>{
  const x=world({origins:['https://xmr20.org']}),{w,L,signed,block,reader}=x;await reader.sync();
@@ -155,7 +158,7 @@ test('a checkpoint names the first mint block and the minters from that block on
   assert.equal((await verify({info,entries,checkpoints,owners:x.owners})).ok,true);
   // A checkpoint from before the block that names a setup, or one after it that names none, is not this ledger's.
   for(const wrong of [checkpoints.map(c=>c.height===102?{...c,mintFrom:104}:c),checkpoints.map(c=>{const {mintFrom,minters,...rest}=c;return rest;})])
-   assert.match((await verify({info,entries,checkpoints:wrong,owners:x.owners})).problems.join(' '),/another first mint block or minter list/);
+   assert.match((await verify({info,entries,checkpoints:wrong,owners:x.owners})).problems.join(' '),/another first mint block, minter list or opening block/);
  }finally{await x.service.close();}});
 
 test('a sent record marked stuck goes out again as the same transaction, once; one that reaches a block later ends as done',async()=>{
@@ -176,22 +179,24 @@ test('a sent record marked stuck goes out again as the same transaction, once; o
 
 test('the lane has its own coins and counts: other records cannot take them, it does not take the purchases\' coins, and it does not use up others\' limits',async()=>{
  // Two coins are kept for purchases and two above them for the lane.
- const x=world({coins:4,limits:{buyReserve:2,laneReserve:2,minReady:0,perDay:2,perCallerDay:2},lane:['alice']}),{relay,carrier,w}=x;await x.reader.sync();
+ const x=world({coins:4,limits:{buyReserve:2,laneReserve:2,minReady:0,perDay:2,perCallerDay:2},lane:['alice'],holders:['alice','bob','carol']}),{relay,carrier,w}=x;await x.reader.sync();
  // The relay's wallet cannot split a coin in this test, so the counts stay put; that it tries is checked below.
  let splits=0;carrier.split=async()=>{splits++;throw Error('no split in this test');};await x.service.step();
  const send=async(r,o)=>{try{const a=await relay.submit(hex(r.record),o);return a.state+(a.note?': '+a.note:'');}catch(e){return e.status;}},waits='queued: Waiting for a coin of the relay; purchases go first.';
- assert.equal(await send(x.mint(w.bob,'ordinary')),waits);
+ assert.equal(await send({record:x.claim(1,w.bob)}),waits);
  assert.equal(await send(x.mint(w.alice,'launch 1'),{caller:'local'}),'sent');assert.equal(await send(x.mint(w.alice,'launch 2'),{caller:'local'}),'sent');
  // The lane stops at the purchases' coins.
  assert.equal(await send(x.mint(w.alice,'launch 3'),{caller:'local'}),waits);assert.equal(carrier.ready,2);
  // Lane records count neither toward the day's limit of everyone nor toward their connection's: others still get a place.
- assert.equal(await send(x.mint(w.carol,'another service on this machine'),{caller:'local'}),waits);
+ assert.equal(await send({record:x.claim(2,w.carol)},{caller:'local'}),waits);
  // With coins this low the relay keeps trying to split one, so nothing waits on a count that never changes
  // (its own setting asked for no ready coins at all: the kept coins decide).
  assert.ok(splits>=1);const before=splits;await x.block();assert.ok(splits>before);
  // A relay without a lane keeps nothing back for one: the live relay's behaviour is unchanged.
  const y=world({coins:3,limits:{buyReserve:2,laneReserve:2,minReady:0}});await y.reader.sync();await y.service.step();
- const got=await y.relay.submit(hex(y.mint(y.w.bob,'no lane here').record));assert.equal(got.state,'sent');});
+ const got=await y.relay.submit(hex(y.mint(y.w.bob,'no lane here').record));assert.equal(got.state,'sent');
+ // (A relay without a lane takes everyone's mints, as before; this one waits for a coin.)
+ assert.equal((await y.relay.submit(hex(y.mint(y.w.carol,'anyone').record))).state,'queued');});
 
 test('the content route always varies by origin, so a cached copy cannot fail an allowed page',async()=>{
  const x=world({origins:['https://xmr20.org']});await x.reader.sync();const note=x.mint(x.w.bob,'a note');await x.block(note.record);
@@ -216,3 +221,46 @@ test('the relay lists a signer\'s collection and mint records in any state, also
   assert.deepEqual((await records(w.alice)).map(r=>r.op),[8]);assert.deepEqual(await records(w.carol),[]);
   assert.equal((await web.get('/address/not-an-address/records')).status,400);
  }finally{await x.service.close();}});
+
+// ---- Opening minting to everyone from a block ----
+
+test('a listed ledger can open minting at a block: before it only the list mints, from it anyone; the setup says so',()=>{
+ const w={alice:wallet('alice'),bob:wallet('bob'),fee:wallet('fee')},owners=[];
+ const make=o=>createLedger({domain:DOMAIN,feeAddress:w.fee.address,owners,height:100,mintFrom:100,...o});
+ const L=make({minters:[w.alice.address],openFrom:105}),mint=(who,text)=>{const p=L.prepareMint({creator:who.address,type:TEXT,content:Buffer.from(text)});return L.sign(p.bodyBytes,who.sign(p.text));};
+ L.setHeight(104);assert.throws(()=>L.apply(mint(w.bob,'too early')),/only the listed addresses make collections and mint until block 105/);L.apply(mint(w.alice,'listed'));
+ L.setHeight(105);L.apply(mint(w.bob,'open now'));L.apply(L.sign(L.prepareCollection({creator:w.bob.address,name:'mine',max:2}).bodyBytes,w.bob.sign(L.prepareCollection({creator:w.bob.address,name:'mine',max:2}).text)));
+ // An opening needs a list and a first mint block before it.
+ for(const o of [{openFrom:105},{minters:[w.alice.address],openFrom:100},{minters:[w.alice.address],openFrom:99},{minters:[w.alice.address],openFrom:'105'},{minters:[w.alice.address],openFrom:105,mintFrom:null}])
+  assert.throws(()=>make(o),/opening block/,JSON.stringify(o));});
+
+test('a reader folder of the listed ledger takes an opening in while it has not read that block; checkpoints name it from then on',async()=>{
+ const x=world({minters:['alice'],mintFrom:101}),{reader,block,w}=x;await reader.sync();for(let i=0;i<3;i++)await block();
+ assert.equal(reader.height,103);
+ // Opened at block 106: the folder takes it in (and is marked so that code from before the opening refuses it).
+ const again=openReader({dir:join(x.dir,'state'),...x.setup,mintFrom:101,minters:x.pick(['alice']),openFrom:106});
+ const meta=()=>JSON.parse(readFileSync(join(x.dir,'state','meta.json'),'utf8'));
+ assert.deepEqual([meta().schema,meta().openFrom],[SCHEMA_OPEN,106]);
+ assert.throws(()=>openReader({dir:join(x.dir,'state'),...x.setup,mintFrom:101,minters:x.pick(['alice'])}),/another ledger \(schema differs\)/);
+ assert.throws(()=>openReader({dir:join(x.dir,'state'),...x.setup,mintFrom:101,minters:x.pick(['alice']),openFrom:107}),/another ledger \(openFrom differs\)/);
+ // Bob's mint is refused before the opening block and counts from it on.
+ const early=x.mint(w.bob,'early');x.chain.mine([carried(early.record)]);x.chain.mine();await again.sync();
+ const late=x.mint(w.bob,'late');x.chain.mine([carried(late.record)]);await again.sync();for(let i=0;i<4;i++){x.chain.mine();await again.sync();}
+ assert.deepEqual([again.entryByTx(again.journal.find(e=>e.id===early.id)?.txid)?.ok,again.ledger.nft(late.id)?.owner],[false,w.bob.address]);
+ assert.deepEqual(again.checkpoints.map(c=>[c.height,c.openFrom??null]),[[102,null],[104,null],[106,106],[108,106],[110,106]]);
+ // A reader made with the opening from the start reaches the same checkpoints; one that has read past the block does
+ // not take an opening in.
+ const freshDir=mkdtempSync(join(tmpdir(),'mint-open-'));dirs.push(freshDir);const fresh=openReader({dir:freshDir,...x.setup,mintFrom:101,minters:x.pick(['alice']),openFrom:106});await fresh.sync();
+ assert.deepEqual(fresh.checkpoints,again.checkpoints);
+ const past=world({minters:['alice'],mintFrom:101});await past.reader.sync();for(let i=0;i<6;i++)await past.block();
+ assert.throws(()=>openReader({dir:join(past.dir,'state'),...past.setup,mintFrom:101,minters:past.pick(['alice']),openFrom:105}),/another ledger \(schema differs\)/);
+ // The check tool knows the opening: a checkpoint that names none after it, or one before it, is not this ledger's.
+ const svc=createService({reader:again,owners:x.owners}),web=await served({service:svc});
+ try{
+  const {info,entries,checkpoints}=await download(web.base);
+  assert.equal(info.openFrom,106);const ok=await verify({info,entries,checkpoints,owners:x.owners});assert.equal(ok.ok,true,ok.problems?.join(' '));
+  for(const wrong of [checkpoints.map(c=>c.height===104?{...c,openFrom:106}:c),checkpoints.map(c=>{const {openFrom,...rest}=c;return rest;})])
+   assert.match((await verify({info,entries,checkpoints:wrong,owners:x.owners})).problems.join(' '),/opening block/);
+  // Without the opening the same log does not replay: bob's late mint is not this ledger's.
+  const {openFrom,...closed}=info;assert.equal((await verify({info:closed,entries,checkpoints:checkpoints.map(c=>{const {openFrom,...rest}=c;return rest;}),owners:x.owners})).ok,false);
+ }finally{await svc.close();}});

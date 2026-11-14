@@ -147,6 +147,46 @@ The settings are explained in [`docs/LAUNCH-SETTINGS.md`](docs/LAUNCH-SETTINGS.m
 
 The XMR20 project runs one such reader at `https://api.xmr20.org/xmr721/`.
 
+## Inscribe
+
+The `xmr721` command is a Monero wallet of its own that inscribes on the ledger: a file
+becomes an NFT, owned by the wallet or by any Monero address you name. The wallet pays the
+network fee of each transaction; there is no other fee.
+
+You need Node.js 22 or newer, a synchronized Monero node of your own (`monerod`, not a
+restricted public node: the wallet takes its decoys from it), and Rust once, to build the
+wallet's transaction tool.
+
+```
+npm install
+sh reader/carrier/build.sh                      # builds reader/bin/mordinals-carrier
+node cli/xmr721.mjs wallet create               # prints the wallet's address: send it a little XMR
+node cli/xmr721.mjs wallet balance
+node cli/xmr721.mjs wallet inscribe --file moon.png --name "Moon" --to <your Monero address>
+node cli/xmr721.mjs wallet inscriptions
+```
+
+- **One transaction, one NFT.** A record is at most 1,000 bytes, so a picture of about
+  800 bytes fits. `--type` names the content type when the file ending does not (png, jpeg,
+  webp, gif, text, json, mp4, art); `--dry-run` shows the record and its signed text and
+  sends nothing.
+- **Collections.** `wallet collection --name <name> --max <n>` makes one; then
+  `wallet inscribe --file … --collection <id>` mints its next edition. Only the wallet that
+  made a collection mints its editions.
+- **Owning and moving.** With `--to` the NFT belongs to that address from the start, so a
+  normal wallet (Feather, Cake Wallet, the XMR20 wallet) can send and sell it by signing a
+  message. An NFT the `xmr721` wallet owns itself is sent with `wallet send <nft id> <address>`.
+- **Coins.** A coin can pay again 10 blocks after it arrived. `wallet split <n>` makes
+  several small coins, so several records can go out in one block.
+- **The wallet folder** (`~/.xmr721/wallet`, or `--wallet <dir>`) holds the keys. Back it up.
+- **Which reader.** The command asks a reader for the ledger's settings and state before it
+  makes a record: by default `https://api.xmr20.org/xmr721`, or your own with
+  `--reader http://127.0.0.1:18951`. Whatever a reader says, a record counts only when the
+  rules accept it in a block.
+
+Minting is open to everyone from the ledger's opening block on (see [Status](#status));
+before it the command tells you when that is.
+
 ## Try it
 
 Node.js 22 or newer.
