@@ -84,10 +84,15 @@ Going through the minted NFTs in ledger order, a reader takes every NFT that
 Each of these takes the next **token number**, starting at 1. It is listed as a token
 unless
 
-- it has been burned, or
+- its inscriber has burned it (it is **withdrawn**), or
 - it names a `mint` that an earlier listed token already names.
 
 So a Solana mint has at most one token: the earliest deploy inscription that still stands.
+
+Only the inscriber takes a token back, by burning the inscription while it holds it. An
+inscription the inscriber has moved to another owner is that owner's NFT: they can burn the
+NFT, and the token stays listed (marked `burned`), with its mint still taken.
+
 An inscriber corrects a mistake by burning the inscription and inscribing the token anew;
 the burned one keeps its number and the new one gets the next. The new text has to differ
 from the burned one in a field: a record with the same content by the same inscriber has
@@ -117,6 +122,10 @@ With `--xmr20-inscribers <address>,…` the reader service answers:
   the deploy's fields, `inscriber`, `id`, `inscription`, `owner`, `height`, `time`,
   `txid` and `confirmations`.
 - `GET /xmr20/token/<id | number | mint>`: one token, with its mint record and its text.
+- `GET /xmr20/deploys/<mint>`: every deploy inscription that names this mint, each with
+  `listed`, `burned` and its record: also the withdrawn ones and those behind an earlier one.
+- `GET /address/<address>/records`: every record of one signer that the relay knows, in any
+  state, with its bytes.
 - `GET /nft/<id>/content`: the inscribed text, as JSON.
 - `GET /info`: lists the inscribers under `xmr20`.
 
@@ -131,8 +140,14 @@ launch through a relay:
 
 It holds one key, which signs mint records and nothing else, and no coin: the relay carries
 its records. It keeps a journal, so it can be stopped at any point; a launch's record has
-one id however often it is made, and the index lists one token per mint, so a launch is
-not inscribed twice.
+one id however often it is made, and the index lists one token per mint.
+
+A launch is inscribed once, also when the journal is lost. Before a record is made for a
+launch, the inscriber asks what already exists for its mint: a deploy inscription on the
+ledger (`/xmr20/deploys/<mint>`) is taken over as it is, and one its inscriber burned stays
+withdrawn (inscribing that launch anew is a person's decision); a record the relay still
+knows in any state, waiting or given up on (`/address/<address>/records`), is taken over
+as the launch's record, whatever the launch list says by then.
 
 What is inscribed stays on the chain, so the inscriber holds back rather than guess:
 
@@ -145,11 +160,13 @@ What is inscribed stays on the chain, so the inscriber holds back rather than gu
   what was burned when its pool opened), never a present default. The launch list and the
   markets are two reads; a launch they do not show in the same phase waits for the next
   pass.
-- It makes at most `--per-day` records in 24 hours (50); launches past that wait for the
-  next day. It takes nothing from a list that shows more than `--burst` new launches in one
-  pass (20) until a person has looked.
-- A new journal waits two blocks before its first record, and for as long as the relay
-  still holds records of its address.
+- It makes at most `--per-day` records in 24 hours (50), oldest launch first across all
+  lists; every launch it has seen stays in its queue until its record is made, so launches
+  past the bound go out on the following days and none is passed over. A launch its list
+  no longer shows leaves the queue.
+- It takes nothing new from a list that shows more than `--burst` launches it has not seen
+  before in one pass (20) until a person has looked; what it has seen keeps going out.
+- A new journal waits two blocks before its first record.
 - It waits while the ledger does not list its address as a minter or the index does not
   list it as an inscriber.
 - Only a refusal by the rules closes a record (after three); a busy or failing relay is

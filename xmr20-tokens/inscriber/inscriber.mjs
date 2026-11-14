@@ -9,7 +9,9 @@
 import {existsSync,mkdirSync,readFileSync,renameSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {deployRecord} from '../lib/inscribe.mjs';
-import {deployText} from '../lib/token.mjs';
+import {deployText,readDeploy,TYPE_JSON} from '../lib/token.mjs';
+import {OP,NO_COLLECTION,decodeRecord} from '../../rules/lib/records.mjs';
+import {unhex} from '../../rules/lib/monero.mjs';
 
 // inFlight     records waiting for a block at once (the relay takes three of one address)
 // perTurn      records handed to the relay in one pass
@@ -19,8 +21,7 @@ import {deployText} from '../lib/token.mjs';
 // perDay       records made in 24 hours
 // quiet        blocks a new journal waits before its first record, so records of an earlier run reach their blocks first
 // skipped      how many left-out launches the journal remembers
-// deferred     how many launches seen while the day's bound was reached the journal remembers
-export const DEFAULT_LIMITS={inFlight:3,perTurn:10,resendAfter:20,settle:10,burst:20,perDay:50,quiet:2,skipped:200,deferred:500};
+export const DEFAULT_LIMITS={inFlight:3,perTurn:10,resendAfter:20,settle:10,burst:20,perDay:50,quiet:2,skipped:200};
 // Times are milliseconds; a time before this one was given in seconds by mistake.
 export const EARLIEST=1e12;
 
@@ -36,6 +37,10 @@ export function httpIndex(base,{timeout=20000}={}){
   submit:async record=>{const r=await call('/records',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({record})});
    // `rule` is set when the rules themselves refused the record (it will not change); anything else may pass later.
    if(r.status===200&&r.body)return r.body;return {state:'refused',error:String(r.body?.error||'The relay answered '+r.status).slice(0,200),status:r.status,rule:r.body?.rule===true};},
+  // Every record of this address the relay knows, in any state, with its bytes: [{id, state, op, record}].
+  records:async address=>need(await call('/address/'+encodeURIComponent(address)+'/records'),'records').records,
+  // Every deploy inscription on the ledger that names this mint, listed or not: [{id, inscriber, listed, burned, …}].
+  deploys:async mint=>need(await call('/xmr20/deploys/'+encodeURIComponent(mint)),'deploys').deploys,
   // Records of this address the relay still has waiting for a block.
   waiting:async address=>{const r=await call('/address/'+encodeURIComponent(address));return need(r,'address').waiting?.length||0;},
   status:async id=>{const r=await call('/status/'+id);if(r.status===404)return null;return need(r,'status');}};}
@@ -50,11 +55,21 @@ export function createInscriber({dir,sources,index,inscriber,domain,network='mai
  const entries=()=>Object.values(journal.launches).sort((a,b)=>a.at-b.at||(a.mint<b.mint?-1:1));
  const counts=()=>entries().reduce((n,e)=>{n[e.state]=(n[e.state]||0)+1;return n;},{});
  const settled=(e,t)=>{Object.assign(e,{state:'done',number:t.number,inscription:t.inscription,height:t.height,txid:t.txid});if(t.id!==e.id)e.other=t.id;else delete e.other;delete e.note;delete e.onLedger;};
+ // The deploy's fields as an inscription on the ledger has them (what was inscribed, not what a list says now).
+ const fieldsOf=d=>Object.fromEntries(['tick','name','max','dec','mode','pair','mint','col'].filter(k=>d[k]!==undefined).map(k=>[k,d[k]]));
  const said=new Set(),once=(key,line)=>{if(!said.has(key)){said.add(key);log(line);}};
  // A left-out launch is remembered (so it is logged once), up to a bound; past it no more are noted, and that is said once.
  const skip=(mint,source,why)=>{const s=journal.skipped??={};if(s[mint])return;
   if(Object.keys(s).length>=lim.skipped){once('skipped-full',{skipped:'more than '+lim.skipped+' launches are left out; further ones are not noted'});return;}
   s[mint]={source,why};log({skipped:mint,source,why});};
+
+ // What the relay already holds of this inscriber, by the Solana mint each record names (refused records aside): the
+ // deploy records of an earlier run, whatever became of its journal.
+ async function earlier(){const out=new Map();if(!index.records)return out;
+  for(const j of await index.records(inscriber.address)){if(j.state==='refused'||typeof j.record!=='string')continue;
+   try{const d=decodeRecord(unhex(j.record),network);if(d.op!==OP.mint||d.body.creator!==inscriber.address||d.body.collection!==NO_COLLECTION||d.body.type!==TYPE_JSON)continue;
+    const f=readDeploy(d.body.content);if(!f?.mint||out.has(f.mint))continue;const {p,op,...fields}=f;out.set(f.mint,{id:j.id,record:j.record,state:j.state,fields});}catch{}}
+  return out;}
 
  // One pass. Returns what it did, in words a log can keep: {height, waiting?, found, sent, done, held?, counts}.
  async function turn(){
@@ -88,27 +103,46 @@ export function createInscriber({dir,sources,index,inscriber,domain,network='mai
    if(!job||job.state==='unknown'||height-e.sentAt>=lim.resendAfter){const again=await index.submit(e.record);e.sentAt=height;e.tries=(e.tries||1)+1;if(again.state==='refused')e.note=String(again.error||'').slice(0,200);else delete e.note;}}
   save();
 
-  // 2. New launches: every one a source lists from `since` on gets its record, made once and kept.
-  // A new journal does not know what an earlier run left with the relay: it waits a few blocks, and for as long as the
-  // relay still has records of this address waiting, so those reach their blocks (and are found there) first.
+  // 2. New launches. Every launch a source lists from `since` on is first remembered (`journal.seen`: its fields as
+  //    first seen), then gets its record: oldest launch first across all lists, within the day's bound.
   journal.born??=height;
-  if(!journal.started){if(height<journal.born+lim.quiet||await index.waiting(inscriber.address)>0){save();return {...out,quiet:Math.max(height+1,journal.born+lim.quiet),counts:counts()};}journal.started=true;}
-  const day=now()-86400000,madeToday=()=>entries().filter(e=>(e.madeAt||0)>day).length;
+  const seen=journal.seen??={},listedNow=new Set(),read=new Set();
   for(const source of sources){
    let listed;try{listed=await source.list();}catch(e){log({source:source.name,error:String(e.message).slice(0,160)});continue;}
+   read.add(source.name);
    for(const s of listed.skipped)if(s.mint&&(s.at==null||s.at>=since))skip(s.mint,source.name,s.why);
-   const fresh=listed.launches.filter(l=>l.at>=since&&!journal.launches[l.mint]),later=journal.deferred??={},unseen=fresh.filter(l=>!later[l.mint]);
+   const current=listed.launches.filter(l=>l.at>=since);for(const l of current)listedNow.add(l.mint);
+   const fresh=current.filter(l=>!journal.launches[l.mint]&&!seen[l.mint]);
    // Many new launches at once is not how launches arrive: a list that was tampered with, or a first run with a
-   // wrong time. Nothing is taken from this list until a person has looked (raise the limit to let them through).
-   // (Launches already seen and put off by the day's bound are not new: they do not count here.)
-   if(unseen.length>lim.burst){out.held=(out.held||0)+unseen.length;once('burst:'+source.name+':'+unseen.length,{held:source.name,launches:unseen.length,why:`more than ${lim.burst} new launches at once`});continue;}
-   for(const l of fresh){
-    if(madeToday()>=lim.perDay){out.held=(out.held||0)+1;once('day:'+Math.floor(now()/3600000),{held:source.name,why:`${lim.perDay} records were made in the last 24 hours`});
-     if(Object.keys(later).length<lim.deferred)later[l.mint]=1;continue;}
-    delete later[l.mint];
-    const made=deployRecord({fields:l.fields,inscriber,domain,network});
-    journal.launches[l.mint]={mint:l.mint,source:source.name,at:l.at,fields:l.fields,id:made.id,record:made.record,state:'made',madeAt:now()};out.found++;
-    log({launch:l.mint,tick:l.fields.tick,mode:l.fields.mode,id:made.id});}}
+   // wrong time. Nothing new is taken from this list until a person has looked (raise the limit to let them through).
+   // What was seen before is not new: it stays in the queue below and goes on being made.
+   if(fresh.length>lim.burst){out.held=(out.held||0)+fresh.length;once('burst:'+source.name+':'+fresh.length,{held:source.name,launches:fresh.length,why:`more than ${lim.burst} new launches at once`});continue;}
+   for(const l of fresh)seen[l.mint]={mint:l.mint,source:source.name,at:l.at,fields:l.fields};}
+  // A launch its list no longer shows (hidden or cancelled since it was seen) leaves the queue.
+  for(const s of Object.values(seen))if(read.has(s.source)&&!listedNow.has(s.mint)){delete seen[s.mint];log({gone:s.mint,source:s.source});}
+  save();
+  // A new journal does not know what an earlier run left behind. It waits a few blocks; then, before a record is made
+  // for a launch, what already exists for its mint is taken over instead (below). An index that cannot tell (no list
+  // of the relay's records) is waited on for as long as the relay still holds anything of this address.
+  if(!journal.started){if(height<journal.born+lim.quiet||(!index.records&&await index.waiting(inscriber.address)>0)){save();return {...out,quiet:Math.max(height+1,journal.born+lim.quiet),counts:counts()};}journal.started=true;}
+  const day=now()-86400000,madeToday=()=>entries().filter(e=>(e.madeAt||0)>day).length;
+  let held=null;const atRelay=async()=>held??=await earlier();
+  for(const s of Object.values(seen).sort((a,b)=>a.at-b.at||(a.mint<b.mint?-1:1))){
+   if(!read.has(s.source))continue;
+   const base={mint:s.mint,source:s.source,at:s.at,fields:s.fields};
+   // On the ledger already (inscribed before this journal existed): taken over, and never inscribed a second time by
+   // itself. An inscription the inscriber burned stays withdrawn; inscribing that launch anew is a person's decision.
+   const on=index.deploys?await index.deploys(s.mint):null,mine=on?.filter(d=>d.inscriber===inscriber.address)||[];
+   if(mine.length){const live=mine.find(d=>d.listed),d=live||mine.at(-1);
+    journal.launches[s.mint]={...base,fields:fieldsOf(d),id:d.id,record:d.record??null,state:live?'done':'off',...(live?{number:d.number,inscription:d.inscription,height:d.height,txid:d.txid}:{note:'an earlier inscription of this launch was burned; it is not inscribed again by itself'})};
+    delete seen[s.mint];log({taken:s.mint,id:d.id,state:journal.launches[s.mint].state});if(live)out.done++;continue;}
+   // With the relay already (any state but refused): that record is the launch's record, whatever the list says now.
+   const old=(await atRelay()).get(s.mint);
+   if(old){journal.launches[s.mint]={...base,fields:old.fields,id:old.id,record:old.record,state:'sent',sentAt:height,tries:1};delete seen[s.mint];log({taken:s.mint,id:old.id,state:old.state});continue;}
+   if(madeToday()>=lim.perDay){out.held=(out.held||0)+1;once('day:'+Math.floor(now()/3600000),{held:'the day\'s bound',why:`${lim.perDay} records were made in the last 24 hours`});continue;}
+   const made=deployRecord({fields:s.fields,inscriber,domain,network});
+   journal.launches[s.mint]={...base,id:made.id,record:made.record,state:'made',madeAt:now()};delete seen[s.mint];out.found++;
+   log({launch:s.mint,tick:s.fields.tick,mode:s.fields.mode,id:made.id});}
   save();
 
   // 3. Hand the made records to the relay, oldest launch first, a few at a time.

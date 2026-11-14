@@ -51,18 +51,25 @@ export function readDeploy(bytes){
  if(!bytes||bytes.length>MAX_TEXT)return null;
  try{const text=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(bytes),d=checkDeploy(JSON.parse(text));return JSON.stringify(d)===text?d:null;}catch{return null;}}
 
-// The tokens among a ledger's minted NFTs, oldest first.
-//   nfts: every minted NFT in ledger order, each {id, creator, collection, type, burned, content: () => bytes, …}
+// The deploy inscriptions among a ledger's minted NFTs, oldest first, each with `listed`: whether it is a token.
+//   nfts: every minted NFT in ledger order, each {id, creator, collection, type, burned, burnedBy, content: () => bytes, …}
 //   inscribers: the addresses whose deploy inscriptions count (canonical text form)
-// Every deploy inscription of an inscriber takes the next number, for good. The token of a Solana mint is the earliest
-// such inscription that is not burned; a later one for the same mint is not a token while that one stands.
-export function projectTokens(nfts,inscribers){
+// Every deploy inscription of an inscriber takes the next number, for good. It is withdrawn when its inscriber burned
+// it; a burn by a later owner ends the NFT and leaves the token (only the inscriber takes a token back). The token of a
+// Solana mint is the earliest inscription that is not withdrawn; a later one for the same mint is not a token while
+// that one stands.
+export function projectDeploys(nfts,inscribers){
  const allowed=new Set(inscribers),taken=new Set(),out=[];let number=0;
  for(const x of nfts){
   if(!allowed.has(x.creator)||x.collection!==NO_COLLECTION||x.type!==TYPE_JSON)continue;
   const d=readDeploy(x.content());if(!d)continue;
-  number++;if(x.burned)continue;
-  if(d.mint){if(taken.has(d.mint))continue;taken.add(d.mint);}
-  const {p,op,...fields}=d,{content,creator,collection,type,burned,...rest}=x;
-  out.push({number,...fields,inscriber:creator,...rest});}
+  number++;
+  // (An NFT given without who burned it is taken as burned by its inscriber.)
+  const withdrawn=Boolean(x.burned)&&(x.burnedBy===undefined||x.burnedBy===x.creator);
+  let listed=!withdrawn;
+  if(listed&&d.mint){if(taken.has(d.mint))listed=false;else taken.add(d.mint);}
+  const {p,op,...fields}=d,{content,creator,collection,type,burned,burnedBy,...rest}=x;
+  out.push({number,...fields,inscriber:creator,...rest,...(x.burned?{burned:true}:{}),listed});}
  return out;}
+// The tokens: the listed deploy inscriptions.
+export const projectTokens=(nfts,inscribers)=>projectDeploys(nfts,inscribers).filter(t=>t.listed).map(({listed,...t})=>t);

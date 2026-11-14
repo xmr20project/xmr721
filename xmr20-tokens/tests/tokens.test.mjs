@@ -135,3 +135,24 @@ test('found by review: a byte order mark is not ignored, and the hidden characte
  // The limits the document states: 30 digits, 32 characters.
  assert.ok(deployText({...CURVE,max:'9'.repeat(30),mode:'a'.repeat(32)}));assert.throws(()=>deployText({...CURVE,max:'9'.repeat(31)}),/max/);assert.throws(()=>deployText({...CURVE,mode:'a'.repeat(33)}),/mode/);
  assert.ok(deployText({...CURVE,mode:'v2-curve-9'}));});
+
+test('found by the outside review: only its inscriber\'s burn takes a token back; a later owner\'s burn ends the NFT, not the token',async()=>{
+ const {w,owners,reader,L,signed,block,deploy}=world();await reader.sync();
+ const service=createService({reader,owners,xmr20:{inscribers:[w.launchpad.address]}}),port=await service.listen(0),base='http://127.0.0.1:'+port,get=async path=>(await (await fetch(base+path)).json());
+ try{
+  const kept=deploy(CURVE),given=deploy({...CURVE,tick:'GIVEN',mint:MINT2});await block(kept.record,given.record);
+  // The inscriber gives one inscription away; its new owner burns it. The token stays, marked as burned.
+  await block(signed(L().prepareMove({mordinal:given.id,from:w.launchpad.address,to:w.holder.address}),w.launchpad));
+  await block(signed(L().prepareBurn({nft:given.id,owner:w.holder.address}),w.holder));
+  assert.equal(L().nft(given.id).burned,true);
+  assert.deepEqual((await get('/xmr20/tokens')).items.map(t=>[t.tick,t.burned??false,t.owner]),[['GIVEN',true,null],['TEST2',false,w.launchpad.address]]);
+  assert.equal((await get('/xmr20/token/'+MINT2)).token.id,given.id);
+  // Its mint stays taken: a second inscription for it is not a token.
+  const again=deploy({...CURVE,tick:'GIVEN2',mint:MINT2});await block(again.record);
+  assert.deepEqual((await get('/xmr20/deploys/'+MINT2)).deploys.map(d=>[d.tick,d.listed,d.burned??false]),[['GIVEN',true,true],['GIVEN2',false,false]]);
+  // The inscriber burns the one it kept: that token is withdrawn.
+  await block(signed(L().prepareBurn({nft:kept.id,owner:w.launchpad.address}),w.launchpad));
+  assert.deepEqual((await get('/xmr20/tokens')).items.map(t=>t.tick),['GIVEN']);
+  assert.deepEqual((await get('/xmr20/deploys/'+MINT)).deploys.map(d=>[d.listed,d.burned,d.number,typeof d.record]),[[false,true,1,'string']]);
+  assert.deepEqual((await get('/xmr20/deploys/'+MINT3)).deploys,[]);
+ }finally{await service.close();}});

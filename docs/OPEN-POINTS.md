@@ -77,6 +77,26 @@ Changed:
 - The page of an allowed origin can read an NFT's text (the content route sent no
   cross-origin header); the route always varies by origin.
 
+An outside review of the same work (14 November 2026) found the minter list, the rules, the
+relay and the page change sound, and three things in the token view and the inscriber,
+all changed:
+
+- **A lost journal could inscribe a launch twice.** A record the relay had given up on as
+  stuck no longer counted as waiting, so a new journal made a second record when the
+  launch list had changed a field meanwhile, and both could be mined. Before making a
+  record the inscriber now takes over what exists for the mint: an inscription on the
+  ledger, or any record the relay still knows (`/address/<address>/records`); a stuck
+  record counts as held.
+- **The day's bound could pass a launch over for good.** It was shared list by list, so an
+  older launch on the second list waited behind every day's launches on the first; and a
+  long queue could trip the many-at-once hold. The queue is one, oldest launch first, and
+  every launch seen stays in it until its record is made.
+- **A later owner could take a token off the list.** Any burn delisted a token, also the
+  burn of an inscription the inscriber had given away. Only the inscriber's own burn
+  withdraws a token now.
+- The page build is pinned to the two live scripts by their whole content, not only by the
+  places it changes.
+
 Open, and the reason a ledger should list its minters until they are answered:
 
 - **The relay with minting open to everyone.** Signatures cost nothing and addresses are

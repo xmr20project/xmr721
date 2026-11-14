@@ -103,7 +103,7 @@ test('a stop at any point is picked up, and a lost journal inscribes nothing twi
   const c=open();assert.deepEqual(await c.turn(),{height:101,found:0,sent:0,done:2,counts:{done:2}});
   // The journal is lost. A new one finds both tokens on the index and sends nothing.
   rmSync(join(x.dir,'inscriber'),{recursive:true});const before=reader.journal.length,jobs=x.relay.pending().length;
-  const d=open();assert.deepEqual(await d.turn(),{height:101,found:2,sent:0,done:2,counts:{done:2}});
+  const d=open();assert.deepEqual(await d.turn(),{height:101,found:0,sent:0,done:2,counts:{done:2}});
   await block();await d.turn();assert.equal(reader.journal.length,before);assert.equal(x.relay.pending().length,jobs);
   assert.deepEqual((await tokens()).map(t=>[t.number,t.tick]),[[2,'TWO'],[1,'ONE']]);
   // The same record handed over again by hand changes nothing either: one id, one token.
@@ -242,7 +242,8 @@ test('records that will never be tokens do not hold the way: a burned inscriptio
   for(const e of a.entries()){const p=L.prepareBurn({nft:e.id,owner:signer.address});assert.equal((await index.submit(Buffer.from(L.sign(p.bodyBytes,key.sign(p.text))).toString('hex'))).state,'sent');}
   await block();assert.deepEqual(await tokens(),[]);rmSync(join(x.dir,'inscriber'),{recursive:true});
   curve.push(curveLaunch('NEW',SINCE+4));
-  const b=open({limits:{settle:3}});assert.deepEqual((await b.turn()).counts,{sent:3,made:1});
+  // The new journal finds the three burned inscriptions on the ledger and leaves them withdrawn; they hold no place.
+  const b=open({limits:{settle:3}});assert.deepEqual((await b.turn()).counts,{off:3,sent:1});
   for(let i=0;i<4;i++){await block();await b.turn();}await block();await b.turn();
   assert.deepEqual(b.entries().map(e=>[e.fields.tick,e.state]),[['B1','off'],['B2','off'],['B3','off'],['NEW','done']]);
   assert.deepEqual((await tokens()).map(t=>t.tick),['NEW']);
@@ -273,10 +274,10 @@ test('a new journal waits before its first record, so a record of an earlier run
   const b=open({limits:{quiet:2}}),before=reader.journal.length;
   const one=await b.turn();assert.deepEqual([one.found,one.quiet],[0,102]);
   await block();assert.equal((await b.turn()).found,0);await block();
-  const three=await b.turn();assert.deepEqual([three.found,three.sent,three.done],[1,0,1]);
+  const three=await b.turn();assert.deepEqual([three.found,three.sent,three.done],[0,0,1]);
   await block();await b.turn();
   assert.deepEqual((await tokens()).map(t=>[t.tick,t.name]),[['TWICE','first name']]);assert.equal(reader.journal.length,before+1);
-  assert.equal(b.entries()[0].other,(await tokens())[0].id);
+  assert.equal(b.entries()[0].id,(await tokens())[0].id);assert.equal(b.entries()[0].fields.name,'first name');
  }finally{await x.service.close();}});
 
 test('token numbers are final with their block: the journal follows a replaced block that brings two inscriptions back in another order',async()=>{
@@ -341,7 +342,7 @@ test('launches put off by the day\'s bound do not count as a sudden many; they g
   // A day later the bound has room again: the oldest four go out, the rest wait for the next day, none is lost.
   clock+=86_400_001;const next=await a.turn();assert.deepEqual([next.found,next.held],[4,4]);
   assert.deepEqual(a.entries().map(e=>e.fields.tick),['D0','D1','D2','D3','D4','D5','D6','D7']);
-  clock+=86_400_001;assert.equal((await a.turn()).found,4);assert.equal(Object.keys(a.journal.deferred).length,0);
+  clock+=86_400_001;assert.equal((await a.turn()).found,4);assert.equal(Object.keys(a.journal.seen).length,0);
   // A real burst is still held: five new ones in one pass.
   for(let i=0;i<5;i++)curve.push(curveLaunch('Z'+i,SINCE+100+i));clock+=86_400_001;const held=await a.turn();assert.deepEqual([held.found,held.held],[0,5]);
  }finally{await x.service.close();}});
@@ -352,9 +353,15 @@ test('a new journal waits for as long as the relay still holds records of an ear
   curve.push(curveLaunch('SLOW',SINCE+1,{name:'first name'}));const a=open();await a.turn();assert.equal(a.entries()[0].state,'sent');
   // The relay has no coin: the record waits there for many blocks. Meanwhile the journal is lost and the list changes the name.
   rmSync(join(x.dir,'inscriber'),{recursive:true});curve[0].name='second name';
-  const b=open({limits:{quiet:2}});for(let i=0;i<5;i++){const out=await b.turn();assert.equal(out.found,0,'pass '+i);assert.ok(out.quiet>out.height);await x.block();}
+  // An index that cannot list the relay's records is waited on for as long as the relay holds anything of this address.
+  const blind=open({index:{...x.index,records:undefined,deploys:undefined},limits:{quiet:2}});
+  for(let i=0;i<4;i++){const out=await blind.turn();assert.equal(out.found,0,'pass '+i);assert.ok(out.quiet>out.height);await x.block();}
+  rmSync(join(x.dir,'inscriber'),{recursive:true});
+  // One that can takes the waiting record over as the launch's record: nothing new is made, whatever the list says now.
+  const b=open({limits:{quiet:2}});for(let i=0;i<5;i++){const out=await b.turn();assert.equal(out.found,0,'pass '+i);await x.block();}
+  assert.deepEqual(b.entries().map(e=>[e.fields.name,e.state]),[['first name','sent']]);
   carrier.ready=5;for(let i=0;i<3;i++)await x.block();
-  const out=await b.turn();assert.deepEqual([out.found,out.done],[1,1]);
+  const out=await b.turn();assert.deepEqual([out.found,out.done],[0,1]);
   assert.deepEqual((await tokens()).map(t=>t.name),['first name']);assert.equal(reader.journal.filter(e=>e.ok).length,1);
  }finally{await x.service.close();}});
 
@@ -368,4 +375,65 @@ test('left-out launches past the bound are not noted again and again; a preview 
   const lines=await preview({sources:x.sources(),since:SINCE});
   assert.deepEqual(lines.filter(l=>l.text).map(l=>[l.source,l.text]),[['monero-curve',deployText({tick:'GOOD',name:'good',max:'1000000000',dec:'6',mode:'monero-curve',mint:mintOf('GOOD')})]]);
   assert.equal(lines.filter(l=>l.skipped).length,8);assert.ok(!JSON.stringify(lines).includes('private'));
+ }finally{await x.service.close();}});
+
+// ---- Found by the outside review (each fails on the code before its fix) ----
+
+test('a lost journal takes over a record the relay gave up on as stuck: one launch, one inscription, whatever the list says later',async()=>{
+ const x=await world(),{curve,open,tokens,chain,service,relay,reader,index}=x;
+ try{
+  curve.push(curveLaunch('LONG',SINCE+1,{name:'first name'}));const a=open();await a.turn();const original=a.entries()[0].id;
+  // The transaction stays in the node's pool, unmined, until the relay marks the record stuck. It is not "waiting" then.
+  for(let n=0;n<=relay.limits.stuckBlocks;n++){chain.mine([],{only:[]});await service.step();}
+  assert.equal(relay.status(original).state,'stuck');
+  // The journal is lost and the list gives another name.
+  rmSync(join(x.dir,'inscriber'),{recursive:true});curve[0].name='second name';
+  const b=open({limits:{quiet:2}});for(let i=0;i<3;i++){await b.turn();chain.mine([],{only:[]});await service.step();}
+  assert.deepEqual(b.entries().map(e=>[e.id,e.fields.name]),[[original,'first name']]);assert.ok(x.logs.some(l=>l.taken===mintOf('LONG')));
+  // Everything pending is mined: one accepted mint record, one token.
+  await x.block();await b.turn();
+  assert.deepEqual(reader.journal.filter(e=>e.ok).map(e=>e.id),[original]);assert.deepEqual((await tokens()).map(t=>[t.id,t.name]),[[original,'first name']]);
+  assert.equal(b.entries()[0].state,'done');
+  // The same holds for an index that cannot list the relay's records: a stuck record still counts as held, so it waits.
+  curve.push(curveLaunch('LONG2',SINCE+2,{name:'first'}));await b.turn();const second=b.journal.launches[mintOf('LONG2')].id;
+  for(let n=0;n<=relay.limits.stuckBlocks;n++){chain.mine([],{only:[]});await service.step();}
+  assert.equal(relay.status(second).state,'stuck');assert.equal(await index.waiting(x.signer.address),1);
+  rmSync(join(x.dir,'inscriber'),{recursive:true});curve[1].name='changed';
+  const blind=open({index:{...index,records:undefined,deploys:undefined},limits:{quiet:2}});
+  for(let i=0;i<4;i++){const out=await blind.turn();assert.equal(out.found,0);chain.mine([],{only:[]});await service.step();}
+  await x.block();assert.equal(reader.journal.filter(e=>e.ok).length,2);
+ }finally{await service.close();}});
+
+test('an inscription its inscriber burned stays withdrawn: a new journal does not inscribe that launch again, even under another name',async()=>{
+ const x=await world(),{curve,open,block,tokens,index,reader,signer}=x;
+ try{
+  curve.push(curveLaunch('GONE',SINCE+1,{name:'as launched'}));const a=open();await a.turn();await block();await a.turn();
+  const L=reader.ledger,key=inscriberFrom(x.key),p=L.prepareBurn({nft:a.entries()[0].id,owner:signer.address});
+  await index.submit(Buffer.from(L.sign(p.bodyBytes,key.sign(p.text))).toString('hex'));await block();assert.deepEqual(await tokens(),[]);
+  rmSync(join(x.dir,'inscriber'),{recursive:true});curve[0].name='another name';
+  const b=open();for(let i=0;i<3;i++){await b.turn();await block();}
+  assert.deepEqual(b.entries().map(e=>[e.fields.tick,e.state]),[['GONE','off']]);assert.deepEqual(await tokens(),[]);assert.equal(reader.journal.filter(e=>e.ok&&e.record.startsWith('4d4431fe08')).length,1);
+  // The index says so for anyone: the launch's mint has one deploy inscription, burned and not listed.
+  const seen=await index.deploys(mintOf('GONE'));assert.deepEqual(seen.map(d=>[d.listed,d.burned,d.inscriber===signer.address,typeof d.record]),[[false,true,true,'string']]);
+ }finally{await x.service.close();}});
+
+test('the day\'s bound is shared oldest launch first across the lists, and a long queue keeps draining',async()=>{
+ const x=await world(),{curve,bridge,open}=x;let clock=NOW();
+ try{
+  const a=open({limits:{burst:20,perDay:5,inFlight:50,perTurn:50},now:()=>clock});
+  // Five launches on the Monero curve use up the day; an older bonding curve launch shows up after them.
+  for(let i=0;i<5;i++)curve.push(curveLaunch('C'+i,SINCE+100+i));await a.turn();
+  bridge.push(bridgeLaunch('ELDER',SINCE+2));for(let i=5;i<10;i++)curve.push(curveLaunch('C'+i,SINCE+100+i));
+  const full=await a.turn();assert.deepEqual([full.found,full.held],[0,6]);
+  // The next day's records go to the oldest launches, whichever list they are on: the older launch is first.
+  clock+=86_400_001;const next=await a.turn();assert.equal(next.found,5);
+  assert.deepEqual(a.entries().filter(e=>e.madeAt>clock-1000).map(e=>e.fields.tick),['ELDER','C5','C6','C7','C8']);
+  // A queue far longer than a day, built up a few at a time, never trips the many-at-once hold and never loses a launch.
+  for(let i=0;i<30;i++){for(let j=0;j<20;j++)curve.push(curveLaunch('Q'+i+'x'+j,SINCE+1000+i*20+j));const out=await a.turn();assert.ok(!x.logs.some(l=>/at once/.test(l.why||'')),'pass '+i);}
+  assert.equal(Object.keys(a.journal.seen).length,601);
+  let made=0;for(let d=0;d<3;d++){clock+=86_400_001;made+=(await a.turn()).found;}
+  assert.equal(made,15);assert.equal(Object.keys(a.journal.seen).length,586);
+  // A launch its list no longer shows leaves the queue instead of being inscribed later.
+  const hidden=curve.findIndex(c=>c.symbol==='Q29x19');curve.splice(hidden,1);await a.turn();
+  assert.ok(x.logs.some(l=>l.gone===mintOf('Q29x19')));assert.equal(a.journal.seen[mintOf('Q29x19')],undefined);
  }finally{await x.service.close();}});

@@ -23,7 +23,7 @@ import {createRelay,createCarrier} from './lib/relay.mjs';
 import {createContent,dirContent,archiveContent,pictureType} from './lib/content.mjs';
 import {served,readOwners} from './lib/owners.mjs';
 import {loadCollections} from '../xmr20-nfts/lib/collection.mjs';
-import {projectTokens,TYPE_JSON} from '../xmr20-tokens/lib/token.mjs';
+import {projectDeploys,TYPE_JSON} from '../xmr20-tokens/lib/token.mjs';
 
 const TYPES={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.woff2':'font/woff2'};
 const PAGE_CSP="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -72,9 +72,11 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
  const contentOf=id=>decodeRecord(Buffer.from(reader.entryById(id).record,'hex'),m.network).body.content;
  // `inscription` counts every minted NFT on from the Mordinals' numbers, in ledger order: a number to show, where records use ids.
  const firstMinted=numbers.reduce((a,b)=>Math.max(a,b),-1)+1;
- const tokens=()=>once('xmr20',()=>{const list=projectTokens(reader.events.filter(e=>e.kind==='mint').map((e,i)=>{const x=L().nft(e.nft);
-   return {id:e.nft,inscription:firstMinted+i,creator:x.minted.creator,collection:x.minted.collection,type:x.minted.type,burned:Boolean(x.burned),owner:x.owner,height:e.height,time:e.time,txid:e.txid,content:()=>contentOf(e.nft)};}),xmr20.inscribers);
-  return {list,by:new Map(list.flatMap(t=>[[t.id,t],[String(t.number),t],...(t.mint?[[t.mint,t]]:[])]))};});
+ // Who burned an NFT matters here: only its inscriber's own burn takes a token back.
+ const tokens=()=>once('xmr20',()=>{const all=projectDeploys(reader.events.filter(e=>e.kind==='mint').map((e,i)=>{const x=L().nft(e.nft);
+   return {id:e.nft,inscription:firstMinted+i,creator:x.minted.creator,collection:x.minted.collection,type:x.minted.type,burned:Boolean(x.burned),burnedBy:x.burned?x.history.find(h=>h.what==='burn')?.from??null:null,
+    owner:x.owner,height:e.height,time:e.time,txid:e.txid,content:()=>contentOf(e.nft)};}),xmr20.inscribers),list=all.filter(t=>t.listed).map(({listed,...t})=>t);
+  return {all,list,by:new Map(list.flatMap(t=>[[t.id,t],[String(t.number),t],...(t.mint?[[t.mint,t]]:[])]))};});
  const open=()=>once('open',()=>reader.lots.map(lotView).filter(l=>l.status==='open'));
  const claimed=()=>once('claimed',()=>numbers.filter(n=>L().mordinal(n).claimed));
  const card=n=>{const o=entry.get(n),s=state(n);return {number:n,reg:s.reg,claimed:s.claimed,owner:s.owner,...(s.burned?{burned:true}:{}),bodySize:o.bodySize??null,group:groupOf.get(n)??null,
@@ -95,6 +97,9 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
     relay:relay?{networkFee:'relay',perAddress:relay.limits.perSigner,fees:relay.fees,payBlocks:relay.limits.payBlocks}:null,rules:{feeBps:RULES.feeBps,marketFeeCapBps:RULES.marketFeeCapBps,minPrice:RULES.minPrice.toString(),maxReserve:RULES.maxReserve,settle:RULES.settle}};
    if(path==='/owners'){const from=int(q.get('from'),0,0,list.length),limit=int(q.get('limit'),chunk,1,chunk);return {from,total:list.length,entries:list.slice(from,from+limit)};}
    if(path==='/claimed')return {height,numbers:claimed()};
+   // Every record signed by one address that the relay knows, in any state, with its bytes: a signer that lost its own
+   // notes finds here what it already handed over.
+   if(/^\/address\/[^/]+\/records$/.test(path)){const a=canonical(decodeURIComponent(path.slice(9,-8)),m.network);return {height,records:relay?relay.jobsOf(a):[]};}
    if(path.startsWith('/address/')){const a=canonical(decodeURIComponent(path.slice(9)),m.network);
     return {height,mordinals:L().owned(a).map(state),nfts:L().nftsOf(a).map(minted),buying:open().filter(l=>l.reservation?.buyer===a),waiting:waitingFor({signer:a})};}
    if(path==='/listings')return {height,listings:open().filter(l=>l.until>=height)};
@@ -164,6 +169,10 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
     return {height,total:all.length,from,inscribers:xmr20.inscribers,items:all.slice().reverse().slice(from,from+limit).map(t=>({...t,confirmations:height-t.height+1}))};}
    if(xmr20&&path.startsWith('/xmr20/token/')){const t=tokens().by.get(decodeURIComponent(path.slice(13)));if(!t)throw fail('This is not an XMR20 token on this ledger.',404);
     return {height,token:{...t,confirmations:height-t.height+1},record:reader.entryById(t.id).record,text:Buffer.from(contentOf(t.id)).toString('utf8')};}
+   // Every deploy inscription that names one Solana mint, listed as a token or not (burned by its inscriber, or behind an
+   // earlier one), each with its record: what a launchpad's inscriber needs to know before it inscribes a launch.
+   if(xmr20&&path.startsWith('/xmr20/deploys/')){const mint=decodeURIComponent(path.slice(15));
+    return {height,deploys:tokens().all.filter(t=>t.mint===mint).map(t=>({...t,confirmations:height-t.height+1,record:reader.entryById(t.id).record}))};}
    // Collections shown next to the Mordinals (read-only; see xmr20-nfts/).
    if(path==='/collections')return {height,collections:[...collections.values()].map(c=>({key:c.key,...c.header}))};
    if(path.startsWith('/collections/')){const [key,edition]=path.slice(13).split('/'),c=collections.get(key);if(!c)throw fail('This collection is not known here.',404);
