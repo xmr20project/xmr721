@@ -355,3 +355,37 @@ with a test in `reader/tests/review.test.mjs` that fails on the code before the 
   (about 30 days) after its record.
 - The message, claim and payment-proof signers in the rule library now mix the key and the message into their random
   nonce, as the payment proof already did. `/pending` no longer does quadratic work.
+
+## Opening minting to everyone, and the wallet that inscribes (14 November 2026)
+
+A ledger with a minter list can name an opening block in its setup; from it on anyone makes collections and mints
+(`RULES.md` section 9, `--open-from`). The `xmr721` command (`cli/`) is a wallet that inscribes from its own coins.
+Both were read by independent reviewers before the opening; what they found is fixed, each with a test
+(`reader/tests/mint-review.test.mjs`, the section on the opening block; `cli/tests/wallet.test.mjs`;
+`cli/tests/lab.test.mjs` runs the wallet with the real carrier tool on a local test chain).
+
+What a reader operator has to know:
+
+- **The opening block is part of the setup.** A reader started without it, or with another block, judges the blocks
+  from the opening on differently and is another ledger; its checkpoints differ from that block on. A state folder
+  of the listed ledger that has not read the opening block takes the opening in at the next start; one that has read
+  it has to be made again from the start block. The service refuses an option it does not know, so a misspelt
+  `--open-from` stops the start instead of being ignored.
+- **A relay with a lane carries collections and mints of its own minters only.** Everyone else's go out from wallets
+  of their own.
+
+Known limits:
+
+- **Rebuilding the ledger costs time in proportion to its records.** At every start, and whenever blocks are
+  replaced, a reader replays its journal and checks every accepted record's signature again: about 5 ms a record on
+  the machine it was measured on, so 10,000 records are close to a minute during which the service does not answer.
+  The mechanism is as old as the reader; with minting open, anyone can add records at the price of a transaction
+  each. Keeping the result of a signature check between rebuilds would remove most of it.
+- **The wallet asks a reader for two numbers that go into what it signs:** the next free edition of a collection and
+  an NFT's move number. A reader that lies about them makes the wallet pay for a record the ledger refuses, and such
+  a record could count later, when the number comes true. On mainnet the ledger itself is fixed in the program; a
+  reader of one's own removes the rest.
+- **A signed record counts in anyone's transaction.** A transaction the wallet gave up (`wallet forget`) can still
+  get into a block while a node has it, and so can its record in another transaction if someone kept it.
+- **The wallet's coins are the carrier tool's.** The tool marks a coin as used when it builds a transaction and
+  spends one coin per record. `wallet rescan` reads the coins anew; it is refused while transactions are kept.
