@@ -92,7 +92,8 @@ test('a stop at any point is picked up, and a lost journal inscribes nothing twi
   curve.push(curveLaunch('ONE',SINCE+1),curveLaunch('TWO',SINCE+2));
   // The relay cannot be reached when the records are handed over: they are made and kept, not sent.
   const broken={...index,submit:async()=>{throw Error('connection lost');}},a=open({index:broken});
-  await assert.rejects(a.turn(),/connection lost/);
+  // (A hand-over that fails outright is taken as a relay that may answer later; the pass goes on.)
+  assert.deepEqual((await a.turn()).counts,{made:2});assert.match(a.entries()[0].note,/connection lost/);
   const kept=Object.values(JSON.parse(readFileSync(join(x.dir,'inscriber','journal.json'),'utf8')).launches);
   assert.deepEqual(kept.map(e=>[e.fields.tick,e.state]),[['ONE','made'],['TWO','made']]);
   // A new process: the same records (the same ids) go out.
@@ -472,3 +473,52 @@ test('a record the relay still waits to be paid for is taken over as made, not a
   assert.deepEqual([a.journal.seen[mintOf('M1')].source,a.journal.seen[mintOf('M1')].fields.mode,a.journal.seen[mintOf('M1')].gone??null],['bonding-curve','bonding-curve',null]);
   clock+=86_400_001;await a.turn();assert.deepEqual(a.journal.launches[mintOf('M1')].fields.tick,'M1B');
  }finally{await y.service.close();}});
+
+// ---- Found by the outside review's confirmation ----
+
+test('the relay holds a launch for the first record it takes: two runs with one key and two journals cannot both get a record in',async()=>{
+ const x=await world(),{curve,open,block,tokens,index,relay,reader}=x;
+ try{
+  curve.push(curveLaunch('HELD',SINCE+1,{name:'first name'}));
+  // An older run made its record while the relay was busy and has handed over nothing yet.
+  const busy={...index,submit:async()=>({state:'refused',error:'busy',status:503})},first=open({index:busy});await first.turn();const original=first.entries()[0].id;
+  const resumed=open();
+  // A replacement run on another journal sees another name. The older run's hand-over lands after the replacement has read
+  // what the relay holds and before the replacement hands its own record over.
+  curve[0].name='changed name';let between=true;
+  const racing={...index,token:async mint=>{if(between){between=false;await resumed.turn();}return index.token(mint);}};
+  const replacement=open({dir:join(x.dir,'replacement'),index:racing});await replacement.turn();
+  // The relay refuses the second record and names the one that holds the launch; the replacement takes that one over.
+  assert.deepEqual(replacement.entries().map(e=>[e.id,e.state,e.fields.name]),[[original,'sent','first name']]);
+  assert.deepEqual(relay.jobsOf(x.signer.address).map(j=>j.id),[original]);
+  await block();await replacement.turn();await resumed.turn();
+  assert.deepEqual(reader.journal.filter(e=>e.ok).map(e=>e.id),[original]);assert.deepEqual((await tokens()).map(t=>t.name),['first name']);
+  // Over HTTP the refusal says which record holds the launch; the same record again is simply known; another signer's
+  // deploy for the same mint is no business of the lane.
+  const other=deployRecord({fields:{tick:'HELD',name:'another text',max:'1000000000',dec:'6',mode:'monero-curve',mint:mintOf('HELD')},inscriber:inscriberFrom(x.key),domain:DOMAIN});
+  const r=await fetch(x.base+'/records',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({record:other.record})});
+  assert.equal(r.status,409);assert.deepEqual(await r.json(),{error:'Another record for this launch is with the relay already.',held:original});
+  assert.equal((await index.submit(replacement.entries()[0].record)).state,'done');
+  // A correction by hand still goes through: once the inscriber has burned the inscription, the relay holds the launch
+  // for nothing, and a record with another text is taken.
+  const L=reader.ledger,key=inscriberFrom(x.key),p=L.prepareBurn({nft:original,owner:x.signer.address});
+  await index.submit(Buffer.from(L.sign(p.bodyBytes,key.sign(p.text))).toString('hex'));await block();assert.deepEqual(await tokens(),[]);
+  assert.equal((await index.submit(other.record)).state,'sent');await block();assert.deepEqual((await tokens()).map(t=>t.name),['another text']);
+ }finally{await x.service.close();}});
+
+test('a launch that was queued once is never new again, however long its list did not show it',async()=>{
+ const x=await world(),{curve,bridge,open}=x;let clock=NOW();
+ try{
+  const a=open({limits:{perDay:3,inFlight:50,perTurn:50},now:()=>clock});
+  for(let i=0;i<3;i++)curve.push(curveLaunch('F'+i,SINCE+1+i));await a.turn();
+  // Twenty-one more arrive over two passes while the day is full, then all leave their list for more than the 30 days
+  // a queued launch is kept, and come back together.
+  const late=[];for(let i=0;i<21;i++)late.push(bridgeLaunch('L'+i,SINCE+100+i));
+  bridge.push(...late.slice(0,20));await a.turn();bridge.push(late[20]);await a.turn();assert.equal(Object.keys(a.journal.seen).length,21);
+  bridge.length=0;await a.turn();clock+=31*86_400_000;await a.turn();assert.equal(Object.keys(a.journal.seen).length,0);assert.equal(Object.keys(a.journal.known).length,24);
+  bridge.push(...late);const back=await a.turn();
+  assert.ok(!x.logs.some(l=>/at once/.test(l.why||'')));assert.deepEqual([back.found,back.held],[3,18]);
+  // A restart keeps the identities; twenty-one launches never seen before are still held as many at once.
+  const b=open({limits:{perDay:3,inFlight:50,perTurn:50},now:()=>clock});clock+=86_400_001;assert.equal((await b.turn()).found,3);
+  for(let i=0;i<21;i++)curve.push(curveLaunch('N'+i,SINCE+500+i));const held=await b.turn();assert.equal(held.held,15+21);assert.ok(x.logs.some(l=>/more than 20 new launches at once/.test(l.why||'')));
+ }finally{await x.service.close();}});

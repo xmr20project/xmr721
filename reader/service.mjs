@@ -239,7 +239,8 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
    const out=await route(req.method,url,body,req);res.writeHead(200,headers);res.end(JSON.stringify(out));}
   catch(e){if(!e.status||e.status>=500)log({error:String(e?.message||e).slice(0,200)});if(!res.headersSent)res.writeHead(e.status||400,headers);
    // `rule` marks a refusal by the rules themselves: it will not change, where a busy or failing relay may answer differently later.
-   res.end(JSON.stringify({error:String(e?.message||e).slice(0,400),...(e?.rule?{rule:true}:{})}));}});
+   // `held` names the record that already holds a launch with the relay.
+   res.end(JSON.stringify({error:String(e?.message||e).slice(0,400),...(e?.rule?{rule:true}:{}),...(e?.held?{held:e.held}:{})}));}});
  let timer=null;
  return {reader,relay,server,step,
   listen:port=>new Promise((done,bad)=>{server.once('error',bad);server.listen(port,'127.0.0.1',()=>done(server.address().port));}),

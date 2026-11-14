@@ -96,6 +96,12 @@ all changed:
   withdraws a token now.
 - The page build is pinned to the two live scripts by their whole content, not only by the
   places it changes.
+- The outside confirmation closed the third and found a narrower case of each of the other
+  two, both changed: two runs with one key and two journals could still both hand a
+  record over between one run's look at the relay and its hand-over (the relay now holds a
+  launch for the first deploy record it takes for a signer and a mint, and takes records
+  one at a time); a launch that had left the queue after 30 days counted as new when it
+  came back (which launches were ever queued is remembered for good).
 - A check of these three changes found more, also changed: a queued launch that its list
   did not show for one pass was forgotten and counted as new on its return (it is set aside
   now); a record waiting for a place at the relay could be doubled by a second run with

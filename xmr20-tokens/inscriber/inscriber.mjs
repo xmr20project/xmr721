@@ -38,7 +38,8 @@ export function httpIndex(base,{timeout=20000}={}){
   // The relay's answer for a record: {id, state, error, pay?}. A refusal comes back as {state:'refused', error}.
   submit:async record=>{const r=await call('/records',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({record})});
    // `rule` is set when the rules themselves refused the record (it will not change); anything else may pass later.
-   if(r.status===200&&r.body)return r.body;return {state:'refused',error:String(r.body?.error||'The relay answered '+r.status).slice(0,200),status:r.status,rule:r.body?.rule===true};},
+   // `held` is the id of another record that already holds the same launch with the relay.
+   if(r.status===200&&r.body)return r.body;return {state:'refused',error:String(r.body?.error||'The relay answered '+r.status).slice(0,200),status:r.status,rule:r.body?.rule===true,held:r.body?.held};},
   // Every record of this address the relay knows, in any state, with its bytes: [{id, state, op, record}].
   records:async address=>need(await call('/address/'+encodeURIComponent(address)+'/records'),'records').records,
   // Every deploy inscription on the ledger that names this mint, listed or not: [{id, inscriber, listed, burned, …}].
@@ -114,19 +115,25 @@ export function createInscriber({dir,sources,index,inscriber,domain,network='mai
   // 2. New launches. Every launch a source lists from `since` on is first remembered (`journal.seen`: its fields as
   //    first seen), then gets its record: oldest launch first across all lists, within the day's bound.
   journal.born??=height;
-  const seen=journal.seen??={},shown=new Map();
+  // `known`: every launch ever taken into the queue, kept for good (a few dozen bytes each), so a launch that comes
+  // back after any absence is never counted as new.
+  const seen=journal.seen??={},known=journal.known??={},shown=new Map();
+  for(const m of [...Object.keys(journal.launches),...Object.keys(seen)])known[m]??=1;
   for(const source of sources){
    let listed;try{listed=await source.list();}catch(e){log({source:source.name,error:String(e.message).slice(0,160)});continue;}
    for(const s of listed.skipped)if(s.mint&&(s.at==null||s.at>=since))skip(s.mint,source.name,s.why);
    const current=listed.launches.filter(l=>l.at>=since);shown.set(source.name,new Set(current.map(l=>l.mint)));
    // A launch another list had and no longer shows, now on this list, is this list's launch.
    for(const l of current){const s=seen[l.mint];if(s?.gone&&s.source!==source.name)seen[l.mint]={mint:l.mint,source:source.name,at:l.at,fields:l.fields};}
-   const fresh=current.filter(l=>!journal.launches[l.mint]&&!seen[l.mint]);
+   const queued=l=>{seen[l.mint]={mint:l.mint,source:source.name,at:l.at,fields:l.fields};known[l.mint]=1;};
+   const absent=current.filter(l=>!journal.launches[l.mint]&&!seen[l.mint]),fresh=absent.filter(l=>!known[l.mint]);
+   // A launch that was queued before, left the queue after a long absence and is listed again goes back into it.
+   for(const l of absent)if(known[l.mint]){queued(l);log({back:l.mint,source:source.name});}
    // Many new launches at once is not how launches arrive: a list that was tampered with, or a first run with a
    // wrong time. Nothing new is taken from this list until a person has looked (raise the limit to let them through).
    // What was seen before is not new: it stays in the queue below and goes on being made.
    if(fresh.length>lim.burst){out.held=(out.held||0)+fresh.length;once('burst:'+source.name+':'+fresh.length,{held:source.name,launches:fresh.length,why:`more than ${lim.burst} new launches at once`});continue;}
-   for(const l of fresh)seen[l.mint]={mint:l.mint,source:source.name,at:l.at,fields:l.fields};}
+   for(const l of fresh)queued(l);}
   // A queued launch its own list does not show in this pass is set aside, not forgotten: it is not made while it is
   // away, it is not new when it comes back, and it leaves the queue only after a long absence.
   for(const s of Object.values(seen)){const list=shown.get(s.source);if(!list)continue;
@@ -169,7 +176,13 @@ export function createInscriber({dir,sources,index,inscriber,domain,network='mai
    // one is the launch's record, and this one is never sent.
    const other=(await atRelay()).get(e.mint);
    if(other&&other.id!==e.id){Object.assign(e,{fields:other.fields,id:other.id,record:other.record,state:'sent',sentAt:height,tries:1});delete e.note;log({taken:e.mint,id:other.id,state:other.state});flying++;continue;}
-   const answer=await index.submit(e.record);handed++;
+   // (A hand-over that fails outright is a refusal that may pass later, like a busy relay.)
+   let answer;try{answer=await index.submit(e.record);}catch(err){answer={state:'refused',error:String(err?.message||err).slice(0,200),status:err?.status,rule:err?.rule===true,held:err?.held};}
+   handed++;
+   // The relay holds this launch for another record (another run got there first): that record is the launch's.
+   if(answer.held&&answer.held!==e.id){const theirs=(await earlier()).get(e.mint);
+    if(theirs?.id===answer.held){Object.assign(e,{fields:theirs.fields,id:theirs.id,record:theirs.record,state:'sent',sentAt:height,tries:1});delete e.note;log({taken:e.mint,id:theirs.id,state:theirs.state});flying++;}
+    else e.note='the relay holds this launch for another record';continue;}
    if(answer.pay){e.note='the relay asks a fee for this record; it must carry this inscriber\'s records without one';once('unpaid:'+e.id,{unpaid:e.mint,id:e.id});continue;}
    if(answer.state==='refused'){e.note=String(answer.error||'refused').slice(0,200);e.tries=(e.tries||0)+1;once('refused:'+e.id+':'+e.note,{notTaken:e.mint,id:e.id,why:e.note});
     // Only a refusal by the rules themselves will not change (a busy relay, a failing wallet tool or "too many" may

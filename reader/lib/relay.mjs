@@ -24,7 +24,8 @@ import {execFile} from 'node:child_process';
 import {createHash,randomBytes} from 'node:crypto';
 import {existsSync,mkdirSync,readdirSync,readFileSync,renameSync,unlinkSync,openSync,writeSync,fsyncSync,closeSync} from 'node:fs';
 import {join} from 'node:path';
-import {OP,decodeRecord,recordId,signerOf,canonical} from '../../rules/lib/records.mjs';
+import {OP,NO_COLLECTION,decodeRecord,recordId,signerOf,canonical} from '../../rules/lib/records.mjs';
+import {readDeploy,TYPE_JSON} from '../../xmr20-tokens/lib/token.mjs';
 import {unhex} from '../../rules/lib/monero.mjs';
 import {MAX_RECORD} from './transport.mjs';
 
@@ -47,6 +48,10 @@ export const DEFAULT_LIMITS={perSigner:3,waiting:200,perDay:2000,margin:5,resend
 
 export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,limits:given={},fees:asked={},lane=[],now=()=>Date.now(),log=()=>{}}){
  const laneOf=new Set(lane.map(a=>canonical(a,network)));
+ // The launch a record is for: a deploy inscription (xmr20-tokens/FORMAT.md) names a Solana mint. The launch is its
+ // signer's own (signer and mint together), so nobody holds a launch against another signer.
+ const launchOf=d=>{if(d.op!==OP.mint||d.body.collection!==NO_COLLECTION||d.body.type!==TYPE_JSON)return null;
+  const f=readDeploy(d.body.content);return f?.mint?d.body.creator+':'+f.mint:null;};
  const limits={...DEFAULT_LIMITS,...given},jobsDir=join(dir,'jobs'),splitFile=join(dir,'split.json'),payFile=join(dir,'pay.json');
  // Coins kept for the lane (none on a relay without one), and how many ready coins the relay keeps so that ordinary
  // records never wait on a count that starts no new split.
@@ -132,6 +137,12 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   const {number,signer}=describe(d),tip=reader.height;
   if(d.op===OP.reserve&&d.body.payBy<tip+limits.margin)throw bad('This reservation would run out before it reaches a block. Reserve again.');
   if(d.op===OP.list&&d.body.until<tip+limits.margin)throw bad('This listing would end before it reaches a block. Choose a later end.');
+  // One record per launch: a signer's first deploy record for a Solana mint holds that launch with this relay,
+  // and a different record for it is not taken while that one is known here (in any state but refused). Records are
+  // taken one at a time, so two runs of one inscriber cannot both get a record in for the same launch.
+  // (A record whose inscription was burned holds nothing any more: that is how a launch is inscribed anew by hand.)
+  const launch=launchOf(d),first=launch&&[...jobs.values()].find(j=>j.launch===launch&&j.id!==id&&j.state!=='refused'&&!reader.ledger.nft(j.id)?.burned);
+  if(first)throw Object.assign(bad('Another record for this launch is with the relay already.',409),{held:first.id});
   const all=waiting(),open=all.filter(j=>j.state!=='unpaid'),price=priceOf(d.op);
   if(number!=null&&open.some(j=>j.number===number))throw bad('Another record for this Mordinal is waiting for a block. Try again in a few minutes.',429);
   if(price&&all.length-open.length>=limits.unpaid)throw bad('The relay is busy. Try again in a few minutes.',503);
@@ -146,7 +157,7 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
    if([...jobs.values()].filter(j=>j.createdAt>day&&j.txid&&j.op!==OP.buy&&!j.lane).length>=limits.perDay)throw bad('The relay reached its daily limit. Try again later, or publish the record yourself.',503);
    if(who&&[...jobs.values()].filter(j=>j.caller===who&&j.createdAt>day&&!j.lane).length>=limits.perCallerDay)throw bad('This connection sent many records today. Try again tomorrow, or publish the record yourself.',429);}
   if(known)drop(known);
-  const j={id,record:recordHex,op:d.op,number,signer,caller:who,state:isReady?'queued':'held',createdAt:now(),createdHeight:tip,...(ownLane?{lane:true}:{})};
+  const j={id,record:recordHex,op:d.op,number,signer,caller:who,state:isReady?'queued':'held',createdAt:now(),createdHeight:tip,...(ownLane?{lane:true}:{}),...(launch?{launch}:{})};
   if(price){
    // The subaddress is saved by the carrier before it is given out, so every later scan looks for payments to it.
    const index=payAddress(id,tip,j.createdAt),{address}=await carrier.address(index);

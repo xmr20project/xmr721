@@ -147,9 +147,16 @@ launch, the inscriber asks what already exists for its mint: a deploy inscriptio
 ledger (`/xmr20/deploys/<mint>`) is taken over as it is, and one its inscriber burned stays
 withdrawn (inscribing that launch anew is a person's decision); a record the relay still
 knows in any state, waiting or given up on (`/address/<address>/records`), is taken over
-as the launch's record, whatever the launch list says by then. It looks at the relay once
-more before it hands a record over, and it does not start on an index that cannot answer
-these two questions. A journal folder belongs to one running inscriber.
+as the launch's record, whatever the launch list says by then. It does not start on an
+index that cannot answer these two questions, and a journal folder belongs to one running
+inscriber.
+
+The relay holds a launch for the first deploy record it takes for a signer and a Solana
+mint: while it knows that record (in any state but refused), it takes no other record for
+the same signer and mint, and says which record holds the launch. Records are taken one at
+a time, so two runs of one inscriber cannot both get a record in; the one that is refused
+takes the other's record over. A burned inscription holds nothing, so a launch can still
+be inscribed anew by hand.
 
 What is inscribed stays on the chain, so the inscriber holds back rather than guess:
 
@@ -167,7 +174,8 @@ What is inscribed stays on the chain, so the inscriber holds back rather than gu
   past the bound go out on the following days and none is passed over. A launch is
   inscribed with the fields it had when it was first seen. A launch its list does not show
   in a pass is set aside (not made while away, not new when it is back) and leaves the
-  queue after 30 days.
+  queue after 30 days; which launches it has ever queued it remembers for good, so one
+  that comes back later still is not new either.
 - It takes nothing new from a list that shows more than `--burst` launches it has not seen
   before in one pass (20) until a person has looked; what it has seen keeps going out.
 - A new journal waits two blocks before its first record.
