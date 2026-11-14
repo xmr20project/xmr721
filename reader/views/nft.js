@@ -5,6 +5,8 @@ import {OP,RULES,MAX_RECORD,NO_COLLECTION,MAX_NAME,MAX_EDITIONS,encodeBody,decod
 import {el,add,api,service,count,xmr,relayFee,addr,txid,code,notice,pill,strong,table,field,textInput,eventColumns,waitingList,terms,running,draft,ROOT} from './ui.js';
 import {signPanel,signingWallet} from './sign.js';
 import {walletLink,watchWallet} from './wallet.js';
+// An origin as RULES.md describes it: kind 1 with 36 bytes is a Bitcoin inscription id, txid then the index (u32 little-endian).
+const originText=o=>o.kind===1&&/^[0-9a-f]{72}$/.test(o.ref)?`Bitcoin inscription ${o.ref.slice(0,64)}i${parseInt(o.ref.slice(64).match(/../g).reverse().join(''),16)}`:`${o.kind===1?'Bitcoin inscription':'kind '+o.kind} ${o.ref}`;
 
 const TYPES={1:'PNG picture',2:'JPEG picture',3:'WebP picture',4:'GIF picture',5:'Text',6:'JSON',7:'MP4 video',8:'Text art'},LISTING_BLOCKS=720,SIGNATURE=65;
 const fact=(label,value)=>el('div',{},el('dt',{text:label}),el('dd',{},value));
@@ -130,7 +132,7 @@ export async function nft(ctx,id,action){
      fact('Owner',x.owner?addr(x.owner):'None (burned)'),fact('Creator',addr(b.creator)),
      fact('Content',`${TYPES[b.type]||'Type '+b.type}, ${count(b.content.length)} bytes`),fact('Minted at block',count(x.height)),
      fact('NFT code',code(id)),fact('Mint transaction',x.txid?txid(x.txid):''),
-     ...(b.origin?[fact('Said to come from',`${b.origin.kind===1?'Bitcoin inscription':'kind '+b.origin.kind} ${b.origin.ref}`)]:[]))))),
+     ...(b.origin?[fact('Said to come from',originText(b.origin))]:[]))))),
   n.waiting.length?el('section',{class:'section','data-section':'waiting'},el('h2',{text:'Waiting for a block'}),waitingList(n.waiting)):null,
   owner(),
   el('section',{class:'section','data-section':'history'},el('div',{class:'section-head'},el('h2',{text:'History'})),table(eventColumns({number:false}),n.history.slice().reverse(),'Nothing yet.')));}

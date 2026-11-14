@@ -365,6 +365,9 @@ the quotes a signed text puts around it. Two collections may have the same name.
   values are kept and not shown. The rules do not look inside the content.
 - `origin` (flags bit 1) is a statement by the creator of where the NFT comes from: a kind
   (1 = a Bitcoin inscription) and 1 to 64 bytes naming it. The rules do not check it.
+  For kind 1 the 36 bytes are the inscription id `<txid>i<index>`: the 32 bytes of the txid as
+  written in the id, then the index as a 4-byte little-endian number (`<txid>i0` is the txid
+  followed by `00000000`). An origin takes 2 bytes plus its length (38 for kind 1).
 - **The whole record is at most 1,000 bytes**, the room one relayed transaction has
   (section 8). That leaves 824 bytes for name and content, or 759 when `to` is written.
 - There is no mint fee in the rules. A relay may charge for carrying a collection or a mint record; that is the
