@@ -13,8 +13,9 @@ The name follows the XMR20 token standard, the same way NFT standards on other c
 follow their token standards.
 
 > **Live on Monero mainnet.** The ledger starts at block 3,804,029. Mordinals are claimed,
-> sent and sold on it, and from block 3,805,946 NFTs and XMR20 tokens are inscribed on it by
-> the ledger's listed minters. See [Status](#status) and [Run your own index](#run-your-own-index).
+> sent and sold on it, and from block 3,805,946 NFTs and XMR20 tokens are inscribed on it: by
+> the ledger's listed minters at first, and from block 3,806,220 by anyone, from a wallet of their
+> own ([Inscribe](#inscribe)). See [Status](#status) and [Run your own index](#run-your-own-index).
 
 ![Gallery page of the reader, demonstration data](docs/img/gallery.png)
 
@@ -110,10 +111,11 @@ inscriptions are planned to use XMR721.
 | [`RULES.md`](RULES.md) | The XMR721 rules (draft 4): records, checks, fee rule, privacy rules, new NFTs |
 | [`rules/`](rules) | The rule library, its offline tests, and tests against real wallet software on a local test chain |
 | [`reader/`](reader) | Reader, relay, HTTP service, explorer/gallery/market pages, check tools |
+| [`cli/`](cli) | The `xmr721` command: a wallet of its own that inscribes NFTs and collections ([Inscribe](#inscribe)) |
 | [`ownership-index/`](ownership-index) | The owner list, how it was made and checked, and the added entry |
 | [`xmr20-nfts/`](xmr20-nfts) | The GENESIS collection of XMR20 NFTs, their earlier format and decoder |
 | [`xmr20-tokens/`](xmr20-tokens) | XMR20 tokens as inscriptions on this ledger: the [deploy text](xmr20-tokens/FORMAT.md), the token list a reader serves, and the launch inscriber; and the [earlier XMR20 deploy inscriptions](xmr20-tokens/EARLIER.md) from before this ledger, as a checked list every reader serves |
-| [`docs/LAUNCH-SETTINGS.md`](docs/LAUNCH-SETTINGS.md) | The settings of the live ledger: start block, domain, fee address, first mint block, minters |
+| [`docs/LAUNCH-SETTINGS.md`](docs/LAUNCH-SETTINGS.md) | The settings of the live ledger: start block, domain, fee address, first mint block, minters, opening block |
 | [`docs/OPEN-POINTS.md`](docs/OPEN-POINTS.md) | What review has changed so far and what is still open |
 
 ## Run your own index
@@ -134,6 +136,7 @@ node reader/service.mjs --network mainnet --node http://127.0.0.1:18081 --state 
   --start 3804029 --start-hash cddee72e248e6fc903d7850f73e29cceff64dd9a027f64afc7362d76784081cd \
   --mint-from 3805946 \
   --minters 42zfMRhM9aQAXb4uZKw5gzVN9uTf3bUrgAz2cY7jpvbn8ZE4RWsBsKUECgXNiFKsqK9nBDPThFzTafsZX3bZ7socRQZU1qX,47hW3YWbqR5LrvJyfRSBAqArp8TcU1xnL29dn5xpEWJN9dmyohzaS4ug3e57yvSGmT3UWh47gfN4VW1soHSrXsmqD8haurE \
+  --open-from 3806220 \
   --xmr20-inscribers 42zfMRhM9aQAXb4uZKw5gzVN9uTf3bUrgAz2cY7jpvbn8ZE4RWsBsKUECgXNiFKsqK9nBDPThFzTafsZX3bZ7socRQZU1qX \
   --collections xmr20-nfts/collections
 ```
@@ -145,6 +148,11 @@ two readers with the same settings at the same block give the same one.
 `node reader/tools/verify.mjs` replays a reader's log and checks it without trusting the reader.
 The settings are explained in [`docs/LAUNCH-SETTINGS.md`](docs/LAUNCH-SETTINGS.md).
 
+A reader of this ledger that was set up without `--open-from 3806220` has to be stopped and
+started again with it before block 3,806,220. A state folder that has not read that block takes
+the opening in at the next start; one that read it without the opening judges mints
+differently from every other reader and has to be made again from the start block.
+
 The XMR20 project runs one such reader at `https://api.xmr20.org/xmr721/`.
 
 ## Inscribe
@@ -153,8 +161,8 @@ The `xmr721` command is a Monero wallet of its own that inscribes on the ledger:
 becomes an NFT, owned by the wallet or by any Monero address you name. The wallet pays the
 network fee of each transaction; there is no other fee.
 
-Minting is open to everyone from the ledger's opening block on (see [Status](#status)).
-Before that block the command says when it is, and sends nothing.
+Minting is open to everyone from block 3,806,220 on. Before that block the command says when it
+is, and sends nothing.
 
 You need macOS or Linux, Node.js 22 or newer, a synchronized Monero node of your own
 (`monerod`, unrestricted: the wallet takes its decoys from it), and Rust once, to build the
@@ -273,13 +281,16 @@ them and build the relay's wallet first with `sh reader/carrier/build.sh`.
 
 - **Live on mainnet.** The ledger starts at block 3,804,029: claims, moves, listings and
   purchases of Mordinals. From block 3,805,946 NFTs and XMR20 tokens are minted on it.
-- **Minting is limited for now.** The ledger's setup lists two minters, the XMR20 launchpad's
-  inscriber and the Sweep and Burn issuer. Moving, selling and burning are open to every
-  owner. Opening minting to everyone from a later block is the next step.
+- **Minting is open to everyone from block 3,806,220.** Until that block the two minters the
+  ledger's setup lists, the XMR20 launchpad's inscriber and the Sweep and Burn issuer, make
+  collections and mint. From it on anyone does, from a wallet of their own
+  ([Inscribe](#inscribe)). Moving, selling and burning are open to every owner.
 - **Reviewed in rounds, not audited.** Each step had review rounds before it went live;
   [`docs/OPEN-POINTS.md`](docs/OPEN-POINTS.md) lists what they changed and what is still open.
 - **The relay** carries signed records for wallets that cannot build such a transaction
-  themselves and pays the network fee. It cannot change a record.
+  themselves and pays the network fee. It cannot change a record. The project's relay carries
+  collections and mints of the two listed minters only; everyone else's go out from a wallet
+  of their own.
 - **Wallets.** Claim, send and sell screens are in the XMR20 wallets and on
   [xmr20.org](https://xmr20.org/); any Monero wallet that can sign a message (Feather, Cake
   Wallet, the command-line wallet) can sign the records.

@@ -14,7 +14,8 @@ ledger setting from a later block.
 | Protocol fee address | `45J4QMTbVoi61ZQoUzLVh7VkvjuRbqaaHW1AophY1Jbi9KzTzk8qoh43fT6JWYvkk6j6X1Stog7Xb9ZabzBrMr7tGzANudW` |
 | Mint fee in the rules | None |
 | First mint block | 3,805,946 |
-| Who may mint | The listed minters: `42zfMRhM9aQAXb4uZKw5gzVN9uTf3bUrgAz2cY7jpvbn8ZE4RWsBsKUECgXNiFKsqK9nBDPThFzTafsZX3bZ7socRQZU1qX` (the XMR20 launchpad's inscriber) and `47hW3YWbqR5LrvJyfRSBAqArp8TcU1xnL29dn5xpEWJN9dmyohzaS4ug3e57yvSGmT3UWh47gfN4VW1soHSrXsmqD8haurE` (the Sweep and Burn issuer) |
+| Opening block | 3,806,220: from this block on anyone makes collections and mints |
+| Who may mint | Until the opening block the listed minters: `42zfMRhM9aQAXb4uZKw5gzVN9uTf3bUrgAz2cY7jpvbn8ZE4RWsBsKUECgXNiFKsqK9nBDPThFzTafsZX3bZ7socRQZU1qX` (the XMR20 launchpad's inscriber) and `47hW3YWbqR5LrvJyfRSBAqArp8TcU1xnL29dn5xpEWJN9dmyohzaS4ug3e57yvSGmT3UWh47gfN4VW1soHSrXsmqD8haurE` (the Sweep and Burn issuer) |
 | XMR20 token inscribers | `42zfMRhM9aQAXb4uZKw5gzVN9uTf3bUrgAz2cY7jpvbn8ZE4RWsBsKUECgXNiFKsqK9nBDPThFzTafsZX3bZ7socRQZU1qX` |
 | Relay fee | None at present. Claims, moves, listings, reservations and purchases are always carried free |
 | Repository | Public |
@@ -24,4 +25,6 @@ keys. The domain and the owner list were fixed before the start block, so wallet
 built before it was known.
 
 Claims and trading of Mordinals went live first, as a tab of the Monero Market on
-xmr20.org; minting followed from the first mint block, for the listed minters.
+xmr20.org; minting followed from the first mint block, for the listed minters, and is open to
+everyone from the opening block. A reader that is started without the opening block, or with
+another one, is a reader of another ledger from that block on.
