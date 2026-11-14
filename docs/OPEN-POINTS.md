@@ -385,7 +385,15 @@ Known limits:
   an NFT's move number. A reader that lies about them makes the wallet pay for a record the ledger refuses, and such
   a record could count later, when the number comes true. On mainnet the ledger itself is fixed in the program; a
   reader of one's own removes the rest.
-- **A signed record counts in anyone's transaction.** A transaction the wallet gave up (`wallet forget`) can still
-  get into a block while a node has it, and so can its record in another transaction if someone kept it.
+- **A transaction that was sent cannot be taken back, and a signed record counts in anyone's transaction.**
+  `wallet forget` removes only what never reached the node. For a sent transaction, `--sent` stops the wallet
+  from sending it again and keeps its edition or NFT from being given to something else by itself until nodes
+  have dropped it (four days after it was last sent); it can still get into a block, and so can its record in
+  another transaction if someone kept it. Cancelling for certain would take spending the same coin in another
+  transaction, which the carrier tool cannot be told to do.
 - **The wallet's coins are the carrier tool's.** The tool marks a coin as used when it builds a transaction and
-  spends one coin per record. `wallet rescan` reads the coins anew; it is refused while transactions are kept.
+  spends one coin per record. `wallet rescan` reads the coins anew; it is refused while any transaction of the
+  wallet may still get into a block.
+- **Final means 10 blocks deep.** A reorganisation deeper than that after the wallet has dropped a transaction
+  leaves the record to be made again; for a mint or a collection the wallet then builds a new transaction for the
+  same record, for a send it asks the reader for the NFT's state anew.

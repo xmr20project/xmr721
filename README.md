@@ -168,8 +168,8 @@ node cli/xmr721.mjs wallet inscribe --file moon.png --name "Moon" --to <your Mon
 ```
 
 The dry run says whether minting is open to you and what would be inscribed. Then pay the
-wallet (0.05 XMR in one payment is plenty to begin with; a coin can pay 10 blocks after it
-arrived) and inscribe:
+wallet (0.05 XMR is plenty to begin with; a coin can pay 10 blocks after it arrived) and
+inscribe:
 
 ```
 node cli/xmr721.mjs wallet balance
@@ -182,25 +182,41 @@ node cli/xmr721.mjs wallet inscriptions
   file ending does not (png, jpeg, webp, gif, text, json, mp4, art). `--dry-run` shows the
   record's id and the text it would sign, and builds and sends nothing.
 - **A record counts once.** The same file with the same name by the same wallet is the same
-  record. Asked for it again, the command sends its transaction again or says where it is;
-  it never pays for it twice.
+  record. Asked for it again, the command sends its transaction again or says where it is,
+  and does not pay for it twice. In a collection the same holds while the edition's
+  transaction is on its way; once that edition is final, the same file is the next edition.
 - **Collections.** `wallet collection --name <name> --max <n>` makes one. Once it is in a
   block, `wallet inscribe --file … --collection <id>` mints its next edition. Only the wallet
   that made a collection mints its editions.
 - **Owning and moving.** With `--to` the NFT belongs to that address from the start, so a
   normal wallet (Feather, Cake Wallet, the XMR20 wallet) can send and sell it by signing a
-  message. The address is written into the record and is public for good. An NFT the
-  `xmr721` wallet owns itself is sent with `wallet send <nft id> <address>`.
-- **Coins.** Each record rides on one coin of the wallet. `wallet split <n>` makes n coins of
-  0.01 XMR from one larger coin, so that n records can go out in one block; it needs one coin
-  of more than n × 0.01 XMR.
+  message. An NFT the `xmr721` wallet owns itself is sent with
+  `wallet send <nft id> <address>`.
+- **What is public.** The wallet's own address is written into every record as its creator,
+  and the `--to` address as the owner. Both are public for good.
+- **Coins.** Each record rides on one coin of the wallet, and the balance shows that coin as
+  gone until its change is in a block. `wallet split <n>` makes n coins of 0.01 XMR from one
+  larger coin, so that n records can go out in one block; it needs one coin a little larger
+  than n × 0.01 XMR (0.06 XMR in one payment splits into five). After a long pause the
+  wallet reads every block since it was last used, which takes a while.
 - **Nothing is lost when something fails.** Every transaction the wallet builds is written
   down and kept until what it carried is final on the ledger, 10 blocks deep.
   `wallet inscriptions` says where each one is: waiting for a block, on the ledger, refused
   by the ledger and why, or no longer with the node. `wallet resend` sends again, as the
-  same transactions, what the node does not have. `wallet forget <n>` gives one up for good,
-  which frees its edition or its NFT; `wallet rescan` then frees its coin. One command at a
-  time works on a wallet folder.
+  same transactions, what the node does not have. One command at a time works on a wallet
+  folder.
+- **A transaction that was sent cannot be taken back.** Once nodes have it, it gets into a
+  block or they drop it after about three days. `wallet forget <n>` removes a transaction
+  that never reached the node, and what it held is free at once. For one that was sent,
+  `wallet forget <n> --sent` only stops the wallet from sending it again: it can still get
+  into a block, so its edition or its NFT is not given to anything else by itself until
+  nodes have dropped it. Check an address before you send to it.
+- **Stopping the command.** Ctrl-C stops it at once, unless a transaction is being built or
+  handed to the node at that moment: then that one step is finished and written down, and
+  the command stops after it.
+- **Coins that seem lost.** The tool marks a coin as used when it builds a transaction. If
+  that transaction never gets into a block, `wallet rescan` reads the coins anew and the
+  coin is back. It runs when nothing of the wallet is on its way any more.
 - **The wallet folder** (`~/.xmr721/wallet`, or `--wallet <dir>`) holds the keys. Back it up.
   The command cannot send XMR out: to move what is left, restore a wallet from keys in the
   Monero command-line wallet (`--generate-from-keys`) with the address `wallet receive` shows,

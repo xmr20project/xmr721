@@ -14,10 +14,12 @@
 //   xmr721 wallet send <nft id> <address> [--dry-run]
 //                                                sends an NFT the wallet owns
 //   xmr721 wallet inscriptions                   what the wallet built, and where each transaction is now
-//   xmr721 wallet resend                         sends again what is kept and in no block
-//   xmr721 wallet forget <n>                     gives up a kept transaction (its number in "inscriptions")
+//   xmr721 wallet resend                         sends again, as they are, the kept transactions the node does not have
+//   xmr721 wallet forget <n> [--sent]            gives up a transaction (its number in "inscriptions") that never reached
+//                                                the node. One that was sent cannot be taken back; with --sent it is
+//                                                marked as given up and no longer sent again
 //   xmr721 wallet rescan                         reads the wallet's coins anew; frees coins of transactions that never got in
-//   xmr721 wallet restore --height <n>           for a wallet folder that has only its keys: the block to scan from
+//   xmr721 wallet restore --height <n>           the block the wallet's scan starts at (for a folder that has only its keys)
 //
 // Options for every command, each written as "--name value":
 //   --wallet <dir>     the wallet folder (default ~/.xmr721/wallet); back it up, its keys are in it
@@ -29,7 +31,7 @@
 //   --carrier <path>   the carrier tool (default reader/bin/mordinals-carrier; build it with sh reader/carrier/build.sh)
 //   --max-fee <xmr>    the highest network fee one transaction may pay (default 0.005)
 //   --help             this text
-import {existsSync,readFileSync,statSync,writeFileSync} from 'node:fs';
+import {existsSync,readFileSync,statSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {homedir} from 'node:os';
 import {createCarrier} from '../reader/lib/relay.mjs';
@@ -47,10 +49,10 @@ const show=v=>console.log(JSON.stringify(safe(v),null,1));
 
 // Options are "--name value"; flags stand alone. Anything else that begins with "--" is refused, not skipped, and a
 // value does not begin with "--" (a forgotten value would otherwise swallow the next option).
-const VALUES=new Set(['wallet','network','node','reader','domain','carrier','max-fee','file','type','name','to','collection','edition','max','height']),FLAGS=new Set(['dry-run','help']);
+const VALUES=new Set(['wallet','network','node','reader','domain','carrier','max-fee','file','type','name','to','collection','edition','max','height']),FLAGS=new Set(['dry-run','help','sent']);
 // Which options a command takes beside the ones every command takes, and how many words follow it.
-const COMMANDS={create:[],receive:[],balance:[],split:[],inscribe:['file','type','name','to','collection','edition','dry-run'],collection:['name','max','dry-run'],send:['dry-run'],inscriptions:[],resend:[],forget:[],rescan:[],restore:['height']};
-const WORDS={split:['xmr721 wallet split <n>',1],send:['xmr721 wallet send <nft id> <address>',2],forget:['xmr721 wallet forget <n>',1]};
+const COMMANDS={create:[],receive:[],balance:[],split:[],inscribe:['file','type','name','to','collection','edition','dry-run'],collection:['name','max','dry-run'],send:['dry-run'],inscriptions:[],resend:[],forget:['sent'],rescan:[],restore:['height']};
+const WORDS={split:['xmr721 wallet split <n>',1],send:['xmr721 wallet send <nft id> <address>',2],forget:['xmr721 wallet forget <n> [--sent]',1]};
 const EVERY=['wallet','network','node','reader','domain','carrier','max-fee','help'];
 function parse(argv){
  const options=new Map(),words=[];
@@ -87,12 +89,12 @@ if(command==='inscribe'){const file=text('file');if(!file)stop('Give --file <pat
  let type;try{type=typeOf(file,opt('type'));}catch(e){stop(e.message);}
  Object.assign(asked,{file,type,name:opt('name')??'',to:text('to'),collection:text('collection'),edition:opt('edition')==null?null:whole(opt('edition'),'--edition')});}
 // The wallet folder, before any reader or node is asked anything.
+if(existsSync(dir)&&!statSync(dir).isDirectory())stop(`${dir} is a file, not a wallet folder.`);
 const has=f=>existsSync(join(dir,f));
 let settings=null;
 if(has('wallet.json')){try{settings=JSON.parse(readFileSync(join(dir,'wallet.json'),'utf8'));}catch{settings=null;}
  if(!settings||!['mainnet','stagenet'].includes(settings.network)||!Number.isSafeInteger(settings.start)||settings.start<1){settings=null;
   if(command!=='restore')stop(`${join(dir,'wallet.json')} is not readable. Write it again with: xmr721 wallet restore --height <the block to scan from>`);}
- else if(command==='restore')stop('This wallet has its wallet.json already.');
  else if(settings.network!==network)stop(`This wallet is for ${settings.network}; add --network ${settings.network}.`);}
 else if(has('carrier.keys.json')&&command!=='restore')stop('The wallet folder has keys and no wallet.json. Say which block to scan from: xmr721 wallet restore --height <n> (a block before the wallet first received anything).');
 if(command==='create'){if(has('carrier.keys.json'))stop('There is a wallet in '+dir+' already.');}
@@ -120,19 +122,25 @@ async function nodeTip(){
  if(i.nettype!==network)stop(`The node at ${node} is a ${i.nettype} node; this wallet is for ${network}.`);
  if(i.synchronized===false||i.busy_syncing===true)stop('The Monero node is still synchronizing. Try again when it is done.');
  if(!Number.isSafeInteger(i.height)||i.height<2)stop('The Monero node gave no height.');return i.height-1;}
-// A stop signal while a transaction is in hand: the command finishes what it began, writes it down, and then stops.
-let stopping=false;for(const s of ['SIGINT','SIGTERM'])process.on(s,()=>{if(!stopping)console.error('Finishing the step in hand before stopping, so that nothing is left half done…');stopping=true;});
+// A stop signal (Ctrl-C) stops the command at once, unless a transaction is in hand at that moment: being built by the
+// tool, or being handed to the node. Then that one step is finished and written down first, so that nothing is left
+// half done, and the command stops after it. Nothing further is begun.
+let inHand=false,stopping=false;
+for(const s of ['SIGINT','SIGTERM'])process.on(s,()=>{if(!inHand)process.exit(130);if(!stopping)console.error('A transaction is in hand: finishing this one step and writing it down, then stopping.');stopping=true;});
+const hand=on=>{inHand=on;if(!on&&stopping)process.exit(130);};
 
 try{
  // A wallet that was not used for a while reads many blocks before it answers: the tool is given hours, not minutes.
- const carrier=createCarrier({bin,stateDir:dir,node,network,start:settings?.start??1,timeout:6*3600*1000}),chain=createChain(node);
- const wallet=openWallet({dir,carrier,reader:readerUrl?readerAt(readerUrl):null,chain,network,domain});
+ // It runs apart from the terminal, so that Ctrl-C reaches this program (which decides, above) and not the tool.
+ const carrier=createCarrier({bin,stateDir:dir,node,network,start:settings?.start??1,timeout:6*3600*1000,apart:true}),chain=createChain(node);
+ const wallet=openWallet({dir,carrier,reader:readerUrl?readerAt(readerUrl):null,chain,network,domain,inHand:hand});
+ const told=()=>{for(const n of wallet.notes())console.error('\nNote: '+clean(n,600));};
  if(command!=='create')wallet.tighten();
  switch(command){
   case 'create':{const made=await wallet.create({height:await nodeTip()});show({...made,wallet:dir});
    console.error(`\nThe wallet pays the network fee of each inscription from its own coins. Send it XMR in one payment (0.05 XMR is plenty to begin with).\nBack up the folder ${dir}: it holds the wallet's keys and nothing else can restore it.`);break;}
-  case 'restore':writeFileSync(join(dir,'wallet.json'),JSON.stringify({network,start:asked.height})+'\n',{mode:0o600});wallet.tighten();show({address:wallet.address,wallet:dir,start:asked.height});
-   console.error('\nIf the wallet was used before with another start block, run: xmr721 wallet rescan');break;
+  case 'restore':show({...await wallet.restore(asked.height),wallet:dir});wallet.tighten();
+   console.error('\nThe wallet reads its coins anew from that block at the next command.');break;
   case 'receive':show({address:wallet.address});break;
   case 'balance':console.error('Reading the blocks since the wallet was last used…');show(await wallet.balance());break;
   case 'split':show(await wallet.split(asked.n));break;
@@ -141,7 +149,7 @@ try{
   case 'send':show(await wallet.send({nft:rest[0],to:rest[1],dryRun:dry}));break;
   case 'inscriptions':show(await wallet.inscriptions());break;
   case 'resend':{const out=await wallet.resend();show(out);if(out.some(r=>r.failed))process.exitCode=1;break;}
-  case 'forget':show(await wallet.forget(rest[0]));console.error('\nGiven up. If its coin is to be used again, run: xmr721 wallet rescan');break;
+  case 'forget':show(await wallet.forget(rest[0],{sent:options.has('sent')}));break;
   case 'rescan':console.error('Reading every block since the wallet\'s start block…');show(await wallet.rescan());break;}
- if(stopping)process.exit(130);
-}catch(e){stop(e?.message||e,stopping?130:2);}
+ told();
+}catch(e){try{if(has('journal.json'))for(const n of JSON.parse(readFileSync(join(dir,'journal.json'),'utf8')).notes||[])console.error('Note: '+clean(n,600));}catch{}stop(e?.message||e,2);}

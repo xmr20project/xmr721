@@ -62,7 +62,7 @@ test('a wallet made by the command is funded, inscribes, makes a collection and 
   // very same transaction again; it then gets into a block.
   await mine(10);await pass();
   const dropped=await wallet.inscribe({content:Buffer.from('dropped by the node'),type:5});await call(chain.port,'flush_txpool');
-  assert.match((await wallet.inscriptions()).at(-1).state,/the node no longer has this transaction: run "xmr721 wallet resend"/);
+  assert.match((await wallet.inscriptions()).at(-1).state,/the node no longer has this transaction: run "xmr721 wallet resend" to send it again/);
   const back=(await wallet.resend()).find(r=>r.txid===dropped.txid);assert.deepEqual([back.sentAgain,back.failed],[true,undefined]);
   await mine(1);await pass();assert.equal(L().nft(dropped.id)?.owner,address);
   // A second command while one is at work is told to wait.
@@ -70,7 +70,17 @@ test('a wallet made by the command is funded, inscribes, makes a collection and 
   // Every network fee the wallet paid is what it lacks now.
   const fees=(await wallet.inscriptions()).reduce((a,r)=>a+BigInt(Math.round(Number(r.fee)*1e12)),0n),after=await wallet.balance();
   assert.equal(BigInt(Math.round(Number(after.balance)*1e12)),3n*XMR/10n-fees);assert.equal((await wallet.inscriptions()).length,6);void moved;
-  // Everything final: nothing is kept any more, and a rescan from the wallet's start block finds the same coins.
+  // A transaction that never reaches the node (the node is asked at an address where none is): the tool has marked its
+  // coin as used. Given up, it is removed; nothing else is on its way after ten blocks, so a rescan from the wallet's
+  // start block runs, and the coin is back: the balance is what it was.
   await mine(10);await pass();assert.ok((await wallet.inscriptions()).every(r=>/^on the ledger \(block \d+\)$/.test(r.state)));assert.equal((await wallet.balance()).kept,0);
+  const nowhere=openWallet({dir:wdir,carrier:{...createCarrier({bin:CARRIER,stateDir:wdir,node:chain.url,network:'offline-fakechain',start:made}),publish:async()=>{throw Error('the node is not there');}},reader:readerAt(base),chain:createChain(chain.url),network:'mainnet',domain:DOMAIN,ledgers:{}});
+  await assert.rejects(nowhere.inscribe({content:Buffer.from('never sent'),type:5}),/It is kept/);
+  const short=await wallet.balance();assert.ok(BigInt(Math.round(Number(short.balance)*1e12))<BigInt(Math.round(Number(after.balance)*1e12)),'the coin of the unsent transaction is marked as used');
+  await assert.rejects(wallet.rescan(),/may still get into a block/);
+  const entry=(await wallet.inscriptions()).at(-1);assert.match(entry.state,/^built and never sent/);assert.match((await wallet.forget(entry.n)).forgotten,/never reached the node/);
   const again=await wallet.rescan();assert.deepEqual([again.balance,again.address],[after.balance,address]);
+  // A split: several coins from one, kept and tracked like a record, final by the node alone.
+  const parts=await wallet.split(2);assert.equal(parts.kind,'split');await mine(10);await pass();
+  assert.match((await wallet.inscriptions()).at(-1).state,/^done \(block \d+\)$/);assert.ok((await wallet.balance()).ready>=2);
  }finally{await service?.close().catch(()=>{});await stopAll([chain,...Object.values(W)]);await rm(dir,{recursive:true,force:true});}});
