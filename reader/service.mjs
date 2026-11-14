@@ -97,8 +97,8 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
     relay:relay?{networkFee:'relay',perAddress:relay.limits.perSigner,fees:relay.fees,payBlocks:relay.limits.payBlocks}:null,rules:{feeBps:RULES.feeBps,marketFeeCapBps:RULES.marketFeeCapBps,minPrice:RULES.minPrice.toString(),maxReserve:RULES.maxReserve,settle:RULES.settle}};
    if(path==='/owners'){const from=int(q.get('from'),0,0,list.length),limit=int(q.get('limit'),chunk,1,chunk);return {from,total:list.length,entries:list.slice(from,from+limit)};}
    if(path==='/claimed')return {height,numbers:claimed()};
-   // Every record signed by one address that the relay knows, in any state, with its bytes: a signer that lost its own
-   // notes finds here what it already handed over.
+   // Every collection and mint record signed by one address that the relay knows, in any state, with its bytes: a signer
+   // that lost its own notes finds here what it already handed over.
    if(/^\/address\/[^/]+\/records$/.test(path)){const a=canonical(decodeURIComponent(path.slice(9,-8)),m.network);return {height,records:relay?relay.jobsOf(a):[]};}
    if(path.startsWith('/address/')){const a=canonical(decodeURIComponent(path.slice(9)),m.network);
     return {height,mordinals:L().owned(a).map(state),nfts:L().nftsOf(a).map(minted),buying:open().filter(l=>l.reservation?.buyer===a),waiting:waitingFor({signer:a})};}

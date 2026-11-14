@@ -124,8 +124,8 @@ With `--xmr20-inscribers <address>,…` the reader service answers:
 - `GET /xmr20/token/<id | number | mint>`: one token, with its mint record and its text.
 - `GET /xmr20/deploys/<mint>`: every deploy inscription that names this mint, each with
   `listed`, `burned` and its record: also the withdrawn ones and those behind an earlier one.
-- `GET /address/<address>/records`: every record of one signer that the relay knows, in any
-  state, with its bytes.
+- `GET /address/<address>/records`: every collection and mint record of one signer that the
+  relay knows, in any state, with its bytes.
 - `GET /nft/<id>/content`: the inscribed text, as JSON.
 - `GET /info`: lists the inscribers under `xmr20`.
 

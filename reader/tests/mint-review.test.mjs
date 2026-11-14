@@ -198,3 +198,19 @@ test('the content route always varies by origin, so a cached copy cannot fail an
  const web=await served(x);
  try{for(const origin of [undefined,'https://xmr20.org','https://elsewhere.example'])assert.equal((await web.get('/nft/'+note.id+'/content',origin?{origin}:{})).headers.get('vary'),'origin',String(origin));}
  finally{await x.service.close();}});
+
+// ---- Found by the outside review ----
+
+test('the relay lists a signer\'s collection and mint records in any state, a stuck one counts as held, and no other kind of record is given out',async()=>{
+ const x=world({coins:0,limits:{stuckBlocks:2,minReady:0}});await x.reader.sync();const {relay,w,block}=x,web=await served(x);
+ try{
+  const m=x.mint(w.alice,'waits'),other=x.mint(w.bob,'another signer');await relay.submit(hex(m.record));await relay.submit(hex(other.record));
+  const records=async who=>(await web.get('/address/'+who.address+'/records')).body.records;
+  assert.deepEqual(await records(w.alice),[{id:m.id,state:'queued',op:8,record:hex(m.record)}]);
+  for(let i=0;i<4;i++)await block();
+  assert.deepEqual((await records(w.alice)).map(r=>r.state),['stuck']);assert.deepEqual((await web.get('/address/'+w.alice.address)).body.waiting.map(j=>[j.id,j.state]),[[m.id,'stuck']]);
+  // A move waiting at the relay is not in the list: only collections and mints are.
+  await block(x.claim(0,w.alice));x.carrier.ready=0;const move=x.signed(x.L().prepareMove({mordinal:0,from:w.alice.address,to:w.bob.address}),w.alice);await relay.submit(hex(move));
+  assert.deepEqual((await records(w.alice)).map(r=>r.op),[8]);assert.deepEqual(await records(w.carol),[]);
+  assert.equal((await web.get('/address/not-an-address/records')).status,400);
+ }finally{await x.service.close();}});

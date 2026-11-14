@@ -229,8 +229,10 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   // Records waiting for one Mordinal or signed by one address, for "waiting for a block" notices.
   // A stuck record is counted too: its transaction may still reach a block.
   waitingFor:({number,signer})=>[...jobs.values()].filter(j=>(!FINAL.has(j.state)||j.state==='stuck')&&((number!=null&&j.number===number)||(signer&&j.signer===signer))).map(view),
-  // Every record of one signer that this relay knows, whatever became of it, with its bytes.
-  jobsOf:signer=>[...jobs.values()].filter(j=>j.signer===signer).map(j=>({id:j.id,state:j.state,op:j.op,record:j.record})),
+  // Every collection and mint record of one signer that this relay knows, whatever became of it, with its bytes. Only
+  // those two kinds: they hold nothing but what their signer means to publish, where a purchase waiting for its payment
+  // holds proofs that are not public before its block.
+  jobsOf:signer=>[...jobs.values()].filter(j=>j.signer===signer&&(j.op===OP.mint||j.op===OP.collection)).map(j=>({id:j.id,state:j.state,op:j.op,record:j.record})),
   jobs:()=>[...jobs.values()].map(j=>({...view(j),fee:j.fee||null,createdAt:j.createdAt})),
   carrier};
 }
