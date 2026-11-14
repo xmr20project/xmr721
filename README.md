@@ -198,25 +198,34 @@ node cli/xmr721.mjs wallet inscriptions
   gone until its change is in a block. `wallet split <n>` makes n coins of 0.01 XMR from one
   larger coin, so that n records can go out in one block; it needs one coin a little larger
   than n × 0.01 XMR (0.06 XMR in one payment splits into five). After a long pause the
-  wallet reads every block since it was last used, which takes a while.
+  wallet reads every block since it was last used, which takes a while; stopped in the
+  middle, it begins again where its last finished read ended.
 - **Nothing is lost when something fails.** Every transaction the wallet builds is written
-  down and kept until what it carried is final on the ledger, 10 blocks deep.
-  `wallet inscriptions` says where each one is: waiting for a block, on the ledger, refused
-  by the ledger and why, or no longer with the node. `wallet resend` sends again, as the
-  same transactions, what the node does not have. One command at a time works on a wallet
-  folder.
-- **A transaction that was sent cannot be taken back.** Once nodes have it, it gets into a
-  block or they drop it after about three days. `wallet forget <n>` removes a transaction
-  that never reached the node, and what it held is free at once. For one that was sent,
-  `wallet forget <n> --sent` only stops the wallet from sending it again: it can still get
-  into a block, so its edition or its NFT is not given to anything else by itself until
-  nodes have dropped it. Check an address before you send to it.
+  down and kept. `wallet inscriptions` says where each one is: waiting for a block, in a
+  block, on the ledger, refused by the ledger and why, or not with the node. `wallet resend`
+  hands the node, as the same transactions, what it does not have. A transaction is final
+  10 blocks deep at your own node; the wallet keeps it until it is 100 blocks deep and sends
+  it again should its block be replaced. Two commands at once on one wallet folder work one
+  after the other.
+- **A transaction that was sent cannot be taken back.** Any node that has it can get it into
+  a block, so the wallet never gives one up. It keeps the transaction, and the edition or
+  NFT it would take, until the chain has settled it: in a block, or its coin spent by
+  another transaction for 10 blocks, after which it can never get in. `wallet forget <n>`
+  removes a transaction that was never sent (the node said no to it), and what it held is
+  free at once. Check an address before you send to it.
+- **A node that does not answer.** If the node falls silent while a transaction is handed to
+  it, nobody knows whether it took it. The wallet says so, counts the transaction as sent,
+  and `wallet resend` hands it over again when the node does not have it.
 - **Stopping the command.** Ctrl-C stops it at once, unless a transaction is being built or
   handed to the node at that moment: then that one step is finished and written down, and
-  the command stops after it.
+  the command stops after it. Pressed three times it stops at once all the same, and the
+  next command says what that left behind.
 - **Coins that seem lost.** The tool marks a coin as used when it builds a transaction. If
   that transaction never gets into a block, `wallet rescan` reads the coins anew and the
-  coin is back. It runs when nothing of the wallet is on its way any more.
+  coin is back. It waits while a transaction of the wallet is with the node, and wants
+  unsent ones sent or forgotten first. From then on the coin of a sent transaction that is
+  in no block counts as free; if that transaction gets into a block after all, its coin is
+  spent.
 - **The wallet folder** (`~/.xmr721/wallet`, or `--wallet <dir>`) holds the keys. Back it up.
   The command cannot send XMR out: to move what is left, restore a wallet from keys in the
   Monero command-line wallet (`--generate-from-keys`) with the address `wallet receive` shows,
@@ -229,9 +238,12 @@ node cli/xmr721.mjs wallet inscriptions
   come from the reader, though: the next free edition and an NFT's move number. A reader that
   lies about them makes the wallet pay for a record the ledger refuses, and such a record
   could count later, when the number comes true. A reader also sees which transactions you
-  ask it about. Your own reader avoids all of it.
-- **Stagenet.** `--network stagenet` with `--reader`, `--domain` and `--node` of a stagenet
-  ledger of your own.
+  ask it about. Your own reader avoids all of it. Where a transaction is, the wallet takes
+  from your node alone; the reader is asked only what the ledger made of a record whose
+  transaction the node shows in a block, and `wallet inscriptions`, `resend` and `rescan`
+  go on without a reader.
+- **Stagenet.** `--network stagenet` with `--node` of a stagenet node, and `--reader` and
+  `--domain` of a stagenet ledger of your own to inscribe or send.
 
 `node cli/xmr721.mjs --help` lists every command and option.
 

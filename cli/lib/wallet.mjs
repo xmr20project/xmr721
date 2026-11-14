@@ -5,51 +5,50 @@
 // file signs the records with the same keys: the wallet's address is the creator of what it inscribes.
 //
 // Everything the wallet builds is written down in journal.json, from before the tool is asked to build a transaction
-// until what it carried is final on the ledger, accepted or refused:
+// until that transaction is final:
 //
 //   building  the tool was asked to build; if the program stopped here, whether a transaction was built is not known
-//   built     the transaction is kept and never reached the node
-//   sent      the node took it; it is kept all the same, because a node can drop a transaction again
-//   gone      it was sent, and the user gave it up: it is not sent again, but it can still get into a block for as
-//             long as nodes hold it, so what it would take (an edition, an NFT) is not given to anything else by
-//             itself until then
-//   done      the reader shows the record accepted and the wallet's own node shows its transaction 10 blocks deep
-//   refused   the reader shows the record refused, its transaction 10 blocks deep
+//   built     the transaction is kept, and no node was ever handed it without saying no
+//   sent      it was handed to a node that took it or did not answer; from then on it may be anywhere
+//   done      the wallet's own node shows it 10 blocks deep (and, for a record, the reader shows the record accepted)
+//   refused   the same, and the reader shows the record refused by the ledger
+//   dead      its coin was spent by another transaction, 10 blocks deep: it can never get into a block
 //
-// A transaction that was sent cannot be taken back: once nodes have it, it gets into a block or is dropped by them
-// after some days. So a kept transaction is sent again as it is (`resend`), never built a second time for the same
-// record; `forget` removes one that never reached the node, and marks one that did as given up. Coins the tool marked
-// as used for transactions that never got into a block come back with `rescan`. One command at a time works on a
-// wallet folder (`lock`).
+// A transaction that was sent cannot be taken back, by nobody: any node that has it can get it into a block, today or
+// later. So the wallet never gives one up. It keeps the transaction and what it would take (an edition, an NFT) until
+// the chain itself has settled it: in a block, or dead. It sends the same transaction again when the node does not
+// have it (`resend`) and never builds a second one for the same record. Only a transaction that was never sent can be
+// removed (`forget`). What the wallet's own node shows decides all of this; a reader is asked only what the ledger made
+// of a record whose transaction the node shows in a block.
 //
 // A reader (reader/service.mjs, any one) is asked for the ledger's state before a record is made. What is signed is
 // what the user asked for, for the ledger the wallet is set to (on mainnet, the one this program knows by its
 // domain). The numbers a reader gives are in what is signed, though: the next free edition and an NFT's move number.
 // A reader that lies about them makes the wallet pay for a record the ledger refuses, and such a record could count
-// later, when the number it carries comes true. Nothing is made final on a reader's word alone: the wallet's own node
-// has to show the transaction 10 blocks deep. Use a reader you run yourself to depend on no one.
+// later, when the number it carries comes true. Use a reader you run yourself to depend on no one.
 //
 //   wallet.json         {network, start}: the wallet's network and the block its scan starts at
 //   carrier.keys.json   the keys (written by the carrier tool, readable by the owner only)
 //   carrier.state.json  the tool's view of the chain and of its coins
 //   journal.json        what the wallet built and what became of it, and notes for its owner
-import {createHash,randomBytes} from 'node:crypto';
-import {existsSync,readFileSync,mkdirSync,chmodSync,openSync,writeSync,fsyncSync,closeSync,renameSync,unlinkSync,linkSync,statSync} from 'node:fs';
+//   lock/               who is working on the wallet right now (cli/lib/lock.mjs)
+import {createHash} from 'node:crypto';
+import {existsSync,readFileSync,mkdirSync,chmodSync,openSync,writeSync,fsyncSync,closeSync,renameSync,unlinkSync,statSync} from 'node:fs';
 import {join,extname,dirname} from 'node:path';
 import {ed25519} from '@noble/curves/ed25519';
 import {OP,NO_COLLECTION,MAX_RECORD,MAX_EDITIONS,encodeBody,decodeRecord,recordId,codeOf,renderText,nftLabel,attachSignature,canonical,formatXmr} from '../../rules/lib/records.mjs';
 import {le,hex,unhex,encodeAddress,signWithSpendKey} from '../../rules/lib/monero.mjs';
+import {openLock} from './lock.mjs';
+import {clean} from './text.mjs';
+export {clean,plain,ascii} from './text.mjs';
 
-const G=ed25519.ExtendedPoint.BASE,L=ed25519.CURVE.n,HEX64=/^[0-9a-f]{64}$/;
-// A record is final 10 blocks deep. Nodes drop a transaction they could not get into a block after three days; a
-// transaction that was given up is taken to be gone four days after it was last sent. A reader more than a few blocks
-// behind the wallet's node does not know the ledger as it is.
-export const FINAL=10,GONE_AFTER=4*86400000,BEHIND=3;
+const G=ed25519.ExtendedPoint.BASE,L=ed25519.CURVE.n,HEX64=/^[0-9a-f]{64}$/,HEX=/^([0-9a-f]{2})+$/;
+// A transaction is final 10 blocks deep. It is kept all the same until it is 100 blocks deep: should the chain be
+// replaced deeper than 10 blocks, the wallet still has it and sends it again. A reader more than a few blocks behind
+// the wallet's node does not know the ledger as it is. A signature adds 65 bytes to a record.
+export const FINAL=10,KEEP=100,BEHIND=3;
+const SIGNATURE=65;
 const need=(ok,why)=>{if(!ok)throw Error(why);};
-// Text from a reader or a node, made safe to print: no control characters, none that turn the direction of the text or
-// take no room, not endless. (The ranges are built from numbers so that this source holds none of those characters.)
-const UNSAFE=new RegExp('['+[[0,31],[127,159],[0x61c,0x61c],[0x200b,0x200f],[0x2028,0x202e],[0x2060,0x2069],[0xfeff,0xfeff]].map(([a,b])=>String.fromCharCode(a)+'-'+String.fromCharCode(b)).join('')+']','g');
-export const clean=(v,max=200)=>{let s;try{s=typeof v==='string'?v:v==null?'':typeof v==='object'?JSON.stringify(v):String(v);}catch{s='';}return String(s??'').replace(UNSAFE,' ').slice(0,max);};
 // A collection's name as the rules allow it: printable ASCII, no double quote, no space at either end.
 const NAME=/^[!#-~]([ !#-~]{0,62}[!#-~])?$/;
 // The ledgers this program knows by itself (docs/LAUNCH-SETTINGS.md). On another network the domain is given.
@@ -60,6 +59,22 @@ export const TYPES={png:1,jpeg:2,jpg:2,webp:3,gif:4,text:5,txt:5,md:5,json:6,mp4
 export function typeOf(file,given=null){
  if(given!=null&&given!==''){const g=String(given).toLowerCase(),n=Object.hasOwn(TYPES,g)?TYPES[g]:(/^[0-9]{1,3}$/.test(g)?Number(g):NaN);need(Number.isInteger(n)&&n>=1&&n<=255,'--type is a content type name (png, jpeg, webp, gif, text, json, mp4, art) or a number from 1 to 255.');return n;}
  const e=extname(String(file)).slice(1).toLowerCase();need(Object.hasOwn(TYPES,e),'The type of this file is not known from its name: give --type.');return TYPES[e];}
+
+// The key images of a transaction's inputs, read from its bytes: version, unlock time, the number of inputs, then each
+// input as its kind (2), amount, ring offsets and 32-byte key image. A key image names the coin an input spends.
+// -> [] when the bytes are not that.
+export function imagesOf(blob){
+ try{
+  const b=Buffer.from(String(blob),'hex');let p=0;
+  const number=()=>{let v=0n;for(let shift=0n;;shift+=7n){if(p>=b.length||shift>63n)throw Error('short');const x=b[p++];v|=BigInt(x&127)<<shift;if(!(x&128))return v;}};
+  number();number();const inputs=number();if(inputs<1n||inputs>16n)return [];
+  const out=[];
+  for(let i=0n;i<inputs;i++){
+   if(b[p++]!==2)return [];number();const ring=number();if(ring<1n||ring>128n)return [];
+   for(let k=0n;k<ring;k++)number();
+   if(p+32>b.length)return [];out.push(b.subarray(p,p+32).toString('hex'));p+=32;}
+  return out;}
+ catch{return [];}}
 
 // A file of the wallet, replaced whole, flushed, and readable by its owner only.
 function put(file,text){
@@ -75,19 +90,21 @@ export function keysOf(dir,network){
  const spend=G.multiply(s).toRawBytes(),view=G.multiply(v).toRawBytes(),key=unhex(k.spend);
  return {address:encodeAddress({spend,view,kind:'main',network}),sign:text=>signWithSpendKey(text,{spend,view},key)};}
 
-// A reader's HTTP service. Every answer is checked for its shape before anything is done with it, and no answer is
-// read beyond `limit` bytes.
+// A reader's HTTP service. Every answer is checked for its shape before anything is done with it, no answer is read
+// beyond `limit` bytes, and the reader is asked at the address given and nowhere it points to. Whatever is wrong with a
+// reader is an error marked `reader`: a command that can go on without a reader does.
 export function readerAt(url,{fetch:f=fetch,timeout=30000,limit=16<<20}={}){
- const base=String(url).replace(/\/$/,'');
+ const base=String(url).replace(/\/$/,''),wrong=why=>Object.assign(Error(why),{reader:true}),need=(ok,why)=>{if(!ok)throw wrong(why);};
  const get=async path=>{
   const parts=[];let r,size=0;
-  try{r=await f(base+path,{signal:AbortSignal.timeout(timeout)});
-   if(r.body)for await(const part of r.body){size+=part.length;if(size>limit){try{await r.body.cancel();}catch{}throw Object.assign(Error('The reader sent more than this program reads.'),{plain:true});}parts.push(part);}}
-  catch(e){if(e?.plain)throw e;throw Object.assign(Error(`The reader at ${clean(base,120)} does not answer (${clean(e?.cause?.code||e?.cause?.errors?.[0]?.code||e?.cause?.message||e?.message,80)}).`),{unreachable:true});}
+  try{r=await f(base+path,{signal:AbortSignal.timeout(timeout),redirect:'manual'});
+   if(r.body)for await(const part of r.body){size+=part.length;if(size>limit){try{await r.body.cancel();}catch{}throw wrong('The reader sent more than this program reads.');}parts.push(part);}}
+  catch(e){if(e?.reader)throw e;throw wrong(`The reader at ${clean(base,120)} does not answer (${clean(e?.cause?.code||e?.cause?.errors?.[0]?.code||e?.cause?.message||e?.message,80)}).`);}
+  need(!(r.status>=300&&r.status<400),`The reader at ${clean(base,120)} points to another address. Give --reader the address it answers at.`);
   let body={};try{body=JSON.parse(Buffer.concat(parts).toString('utf8'));}catch{body={};}
   if(r.status===404)return null;need(r.ok,`The reader answered ${r.status} for ${clean(path,80)}: ${clean(body?.error)}`);need(body&&typeof body==='object','The reader did not answer with JSON.');return body;};
  const int=(v,what,min=0,max=Number.MAX_SAFE_INTEGER)=>{need(Number.isSafeInteger(v)&&v>=min&&v<=max,'The reader gave no usable '+what+'.');return v;};
- const address=(v,what,network)=>{try{return canonical(v,network);}catch{throw Error('The reader gave no usable '+what+'.');}};
+ const address=(v,what,network)=>{try{return canonical(v,network);}catch{throw wrong('The reader gave no usable '+what+'.');}};
  return {url:base,
   async info(network){const i=await get('/info');need(i&&typeof i.network==='string','The reader gave no settings.');
    need(i.network===network,`The reader is for ${clean(i.network,20)}, the wallet for ${network}.`);need(HEX64.test(i.domain||''),'The reader gives no ledger domain.');
@@ -100,7 +117,8 @@ export function readerAt(url,{fetch:f=fetch,timeout=30000,limit=16<<20}={}){
   async nft(id,network){const v=await get('/nft/'+id);if(!v)return null;const x=v.nft||{};need(x.id===id,'The reader gave no usable NFT.');
    return {id,owner:x.owner==null?null:address(x.owner,'owner',network),burned:Boolean(x.burned),seq:int(x.seq,'move number'),listed:Boolean(x.lot),waiting:Array.isArray(v.waiting)&&v.waiting.length>0,
     collection:HEX64.test(x.collection||'')?x.collection:NO_COLLECTION,edition:int(x.edition??0,'edition',0,MAX_EDITIONS),collectionName:typeof x.collectionName==='string'&&NAME.test(x.collectionName)?x.collectionName:null};},
-  // What became of the record a transaction carried: {ok, error, height, confirmations}, or null when the reader has not seen it.
+  // What the ledger made of the record a transaction carried: {ok, error, height, confirmations}, or null when the
+  // reader has read no record in that transaction.
   async entry(txid){const v=await get('/entry/'+txid);if(!v)return null;const e=v.entry||{};need(e.txid===txid&&typeof e.ok==='boolean','The reader gave no usable record entry.');
    return {ok:e.ok,id:HEX64.test(e.id||'')?e.id:null,error:e.ok?null:clean(e.error),height:int(e.height,'block',1),confirmations:int(v.confirmations,'confirmations',0)};}};}
 
@@ -113,113 +131,139 @@ export function mintingClosed(info,address){
  if(info.openFrom!=null&&next>=info.openFrom)return null;
  return info.openFrom!=null?`Minting opens to everyone at block ${info.openFrom}; the ledger is at block ${info.height} (about ${Math.max(1,Math.round((info.openFrom-next)*2/60))} hours from now).`:'On this ledger only its listed minters make collections and mint.';}
 
-const KEPT=new Set(['built','sent']);          // a transaction is kept, and sent again when the node does not have it
-const HOLDS=new Set(['built','sent','gone']);  // a transaction may still get into a block, and holds what it would take
-// carrier:  {init, status, carry, publish, split} (reader/lib/relay.mjs createCarrier, or a stand-in in tests).
-// chain:    {info(), txs(ids)} of the wallet's node (reader/lib/chain.mjs).
+const STATES=new Set(['building','built','sent','done','refused','dead']);
+const KEPT=new Set(['built','sent']);   // not settled by the chain: the transaction is kept, and holds what it would take
+// carrier:  {init, status, carry, publish, split} (cli/lib/tool.mjs, or a stand-in in tests).
+// chain:    {info(), txs(ids), spent(images)} of the wallet's node (reader/lib/chain.mjs).
+// reader:   readerAt(url), or null: then only what the node shows is known.
 // domain:   the ledger's domain; on mainnet the one this program knows, which no option and no reader changes.
 // ledgers:  the ledgers known by themselves (LEDGERS above; a test on a made-up chain with mainnet addresses gives none).
+// lock:     who works on the wallet folder (cli/lib/lock.mjs); the command line shares it with the tool.
 // inHand:   called with true when a transaction is in hand (being built or handed to the node) and with false when it
 //           is written down again: a program that wants to stop does it outside.
-export function openWallet({dir,carrier,reader,chain,network='mainnet',domain=null,ledgers=LEDGERS,inHand=()=>{},now=()=>Date.now()}){
- const files={journal:join(dir,'journal.json'),lock:join(dir,'lock'),state:join(dir,'carrier.state.json')},me=()=>keysOf(dir,network);
+// warn:     called with what the owner should know and no result says (a reader that cannot be asked).
+export function openWallet({dir,carrier,reader=null,chain,network='mainnet',domain=null,ledgers=LEDGERS,lock=null,inHand=()=>{},warn=()=>{},now=()=>Date.now()}){
+ const files={journal:join(dir,'journal.json'),state:join(dir,'carrier.state.json')},me=()=>keysOf(dir,network);
  const pinned=ledgers[network]?.domain??null;need(!(pinned&&domain&&domain!==pinned),`On ${network} the ledger is ${pinned}; another domain is another ledger.`);
- const stamp=()=>new Date(now()).toISOString();
-
- // One command at a time. The lock names the process that holds it. A lock whose process is gone, or that is older
- // than any command runs, is left over: it is taken away by one process only (the one that manages to give it a
- // second name), so that two commands that find it at the same moment do not both go on.
- async function locked(work){
-  const alive=pid=>{try{process.kill(pid,0);return true;}catch(e){return e?.code==='EPERM';}};
-  const token=randomBytes(8).toString('hex');
-  for(let i=0;;i++){
-   try{const fd=openSync(files.lock,'wx',0o600);try{writeSync(fd,JSON.stringify({pid:process.pid,token,since:stamp()}));}finally{closeSync(fd);}break;}
-   catch(e){need(e?.code==='EEXIST',e?.code==='ENOENT'||e?.code==='ENOTDIR'?'There is no wallet folder at '+dir+'.':`The wallet folder ${dir} cannot be written (${e?.code}).`);
-    let held=null,age=0;try{held=JSON.parse(readFileSync(files.lock,'utf8'));}catch{held=null;}try{age=now()-statSync(files.lock).mtimeMs;}catch{age=0;}
-    const left=held&&Number.isInteger(held.pid)&&/^[0-9a-f]{16}$/.test(held.token||'')?(held.pid!==process.pid&&!alive(held.pid))||age>7*3600000:age>60000;
-    need(left&&i<5,`Another xmr721 command is working on this wallet${held?.pid?` (process ${held.pid})`:''}. Wait until it is done. If none is running, remove the file ${files.lock}`);
-    // Only the process that gives the left-over lock its second name takes it away; that name is of this one lock.
-    const dead=files.lock+'.'+(held?.token||'empty')+'.left';
-    try{linkSync(files.lock,dead);}catch(x){if(x?.code==='EEXIST'){try{if(now()-statSync(dead).mtimeMs>30000)unlinkSync(dead);}catch{}}await new Promise(r=>setTimeout(r,20+Math.floor(Math.random()*60)));continue;}
-    try{const again=readFileSync(files.lock,'utf8');if(!held||JSON.parse(again).token===held.token)unlinkSync(files.lock);}catch{}
-    try{unlinkSync(dead);}catch{}}}
-  try{return await work();}finally{try{if(JSON.parse(readFileSync(files.lock,'utf8')).token===token)unlinkSync(files.lock);}catch{}}}
+ const want=pinned??domain,stamp=()=>new Date(now()).toISOString(),held=lock??openLock(dir);
+ const locked=async work=>{const release=await held.acquire();try{return await work();}finally{release();}};
 
  // journal.json: read whole, written whole.
  function load(){
   if(!existsSync(files.journal))return {version:1,next:1,entries:[],notes:[]};
   let j;try{j=JSON.parse(readFileSync(files.journal,'utf8'));}catch{j=null;}
-  need(j&&j.version===1&&Array.isArray(j.entries)&&j.entries.every(e=>e&&typeof e==='object'&&typeof e.kind==='string'&&typeof e.state==='string'&&Number.isInteger(e.n))&&Number.isInteger(j.next),
-   `${files.journal} is damaged and nothing was changed. It lists what this wallet built; move it aside to go on without it.`);
+  const whole=e=>e&&typeof e==='object'&&typeof e.kind==='string'&&STATES.has(e.state)&&Number.isInteger(e.n)&&(e.state==='building'||HEX64.test(e.txid||''))&&(e.blob==null||(typeof e.blob==='string'&&HEX.test(e.blob)));
+  need(j&&j.version===1&&Array.isArray(j.entries)&&j.entries.every(whole)&&Number.isInteger(j.next),
+   `${files.journal} is damaged and nothing was changed. It holds the transactions this wallet keeps; without it the wallet no longer knows them.`);
   j.notes=Array.isArray(j.notes)?j.notes.filter(x=>typeof x==='string'):[];return j;}
  const save=j=>put(files.journal,JSON.stringify(j)+'\n');
- // A transaction that was being built when the program stopped: whether the tool built it is not known, and it is not
- // kept. What happened is written down for the owner until a rescan has read the coins anew.
- const LOST='A command stopped while a transaction was being built, and it is not known whether the tool built one. If the balance is lower than it should be, a coin is marked as used for it: xmr721 wallet rescan';
+ // A transaction that was being built when the program stopped: whether the tool built it is not known. It was never
+ // sent (the tool sends nothing while it builds), so it is not kept. A note stays for the owner until a rescan has
+ // read the coins anew.
+ const LOST='A command stopped while a transaction was being built, and it is not known whether the tool built one. Nothing was sent. If the balance is lower than it should be, a coin is marked as used for it: xmr721 wallet rescan';
  function clear(j){
   if(!j.entries.some(e=>e.state==='building'))return;
   j.entries=j.entries.filter(e=>e.state!=='building');if(!j.notes.includes(LOST))j.notes.push(LOST);save(j);}
 
  // The ledger's settings as the reader states them, for the ledger this wallet inscribes on.
  async function settings(){
-  const info=await reader.info(network),want=pinned??domain;
-  need(want||network!=='mainnet','No ledger domain.');
-  need(!want||info.domain===want,`The reader is for another ledger (${info.domain}) than this wallet inscribes on (${want}).`);return info;}
- // The same, for a command that makes a record: the reader has to be about where the wallet's own node is.
+  need(reader,'This command asks a reader for the state of the ledger: give --reader <url>.');
+  need(want,'No ledger is named: give --domain <hex>, the domain of the ledger to inscribe on.');
+  const info=await reader.info(network);
+  need(info.domain===want,`The reader is for another ledger (${info.domain}) than this wallet inscribes on (${want}).`);return info;}
+ // The same, for a command that makes a record: the wallet's node has to answer, and the reader has to be about where
+ // that node is.
  async function ledgerNow(){
-  const info=await settings();let tip=null;try{tip=(await chain.info()).height;}catch{tip=null;}
-  need(tip===null||tip-info.height<=BEHIND,`The reader is at block ${info.height} and your node at block ${tip}: the reader is behind and does not show the ledger as it is. Try again when it has caught up, or use another reader.`);return info;}
+  const info=await settings();let tip;
+  try{tip=(await chain.info()).height;}catch(e){throw Error(`Your Monero node does not answer (${clean(e?.message,120)}). The wallet builds and sends through it, and checks the reader against it.`);}
+  need(Number.isSafeInteger(tip),'Your Monero node gave no height.');
+  need(tip-info.height<=BEHIND,`The reader is at block ${info.height} and your node at block ${tip}: the reader is behind and does not show the ledger as it is. Try again when it has caught up, or use another reader.`);return info;}
  // Where the node has a transaction: 'pool', a block height, 'unknown' (it has it nowhere), or null (it cannot be asked).
- async function atNode(txid){try{const t=(await chain.txs([txid])).get(txid);return t?(t.inPool?'pool':t.height):'unknown';}catch{return null;}}
- const until=e=>Date.parse(e.sent||e.built||0)+GONE_AFTER,lives=e=>e.state!=='gone'||now()<until(e);
+ async function atNode(txid){try{const t=(await chain.txs([txid])).get(txid);return t?(t.inPool?'pool':Number.isSafeInteger(t.height)?t.height:null):'unknown';}catch{return null;}}
+ // Is one of these coins spent by a transaction in a block? -> true, false, or null (the node cannot say).
+ async function spentInBlock(images){if(!images.length||typeof chain.spent!=='function')return null;try{return (await chain.spent(images)).some(s=>s===1);}catch{return null;}}
 
- // Brings every transaction that may still get into a block up to date with the reader and the node. Final is what the
- // reader shows 10 blocks deep and the wallet's own node, too. Without a reader (`alone`), the node alone is asked and
- // nothing is made final.
- async function refresh(j,{alone=false}={}){
-  let tip=null,asked=!alone;const live=new Map();
-  if(asked){try{await settings();}catch(e){if(!e?.unreachable)throw e;need(alone===null,e.message);asked=false;}}
-  try{tip=(await chain.info()).height;}catch{tip=null;}
-  for(const e of j.entries.filter(e=>HOLDS.has(e.state))){
-   const seen=asked&&e.kind!=='split'?await reader.entry(e.txid):null,where=await atNode(e.txid),deep=Number.isInteger(where)&&tip!==null&&tip-where+1>=FINAL;
-   if(deep&&e.kind==='split'){Object.assign(e,{state:'done',height:where});delete e.blob;continue;}
-   if(deep&&seen&&seen.confirmations>=FINAL){Object.assign(e,{state:seen.ok?'done':'refused',height:seen.height,...(seen.ok?{}:{error:seen.error})});delete e.blob;continue;}
-   // A transaction the node has, or that is in a block, did reach the network, whatever was known before.
-   // (One that was given up and is in a block counts like any other again; its transaction is no longer kept.)
-   if(e.state==='built'&&(seen||where==='pool'||Number.isInteger(where))){e.state='sent';e.sent??=stamp();}
-   if(e.state==='gone'&&(seen||Number.isInteger(where))){e.wasGivenUp=true;e.state='sent';}
-   // One that was given up and that no node can hold any more is over.
-   if(e.state==='gone'&&!lives(e)&&where==='unknown'){j.entries=j.entries.filter(x=>x!==e);continue;}
-   // A record that got onto the ledger in another transaction than this one (anyone can carry a signed record).
-   let other=false;
-   if(asked&&!seen&&where==='unknown'){
-    if(e.kind==='mint')other=Boolean(await reader.nft(e.id,network));
-    if(e.kind==='collection')other=Boolean(await reader.collection(e.id,network));
-    if(e.kind==='send'){const x=await reader.nft(e.nft,network);other=Boolean(x&&x.owner===e.to&&x.seq>e.seq);}}
-   if(other){Object.assign(e,{state:'done',other:true});delete e.blob;continue;}
-   live.set(e,{seen,where,asked});}
+ // Brings every transaction the chain has not settled up to date with the wallet's own node, and asks the reader what
+ // the ledger made of the records whose transactions the node shows in a block. Nothing moves on a reader's word
+ // alone. -> what is known of each entry right now: Map(entry -> {where, tip, depth, seen, asked}).
+ async function refresh(j){
+  const live=new Map(),watched=j.entries.filter(e=>KEPT.has(e.state)||((e.state==='done'||e.state==='refused')&&e.blob));
+  if(!watched.length)return live;
+  let tip=null;try{tip=(await chain.info()).height;}catch{tip=null;}if(!Number.isSafeInteger(tip))tip=null;
+  // The reader, when there is one and it answers: asked about the entries made for its ledger only.
+  let ledger=null;
+  const deaf=e=>{if(!e?.reader)throw e;if(ledger!==false)warn(`${clean(e.message,200)} What follows is what your node alone shows.`);ledger=false;};
+  const ask=async e=>{
+   if(e.kind==='split'||!reader||ledger===false)return [null,false];
+   if(ledger===null){try{ledger=(await reader.info(network)).domain;}catch(x){deaf(x);return [null,false];}}
+   if(ledger!==(e.domain??want))return [null,false];
+   try{return [await reader.entry(e.txid),true];}catch(x){deaf(x);return [null,false];}};
+  for(const e of watched){
+   const where=await atNode(e.txid);
+   if(where===null||tip===null){live.set(e,{where:null,tip});continue;}
+   const depth=Number.isInteger(where)?tip-where+1:0;
+   if(e.state==='done'||e.state==='refused'){
+    // Final, and still kept: let go of 100 blocks deep. If the block it was in is no longer part of the chain, it
+    // counts as sent again.
+    if(where===e.height){if(depth>=KEEP)delete e.blob;continue;}
+    e.state='sent';delete e.height;delete e.error;}
+   // A transaction the node has was sent, whatever was written down.
+   if(e.state==='built'&&where!=='unknown'){e.state='sent';e.sent??=stamp();delete e.refusal;}
+   if(Number.isInteger(where)){
+    delete e.spentSeen;
+    if(e.kind==='split'){if(depth>=FINAL){Object.assign(e,{state:'done',height:where});if(depth>=KEEP)delete e.blob;}else live.set(e,{where,tip,depth});continue;}
+    const [seen,asked]=await ask(e);
+    if(depth>=FINAL&&seen&&seen.height===where&&seen.confirmations>=FINAL){
+     Object.assign(e,{state:seen.ok?'done':'refused',height:where});if(seen.ok)delete e.error;else e.error=seen.error;if(depth>=KEEP)delete e.blob;continue;}
+    live.set(e,{where,tip,depth,seen:seen&&seen.height===where?seen:null,asked});continue;}
+   // In no block. When the node shows its coin spent by another transaction in a block, and still does 10 blocks
+   // later, this transaction can never get in.
+   if(where==='unknown'){
+    const spent=await spentInBlock(imagesOf(e.blob));
+    if(spent===true){
+     if(!Number.isSafeInteger(e.spentSeen)||e.spentSeen>tip)e.spentSeen=tip;
+     if(tip-e.spentSeen>=FINAL){e.state='dead';delete e.blob;delete e.spentSeen;delete e.refusal;continue;}}
+    else if(spent===false)delete e.spentSeen;}
+   else delete e.spentSeen;
+   live.set(e,{where,tip,depth});}
   save(j);return live;}
  const describe=(e,v)=>{
-  if(e.state==='done')return e.other?'on the ledger, carried by another transaction than this one':e.kind==='split'?`done (block ${e.height})`:`on the ledger (block ${e.height})`;
+  if(e.state==='done')return e.kind==='split'?`done (block ${e.height})`:`on the ledger (block ${e.height})`;
   if(e.state==='refused')return 'refused by the ledger: '+e.error;
-  if(e.state==='built')return v&&v.where===null?'built; the node cannot be asked right now':'built and never sent: run "xmr721 wallet resend", or give it up with "xmr721 wallet forget '+e.n+'"';
-  const given=e.wasGivenUp?' (it was given up, and got in all the same)':'';
-  if(v?.seen)return (v.seen.ok?`on the ledger (block ${v.seen.height}, ${v.seen.confirmations} of ${FINAL} confirmations)`:`refused by the ledger (block ${v.seen.height}, ${v.seen.confirmations} of ${FINAL} confirmations): ${v.seen.error}`)+given;
-  if(Number.isInteger(v?.where))return (e.kind==='split'?`in block ${v.where}`:v.asked?`in block ${v.where}; the reader has not read it yet`:`in block ${v.where}`)+given;
-  if(e.state==='gone')return `given up. It was sent, so it can still get into a block until nodes drop it (about ${new Date(until(e)).toISOString().slice(0,10)})`+(v?.where==='pool'?'; the node has it now':'');
-  if(v?.where==='pool')return 'waiting for a block';
-  if(v?.where==='unknown')return 'the node no longer has this transaction: run "xmr721 wallet resend" to send it again';
-  return 'sent; the node cannot be asked right now';};
- const shown=(e,v)=>{const {blob,...rest}=e;return {...rest,state:describe(e,v)};};
+  if(e.state==='dead')return 'its coin was spent by another transaction, so this one can never get into a block; what it carried is not on the ledger';
+  const where=v?.where??null,again='"xmr721 wallet resend"';
+  if(e.state==='built')return where===null?'built and not sent; your node cannot be asked right now'
+   :`built and not sent${e.refusal?` (the node said no: ${e.refusal})`:''}: ${again} hands it to the node, "xmr721 wallet forget ${e.n}" gives it up`;
+  if(where===null)return 'sent; your node cannot be asked right now';
+  if(Number.isInteger(where)){
+   const of=`${Math.min(v.depth,FINAL)} of ${FINAL} confirmations`;
+   if(e.kind==='split')return `in block ${where} (${of})`;
+   if(v.seen)return v.seen.ok?`on the ledger (block ${where}, ${of})`:`refused by the ledger (block ${where}, ${of}): ${v.seen.error}`;
+   return v.asked?`in block ${where} (${of}); the reader has not read it yet`:`in block ${where} (${of}); no reader was asked what the ledger made of it`;}
+  if(where==='pool')return 'waiting for a block';
+  if(Number.isSafeInteger(e.spentSeen))return `the node does not have it, and its coin was spent by another transaction (seen at block ${e.spentSeen}). If that is still so at block ${e.spentSeen+FINAL}, this one can never get into a block`;
+  return `the node does not have this transaction: ${again} sends it again`;};
+ const shown=(e,v)=>{const {blob,spentSeen,...rest}=e;return {...rest,state:describe(e,v)};};
 
- // Hands a kept transaction to the node. It stays kept whatever the node says.
+ // Hands a kept transaction to the node. -> {taken: true} the node has it; {taken: false, refused} the node answered
+ // and said no; {taken: null, unknown} the node did not answer, and whether it took it is not known.
+ // It is written down as sent before the node is handed it: from that moment on nothing else is certain. Only a plain
+ // no from the node takes that back, for a transaction that was never sent before.
  async function deliver(j,e){
-  let failure=null;inHand(true);
-  try{try{await carrier.publish(e.blob);}catch(x){failure=x;}
-   // (A node that refuses a transaction it has already is no failure: an earlier send got through.)
-   const where=failure?await atNode(e.txid):'pool';
-   if(failure&&(where===null||where==='unknown'))throw Error(`The transaction was built and the node did not take it (${clean(failure.message,160)}). It is kept: "xmr721 wallet resend" sends the same transaction again; nothing is paid twice.`);
-   e.state='sent';e.sent=stamp();save(j);}
+  need(e.blob,`The transaction of entry ${e.n} is not kept any more.`);
+  // A node that does not answer is handed nothing.
+  try{await chain.info();}catch(x){throw Error(`Your Monero node does not answer (${clean(x?.message,120)}), so nothing was handed to it. The transaction is kept as entry ${e.n}: "xmr721 wallet resend" sends it.`);}
+  const was={state:e.state,sent:e.sent};inHand(true);
+  try{
+   Object.assign(e,{state:'sent',sent:stamp()});save(j);
+   let failure=null;try{await carrier.publish(e.blob);}catch(x){failure=clean(x?.message,200);}
+   const where=failure===null?'pool':await atNode(e.txid);
+   // (A node that says no to a transaction it has already is no failure: an earlier send got through.)
+   if(where==='pool'||Number.isInteger(where)){delete e.refusal;save(j);return {taken:true};}
+   if(/transaction was rejected/.test(failure)){
+    e.refusal=failure;if(was.state==='built'){e.state='built';delete e.sent;}else e.sent=was.sent??e.sent;
+    save(j);return {taken:false,refused:failure};}
+   save(j);return {taken:null,unknown:failure};}
   finally{inHand(false);}}
  // Builds one transaction with the tool and keeps it, written down before and after.
  async function build(j,entry,make){
@@ -227,32 +271,55 @@ export function openWallet({dir,carrier,reader,chain,network='mainnet',domain=nu
   need(s.ready>0,s.coins?'No coin of the wallet can pay right now. A coin can be spent 10 blocks after it arrived, and a coin smaller than the network fee cannot pay at all. Wait, or send the wallet more.':'The wallet has no coins. Send some XMR to '+me().address);
   const e={n:j.next++,...entry,state:'building',built:stamp()};inHand(true);
   try{j.entries.push(e);save(j);
-   let t;try{t=await make();}
+   let t;
+   try{t=await make();need(t&&HEX64.test(t.txid||'')&&typeof t.blob==='string'&&HEX.test(t.blob)&&/^[0-9]{1,20}$/.test(String(t.fee??'')),'The carrier tool did not answer with a transaction.');}
    catch(x){
     // The tool said no (it marks no coin then), or it did not answer (then nothing is known, and a note stays).
     j.entries=j.entries.filter(y=>y!==e);if(/did not answer/.test(String(x?.message))&&!j.notes.includes(LOST))j.notes.push(LOST);save(j);throw x;}
    Object.assign(e,{txid:t.txid,fee:formatXmr(BigInt(t.fee)),blob:t.blob,state:'built'});save(j);return e;}
   finally{inHand(false);}}
+ // A newly built transaction goes to the node. Anything but "the node has it" is an error that says where things stand.
+ async function first(j,e,notes=[]){
+  const r=await deliver(j,e);
+  if(r.taken===true)return {...shown(e,{where:'pool'}),...(notes.length?{notes}:{})};
+  if(r.taken===false)throw Error(`The node said no to the transaction (${r.refused}), and nothing was sent. The transaction is kept as entry ${e.n}: "xmr721 wallet resend" hands it to the node again, "xmr721 wallet forget ${e.n}" gives it up.`);
+  throw Error(`The node did not answer when the transaction was handed to it (${r.unknown}), so it is not known whether it took it. The transaction is kept as entry ${e.n} and counts as sent: "xmr721 wallet inscriptions" shows where it is, and "xmr721 wallet resend" sends it again when the node does not have it.`);}
+ // What was asked for is a transaction the wallet keeps already: that one, handed to the node again when the node does
+ // not have it. Nothing is built.
+ async function same(j,e,live,notes=[]){
+  let v=live.get(e),failed=null;
+  if(KEPT.has(e.state)&&e.blob&&v?.where==='unknown'&&!Number.isSafeInteger(e.spentSeen)){
+   const r=await deliver(j,e);
+   if(r.taken===true)v={where:'pool'};else failed=r.taken===false?`the node said no: ${r.refused}`:`the node did not answer (${r.unknown}); whether it took the transaction is not known`;}
+  return {...shown(e,v),again:true,...(failed?{failed}:{}),...(notes.length?{notes}:{})};}
 
  // Signs the record and, unless it is a dry run, carries it in a transaction of the wallet and sends that.
- async function carry(j,kind,bodyBytes,ctx,{dryRun,extra={},notes=[]}){
+ async function carry(j,kind,bodyBytes,ctx,{dryRun,extra={},notes=[],live=null}){
   const keys=me(),d=decodeRecord(bodyBytes,network,{sig:false}),text=renderText(d.op,d.body,bodyBytes,ctx),record=attachSignature(bodyBytes,keys.sign(text),ctx,network);
   need(record.length<=MAX_RECORD,`The record is ${record.length} bytes; a record is at most ${MAX_RECORD}. Make the content or the name smaller.`);
-  const id=recordId(ctx.domain,bodyBytes),out={kind,id,code:codeOf(id),bytes:record.length,text,...extra};
+  const id=recordId(ctx.domain,bodyBytes),out={kind,id,code:codeOf(id),bytes:record.length,text,...extra,domain:ctx.domain};
   // (A dry run shows what would be signed, not the signed record: a signed record counts in whoever's transaction.)
-  if(dryRun)return {...out,dryRun:true,...(notes.length?{notes}:{})};
-  const same=j.entries.filter(e=>e.id===id),kept=same.find(e=>KEPT.has(e.state)),gone=same.find(e=>e.state==='gone'&&lives(e));
-  // The same record is never paid for twice. Its kept transaction goes out again as it is, unless the node has it or it
-  // is in a block already; one that was given up may still get in, and a second one beside it would be refused.
-  if(kept){let v=(await refresh(j)).get(kept);if(kept.blob&&(kept.state==='built'||(kept.state==='sent'&&v&&!v.seen&&v.where==='unknown'))){await deliver(j,kept);v={where:'pool'};}
-   return {...shown(kept,v),again:true,...(notes.length?{notes}:{})};}
-  need(!gone,`A transaction for this very record was sent and then given up (entry ${gone?.n}). It can still get into a block until about ${gone?new Date(until(gone)).toISOString().slice(0,10):''}; a second one would be paid for and refused. See: xmr721 wallet inscriptions`);
-  const e=await build(j,out,()=>carrier.carry(hex(record)));await deliver(j,e);
-  return {...shown(e,{where:'pool'}),...(notes.length?{notes}:{})};}
+  if(dryRun){const {domain:_,...rest}=out;return {...rest,dryRun:true,...(notes.length?{notes}:{})};}
+  // The same record is never paid for twice: while its transaction is kept, that transaction is the record's. (It is
+  // looked for before the node is asked: one that turns out to be settled just now is still this record's.)
+  const kept=j.entries.find(e=>e.id===id&&KEPT.has(e.state));
+  live??=await refresh(j);
+  if(kept)return same(j,kept,live,notes);
+  return first(j,await build(j,out,()=>carrier.carry(hex(record))),notes);}
 
- // This wallet's own records of one kind that may still get into a block.
- const holding=(j,kind,match)=>j.entries.filter(e=>e.kind===kind&&HOLDS.has(e.state)&&lives(e)&&match(e));
+ // This wallet's own records of one kind, for one ledger, whose transactions the chain has not settled.
+ const holding=(j,kind,ledger,match)=>j.entries.filter(e=>e.kind===kind&&KEPT.has(e.state)&&(e.domain??want)===ledger&&match(e));
  const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
+ // May the wallet's coins be read anew? Reading them anew counts every coin as free that no block shows spent, also the
+ // coins of transactions that are kept. -> notes for the owner.
+ async function mayReadAnew(j){
+  const live=await refresh(j),built=j.entries.filter(e=>e.state==='built'),sent=j.entries.filter(e=>e.state==='sent').map(e=>live.get(e));
+  need(!built.length,`${built.length} transaction(s) of this wallet are built and not sent. Hand them to the node ("xmr721 wallet resend") or give them up ("xmr721 wallet forget <n>") first: they spend coins that would count as free.`);
+  need(sent.every(v=>v&&v.where!==null),'Transactions of this wallet are on their way, and your Monero node cannot be asked where they are. Try again when it answers.');
+  const waiting=sent.filter(v=>v.where==='pool').length,out=sent.filter(v=>v.where==='unknown').length;
+  need(!waiting,`${waiting} transaction(s) of this wallet wait for a block. Try again when they are in one.`);
+  return out?[`${out} transaction(s) of this wallet were sent and are in no block (see "xmr721 wallet inscriptions"). Their coins count as free again from now on. If one of them gets into a block after all, its coin is spent.`]:[];}
+ const balanceOf=s=>({address:me().address,balance:formatXmr(BigInt(s.balance)),coins:s.coins,ready:s.ready,scanned:s.tip});
  return {
   dir,
   get address(){return me().address;},
@@ -268,96 +335,102 @@ export function openWallet({dir,carrier,reader,chain,network='mainnet',domain=nu
     need(made.address===address,'The carrier tool and this program see another address for the same keys.');
     return {address,start:height};});},
   // Sets the block the wallet's scan starts at: for a folder that has only its keys, or to scan from another block.
-  // The coins are read anew from there at the next command, so nothing may be kept that spends them.
-  restore:height=>locked(async()=>{need(Number.isSafeInteger(height)&&height>=1,'The block to scan from is a whole number.');const j=load();
-   need(!j.entries.some(e=>HOLDS.has(e.state)&&lives(e)),'Transactions of this wallet may still get into a block. Wait until they are final before changing where its scan starts.');
-   put(join(dir,'wallet.json'),JSON.stringify({network,start:height})+'\n');if(existsSync(files.state))unlinkSync(files.state);return {address:me().address,start:height};}),
+  // The coins are read anew from there at the next command.
+  restore:height=>locked(async()=>{need(Number.isSafeInteger(height)&&height>=1,'The block to scan from is a whole number, 1 or more.');const j=load();clear(j);
+   const notes=await mayReadAnew(j);
+   put(join(dir,'wallet.json'),JSON.stringify({network,start:height})+'\n');if(existsSync(files.state))unlinkSync(files.state);return {address:me().address,start:height,...(notes.length?{notes}:{})};}),
   balance:()=>locked(async()=>{const j=load();clear(j);const s=await carrier.status();
-   return {address:me().address,balance:formatXmr(BigInt(s.balance)),coins:s.coins,ready:s.ready,scanned:s.tip,kept:j.entries.filter(e=>KEPT.has(e.state)).length};}),
+   return {...balanceOf(s),kept:j.entries.filter(e=>KEPT.has(e.state)).length};}),
   // Makes n coins of the tool's split size from one larger coin.
   split:n=>locked(async()=>{need(Number.isInteger(n)&&n>=2&&n<=14,'Split into 2 to 14 coins.');
-   const j=load();clear(j);const e=await build(j,{kind:'split',coins:n},()=>carrier.split(n));await deliver(j,e);return shown(e,{where:'pool'});}),
+   const j=load();clear(j);return first(j,await build(j,{kind:'split',coins:n},()=>carrier.split(n)));}),
   // One NFT: in no collection, or an edition of one of the wallet's collections (the next free one unless named).
   inscribe:({content,type,name='',to=null,collection=null,edition=null,dryRun=false})=>locked(async()=>{
-   const address=me().address,j=load(),notes=[];clear(j);
+   const address=me().address,j=load();clear(j);
    // What can be seen to be wrong without asking anyone is said first.
    need(content&&content.length,'The file is empty.');
    const owner=to==null?address:canonical(to,network);
    need(collection==null||HEX64.test(collection),'--collection is a collection id (64 hex characters).');need(collection!=null||edition==null,'--edition goes with --collection.');
    need(edition==null||(Number.isInteger(edition)&&edition>=1&&edition<=MAX_EDITIONS),`An edition is 1 to ${MAX_EDITIONS}.`);
    const body=(col,ed)=>encodeBody(OP.mint,{collection:col,edition:ed,creator:address,to:owner===address?null:owner,name,type,content},network);
-   need(body(collection??NO_COLLECTION,collection==null?0:(edition??MAX_EDITIONS)).length+64<=MAX_RECORD,`The record would be more than ${MAX_RECORD} bytes. Make the content or the name smaller.`);
+   need(body(collection??NO_COLLECTION,collection==null?0:(edition??MAX_EDITIONS)).length+SIGNATURE<=MAX_RECORD,`The record would be more than ${MAX_RECORD} bytes. Make the content or the name smaller.`);
    const info=await ledgerNow(),closed=mintingClosed(info,address);need(!closed,closed);
-   let ctx={domain:info.domain,collectionName:null},col=NO_COLLECTION,ed=0;const digest=sha(content);
+   let ctx={domain:info.domain,collectionName:null},col=NO_COLLECTION,ed=0,live=null;const digest=sha(content);
    if(collection!=null){
     const c=await reader.collection(collection,network);need(c,'This collection is not on the ledger yet. A new collection has to be in a block before its editions are minted.');
     need(c.creator===address,'This collection was made by '+c.creator+'; only its creator mints its editions.');
-    await refresh(j);
-    // The same file, name and owner again while its transaction may still get in is that same edition, not a new one.
-    const mine=holding(j,'mint',e=>e.collection===collection),again=mine.find(e=>e.sha===digest&&e.name===name&&e.owner===owner&&e.type===type&&(edition==null||e.edition===edition));
-    // Taken: what the reader shows, what this wallet knows it minted, and its own mints that may still get into a block.
-    const own=j.entries.filter(e=>e.kind==='mint'&&e.collection===collection&&e.state==='done').map(e=>e.edition);
-    const taken=new Set([...c.editions,...own,...mine.filter(e=>e!==again&&e.state!=='gone').map(e=>e.edition)]),given=new Set(mine.filter(e=>e!==again&&e.state==='gone').map(e=>e.edition));
+    live=await refresh(j);
+    // The same file, name and owner again while its transaction is kept is that same edition, not a new one.
+    const mine=holding(j,'mint',info.domain,e=>e.collection===collection),again=mine.find(e=>e.sha===digest&&e.name===name&&e.owner===owner&&e.type===type&&(edition==null||e.edition===edition));
+    // Taken: what the reader shows, what this wallet knows it minted, and its own mints the chain has not settled.
+    const own=j.entries.filter(e=>e.kind==='mint'&&e.collection===collection&&e.state==='done'&&(e.domain??want)===info.domain).map(e=>e.edition);
+    const taken=new Set([...c.editions,...own,...mine.filter(e=>e!==again).map(e=>e.edition)]);
     if(again)edition=again.edition;
-    else if(edition==null){for(let e=1;e<=c.max&&edition==null;e++)if(!taken.has(e)&&!given.has(e))edition=e;need(edition!=null,'Every edition of this collection is minted, or a mint of this wallet for it may still get into a block.');}
+    else if(edition==null){for(let e=1;e<=c.max&&edition==null;e++)if(!taken.has(e))edition=e;need(edition!=null,'Every edition of this collection is minted, or a mint of this wallet for it is on its way.');}
     need(edition<=c.max,`An edition of this collection is 1 to ${c.max}.`);
     need(!taken.has(edition),`Edition ${edition} of this collection is minted already, or this wallet's mint of it is on its way.`);
-    if(given.has(edition))notes.push(`A mint of edition ${edition} was sent and given up; it can still get into a block before this one, and then this one is refused.`);
     col=collection;ed=edition;ctx={domain:info.domain,collectionName:c.name};}
    const bodyBytes=body(col,ed),id=recordId(info.domain,bodyBytes);
-   // A record that is on the ledger already counts once; a second one would be paid for and refused.
-   need(dryRun||j.entries.some(e=>e.id===id&&KEPT.has(e.state))||!await reader.nft(id,network),'This very NFT is on the ledger already. A record counts once: change the name or the content to inscribe again.');
-   return carry(j,'mint',bodyBytes,ctx,{dryRun,notes,extra:{type,size:content.length,sha:digest,name,...(col!==NO_COLLECTION?{collection:col,edition:ed}:{}),owner}});}),
+   // A record that is on the ledger already counts once; a second one would be paid for and refused. The wallet knows
+   // that of its own records, and the reader of everyone's.
+   const once='This very NFT is on the ledger already. A record counts once: change the name or the content to inscribe again.';
+   need(dryRun||!j.entries.some(e=>e.id===id&&e.state==='done'),once);
+   need(dryRun||j.entries.some(e=>e.id===id&&KEPT.has(e.state))||!await reader.nft(id,network),once);
+   return carry(j,'mint',bodyBytes,ctx,{dryRun,live,extra:{type,size:content.length,sha:digest,name,...(col!==NO_COLLECTION?{collection:col,edition:ed}:{}),owner}});}),
   collection:({name,max,dryRun=false})=>locked(async()=>{
    const address=me().address,j=load();clear(j);
-   const made=id=>encodeBody(OP.collection,{creator:address,name,max},network);made();
+   const made=()=>encodeBody(OP.collection,{creator:address,name,max},network);made();
    const info=await ledgerNow(),closed=mintingClosed(info,address);need(!closed,closed);
    const bodyBytes=made(),id=recordId(info.domain,bodyBytes);
-   need(dryRun||j.entries.some(e=>e.id===id&&KEPT.has(e.state))||!await reader.collection(id,network),'This wallet made a collection of this name and size already. Two collections of one creator differ in name or size.');
+   const once='This wallet made a collection of this name and size already. Two collections of one creator differ in name or size.';
+   need(dryRun||!j.entries.some(e=>e.id===id&&e.state==='done'),once);
+   need(dryRun||j.entries.some(e=>e.id===id&&KEPT.has(e.state))||!await reader.collection(id,network),once);
    return carry(j,'collection',bodyBytes,{domain:info.domain},{dryRun,extra:{name,max}});}),
   // Sends an NFT the wallet owns to another address.
   send:({nft,to,dryRun=false})=>locked(async()=>{
-   const address=me().address,j=load(),notes=[];clear(j);
+   const address=me().address,j=load();clear(j);
    need(HEX64.test(nft||''),'Give the NFT id (64 hex characters).');const target=canonical(to,network);need(target!==address,'That is this wallet\'s own address.');
-   const info=await ledgerNow();await refresh(j);
-   // A send of this NFT to the same address that is still kept goes out again as it is; another one waits for it.
-   const mine=holding(j,'send',e=>e.nft===nft),kept=mine.filter(e=>e.state!=='gone'),again=kept.find(e=>e.to===target);
-   if(again&&!dryRun){let v=(await refresh(j)).get(again);if(again.blob&&(again.state==='built'||(again.state==='sent'&&v&&!v.seen&&v.where==='unknown'))){await deliver(j,again);v={where:'pool'};}return {...shown(again,v),again:true};}
-   need(dryRun||!kept.length,`This wallet's send of this NFT to ${kept[0]?.to} is on its way and cannot be taken back. When it is in a block the NFT is there.`);
-   for(const g of mine.filter(e=>e.state==='gone'))notes.push(`A send of this NFT to ${g.to} was sent and given up; it can still get into a block before this one, and then the NFT is there and this send is refused.`);
+   const info=await ledgerNow(),live=await refresh(j);
+   // A send of this NFT to the same address that is kept goes out again as it is; a send elsewhere waits for it.
+   const mine=holding(j,'send',info.domain,e=>e.nft===nft),again=mine.find(e=>e.to===target);
+   if(again&&!dryRun)return same(j,again,live);
+   need(dryRun||!mine.length,`This wallet's send of this NFT to ${mine[0]?.to} is on its way and cannot be taken back. When it is in a block the NFT is there.`);
    const x=await reader.nft(nft,network);need(x,'This NFT is not on the ledger (yet).');
    need(!x.burned,'This NFT was burned.');need(x.owner===address,'This NFT belongs to '+x.owner+', not to this wallet.');
    need(!x.listed,'This NFT is listed for sale; stop the listing first.');need(!x.waiting,'A record for this NFT is waiting for a block. Try again later.');
    const bodyBytes=encodeBody(OP.move,{reg:nft,seq:x.seq,from:address,to:target},network);
-   return carry(j,'send',bodyBytes,{domain:info.domain,what:nftLabel(nft,{collection:x.collection,edition:x.edition},x.collectionName)},{dryRun,notes,extra:{nft,to:target,seq:x.seq}});}),
-  // Sends again every kept transaction the node does not have: one it never took, and one it dropped. A reader is
-  // asked when it answers; without one the node alone decides.
-  resend:()=>locked(async()=>{const j=load();clear(j);const live=await refresh(j,{alone:null}),out=[];
+   return carry(j,'send',bodyBytes,{domain:info.domain,what:nftLabel(nft,{collection:x.collection,edition:x.edition},x.collectionName)},{dryRun,live,extra:{nft,to:target,seq:x.seq}});}),
+  // Hands every kept transaction the node does not have to the node: one it never took, and one it no longer has. The
+  // node alone decides which those are.
+  resend:()=>locked(async()=>{const j=load();clear(j);const live=await refresh(j),out=[];
    for(const e of j.entries.filter(e=>KEPT.has(e.state))){const v=live.get(e);
-    if(!e.blob||(e.state==='sent'&&(v?.seen||v?.where==='pool'||Number.isInteger(v?.where)||v?.where===null))){out.push({...shown(e,v),sentAgain:false});continue;}
-    try{await deliver(j,e);out.push({...shown(e,{where:'pool'}),sentAgain:true});}catch(x){out.push({...shown(e,v),sentAgain:false,failed:clean(x.message,300)});}}
+    if(!e.blob){out.push({...shown(e,v),sentAgain:false,failed:'its transaction is not kept'});continue;}
+    if(v?.where!=='unknown'||Number.isSafeInteger(e.spentSeen)){out.push({...shown(e,v),sentAgain:false});continue;}
+    try{const r=await deliver(j,e);
+     out.push(r.taken===true?{...shown(e,{where:'pool'}),sentAgain:true}:{...shown(e,{where:'unknown',tip:v.tip}),sentAgain:false,failed:r.taken===false?`the node said no: ${r.refused}`:`the node did not answer (${r.unknown}); whether it took the transaction is not known`});}
+    catch(x){out.push({...shown(e,v),sentAgain:false,failed:clean(x?.message,300)});}}
    return out;}),
-  // Gives up a transaction (by its number in `inscriptions`, its record id or its transaction id). One that never
-  // reached the node is removed, and what it held is free. One that was sent cannot be taken back; with `sent` it is
-  // marked as given up: not sent again, and treated as gone once nodes have dropped it. An entry that is final is
-  // removed from the list.
-  forget:(ref,{sent=false}={})=>locked(async()=>{const j=load();clear(j);const e=j.entries.find(e=>String(e.n)===String(ref)||e.id===ref||e.txid===ref);
+  // Takes an entry off the list (by its number in `inscriptions`, its record id or its transaction id): a transaction
+  // that was never sent, which frees what it held; or one the chain has settled. One that was sent and is not settled
+  // stays: nothing takes it back.
+  forget:ref=>locked(async()=>{const j=load();clear(j);const e=j.entries.find(e=>String(e.n)===String(ref)||e.id===ref||e.txid===ref);
    need(e,'There is no such entry. See: xmr721 wallet inscriptions');
-   if(e.state==='done'||e.state==='refused'){j.entries=j.entries.filter(x=>x!==e);save(j);return {...shown(e),forgotten:'removed from the list; it is final on the ledger'};}
-   need(e.state!=='gone','That one is given up already.');
-   const where=await atNode(e.txid);need(where!==null,'The node cannot be asked right now, so it is not known whether it has this transaction. Try again.');
-   if(e.state==='built'&&where==='unknown'){j.entries=j.entries.filter(x=>x!==e);save(j);return {...shown(e,{where}),forgotten:'removed; it never reached the node, and what it held is free'};}
-   need(!Number.isInteger(where),`This transaction is in block ${where}. It cannot be given up.`);
-   need(sent,`This transaction was sent${where==='pool'?' and the node has it':''}. It cannot be taken back: it gets into a block, or nodes drop it after about three days. To stop sending it again and treat it as gone after that, run: xmr721 wallet forget ${e.n} --sent`);
-   e.state='gone';e.sent??=stamp();delete e.blob;save(j);return {...shown(e,{where}),forgotten:'marked as given up; it can still get into a block until nodes drop it'};}),
+   const off=why=>{j.entries=j.entries.filter(x=>x!==e);save(j);return {...shown(e),forgotten:why};};
+   if(!KEPT.has(e.state))return off('removed from the list; the chain has settled it');
+   const where=await atNode(e.txid);need(where!==null,'Your Monero node cannot be asked right now, so it is not known where this transaction is. Try again when it answers.');
+   if(e.state==='built'&&where!=='unknown'){e.state='sent';e.sent??=stamp();delete e.refusal;save(j);}
+   if(e.state==='built')return off('removed. It was never sent, so what it held is free. The coin it would have spent counts as used until: xmr721 wallet rescan');
+   if(Number.isInteger(where)){let tip=null;try{tip=(await chain.info()).height;}catch{}
+    need(Number.isSafeInteger(tip)&&tip-where+1>=FINAL,`This transaction is in block ${where} and not ${FINAL} blocks deep yet. Wait until it is.`);
+    return off(`removed from the list; its transaction is in block ${where} for good`);}
+   throw Error(where==='pool'?'This transaction was sent and the node has it: it waits for a block. A sent transaction cannot be taken back.'
+    :'This transaction was sent. A sent transaction cannot be taken back: a node that has it can still get it into a block, so the wallet keeps it and what it holds. It leaves the list by itself once it is in a block, or once its coin was spent by another transaction.');}),
   // Reads the wallet's coins anew from its start block. Coins the tool marked as used for transactions that never got
-  // into a block are free again. Not while any transaction of this wallet may still get into a block: it spends such
-  // a coin.
-  rescan:()=>locked(async()=>{const j=load();clear(j);await refresh(j,{alone:null});
-   const kept=j.entries.filter(e=>HOLDS.has(e.state));need(!kept.length,`${kept.length} transaction(s) of this wallet may still get into a block and spend their coins. Rescan when they are final or gone. See: xmr721 wallet inscriptions`);
+  // into a block are free again.
+  rescan:()=>locked(async()=>{const j=load();clear(j);const notes=await mayReadAnew(j);
    if(existsSync(files.state))unlinkSync(files.state);const s=await carrier.status();j.notes=[];save(j);
-   return {address:me().address,balance:formatXmr(BigInt(s.balance)),coins:s.coins,ready:s.ready,scanned:s.tip};}),
-  // What this wallet built, each with what the reader and the node know of it now.
-  inscriptions:()=>locked(async()=>{const j=load();clear(j);const live=await refresh(j,{alone:null});return j.entries.map(e=>shown(e,live.get(e)));}),
+   return {...balanceOf(s),...(notes.length?{notes}:{})};}),
+  // What this wallet built, each with what the node and the reader know of it now.
+  inscriptions:()=>locked(async()=>{const j=load();clear(j);const live=await refresh(j);return j.entries.map(e=>shown(e,live.get(e)));}),
   // For the command line: the folder and its files are the owner's alone, also when they were copied from elsewhere.
   tighten(){try{chmodSync(dir,0o700);for(const f of ['carrier.keys.json','wallet.json','journal.json','carrier.state.json'])if(existsSync(join(dir,f))&&statSync(join(dir,f)).isFile())chmodSync(join(dir,f),0o600);}catch{}}};}

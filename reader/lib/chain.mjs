@@ -21,5 +21,8 @@ export function createChain(node,{fetch:f=fetch,timeout=30000}={}){
     for(const t of v.txs||[]){if(!part.includes(t.tx_hash))throw Error('The Monero node returned a transaction that was not asked for');
      out.set(t.tx_hash,{txid:t.tx_hash,inPool:Boolean(t.in_pool),height:t.in_pool?null:t.block_height,tx:JSON.parse(t.as_json)});}}
    return out;},
+  // For each key image, whether it is spent: 0 no, 1 by a transaction in a block, 2 by a transaction that waits for one.
+  async spent(images){if(!images.length)return [];const v=await post('/is_key_image_spent',{key_images:images});
+   if(v.status!=='OK'||!Array.isArray(v.spent_status)||v.spent_status.length!==images.length||v.spent_status.some(x=>![0,1,2].includes(x)))throw Error('The Monero node could not say whether coins are spent');return v.spent_status;},
   // Ids of the transactions waiting to be mined.
   async pool(){const v=await post('/get_transaction_pool_hashes',{});if(v.status!=='OK')throw Error('The Monero node could not list waiting transactions');return v.tx_hashes||[];}};}

@@ -30,14 +30,12 @@ import {unhex} from '../../rules/lib/monero.mjs';
 import {MAX_RECORD} from './transport.mjs';
 
 // The carrier tool, one call at a time (it keeps one state file).
-// `apart`: the tool runs in a process group of its own, so that a stop signal from a terminal reaches the program that
-// called it and not the tool in the middle of its work.
-export function createCarrier({bin,stateDir,node,network='offline-fakechain',start=1,timeout=180000,apart=false}){
+export function createCarrier({bin,stateDir,node,network='offline-fakechain',start=1,timeout=180000}){
  let queue=Promise.resolve();
  const env={PATH:process.env.PATH||'',HOME:process.env.HOME||'',MORDINALS_NODE:node,MORDINALS_NETWORK:network,MORDINALS_START:String(start)};
  // Mainnet and the fee limit are switched on by the service's own environment, never by a request.
  for(const k of ['MORDINALS_MAINNET','MORDINALS_MAX_FEE','MORDINALS_SPLIT_COIN'])if(process.env[k])env[k]=process.env[k];
- const run=(op,arg)=>{const next=queue.then(()=>new Promise((done,fail)=>execFile(bin,[stateDir,op,...(arg==null?[]:[String(arg)])],{env,timeout,maxBuffer:1<<21,...(apart?{detached:true}:{})},(err,stdout)=>{
+ const run=(op,arg)=>{const next=queue.then(()=>new Promise((done,fail)=>execFile(bin,[stateDir,op,...(arg==null?[]:[String(arg)])],{env,timeout,maxBuffer:1<<21},(err,stdout)=>{
    let v=null;try{v=JSON.parse(String(stdout).trim().split('\n').at(-1));}catch{}
    if(v&&'result' in v)done(v.result);else fail(Error(v?.error?String(v.error).slice(0,300):'The carrier tool did not answer'+(err?.killed?' in time':'')));})));
   queue=next.catch(()=>{});return next;};

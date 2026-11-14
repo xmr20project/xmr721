@@ -362,7 +362,8 @@ A ledger with a minter list can name an opening block in its setup; from it on a
 (`RULES.md` section 9, `--open-from`). The `xmr721` command (`cli/`) is a wallet that inscribes from its own coins.
 Both were read by independent reviewers before the opening; what they found is fixed, each with a test
 (`reader/tests/mint-review.test.mjs`, the section on the opening block; `cli/tests/wallet.test.mjs`;
-`cli/tests/lab.test.mjs` runs the wallet with the real carrier tool on a local test chain).
+`cli/tests/command.test.mjs` runs the command as real processes; `cli/tests/lab.test.mjs` runs the wallet with the
+real carrier tool on a local test chain, the same coin spent twice included).
 
 What a reader operator has to know:
 
@@ -385,15 +386,34 @@ Known limits:
   an NFT's move number. A reader that lies about them makes the wallet pay for a record the ledger refuses, and such
   a record could count later, when the number comes true. On mainnet the ledger itself is fixed in the program; a
   reader of one's own removes the rest.
-- **A transaction that was sent cannot be taken back, and a signed record counts in anyone's transaction.**
-  `wallet forget` removes only what never reached the node. For a sent transaction, `--sent` stops the wallet
-  from sending it again and keeps its edition or NFT from being given to something else by itself until nodes
-  have dropped it (four days after it was last sent); it can still get into a block, and so can its record in
-  another transaction if someone kept it. Cancelling for certain would take spending the same coin in another
-  transaction, which the carrier tool cannot be told to do.
+- **A transaction that was sent cannot be taken back, and a signed record counts in anyone's transaction.** The
+  wallet keeps a sent transaction, and the edition or NFT it would take, until its own node shows it 10 blocks deep,
+  or shows its coin spent by another transaction for 10 blocks. `wallet forget` removes only a transaction that was
+  never sent. A sent transaction that no node takes any more stays in the list and holds its place until its coin is
+  spent by a later transaction of the wallet: after `wallet rescan` that coin counts as free and later transactions
+  use it in their turn, but no command spends one chosen coin. This can happen: a node that dropped a transaction
+  after three days refuses it until it is restarted, and a network upgrade can outdate a transaction.
+- **Whether a node took a transaction is not always known.** A node that does not answer while a transaction is
+  handed to it leaves that open, and the wallet counts the transaction as sent. A plain no is told from it by the
+  node's own answer as the carrier tool passes it on ("transaction was rejected").
+- **`wallet resend` goes by the node alone.** It hands over every kept transaction the node does not have, whatever
+  a reader says of its record. If the record got onto the ledger in someone else's transaction meanwhile, the
+  wallet's transaction gets into a block as well and its record is refused as a duplicate: its fee is paid and the
+  ledger is as it was.
+- **The node is what the wallet stands on.** Where a transaction is, how deep, and whether a coin is spent are what
+  the node given with `--node` says. A node that lies can make the wallet take a live transaction for one that can
+  never get into a block. The carrier tool asks for a synchronized node of one's own on mainnet for the same reason.
 - **The wallet's coins are the carrier tool's.** The tool marks a coin as used when it builds a transaction and
-  spends one coin per record. `wallet rescan` reads the coins anew; it is refused while any transaction of the
-  wallet may still get into a block.
-- **Final means 10 blocks deep.** A reorganisation deeper than that after the wallet has dropped a transaction
-  leaves the record to be made again; for a mint or a collection the wallet then builds a new transaction for the
-  same record, for a send it asks the reader for the NFT's state anew.
+  spends one coin per record. `wallet rescan` reads the coins anew; it waits while a transaction of the wallet is
+  with the node and wants unsent ones sent or forgotten first. The tool keeps what it read of the chain only when a
+  read is through, so a read that is stopped starts again at the end of the last finished one.
+- **Final means 10 blocks deep at the wallet's own node, plus the reader's word on what the ledger made of a
+  record.** The transaction is kept until it is 100 blocks deep and is sent again if its block is replaced before
+  that; a replacement deeper than 100 blocks is not looked for. Without a reader a record's transaction stays "in
+  block N" in the list, and `wallet forget` takes it off once it is 10 blocks deep.
+- **A copy of a wallet folder is another wallet with the same coins.** Each copy lists only what it built itself.
+  When two copies spend the same coin, one transaction gets into a block and the other copy sees its own as one
+  that can never get in, 10 blocks later.
+- **The lock goes by process ids.** What a process that is gone left in the lock folder is removed by the next
+  command. If the id of such a process belongs to another program by then, the wallet stays held until the lock
+  folder is removed by hand, as the message says.
