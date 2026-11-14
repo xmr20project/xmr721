@@ -110,26 +110,36 @@ node xmr20-tokens/tools/earlier.mjs check --node <your node>
 The check shows that what is listed is on the chain as listed. Only the scan shows that
 nothing was left out.
 
+## Reading on
+
+The list ends at block 3,804,029, the block an XMR721 reader starts at. From there a
+mainnet reader looks for this format itself: in every block it has read, a follower
+([`../reader/lib/follow.mjs`](../reader/lib/follow.mjs)) keeps the transactions that hold a
+well-formed deploy signed by one of the list's deployers, and they become the next tokens,
+numbered on from the list. A deploy counts from the block it is in; when that block is
+replaced, it goes with it. The follower works behind the reader, in a folder of its own
+inside the state folder (`xmr20-earlier/`), and goes back with it when the chain
+reorganises. It changes nothing of the XMR721 ledger.
+
+The list is continued only by a reader that starts at the list's last block, the same
+block by its hash. Any other reader serves the list as it is. `--no-xmr20-follow` turns the
+reading on off.
+
 ## What a reader serves
 
 A mainnet reader serves the shipped list unless told otherwise (`--no-xmr20-earlier`, or
 `--xmr20-earlier <folder>` for another list):
 
-- `GET /xmr20/earlier?from=&limit=`: the list's block range and deployers, and the earlier
-  tokens, newest first, each with `number`,
+- `GET /xmr20/earlier?from=&limit=`: the earlier tokens, newest first, each with `number`,
   `tick`, `max`, `dec`, `mode`, `mint`, `creator`, `deployer`, `version`, `txid`, `height`,
-  `time`, and `earlier: true`.
+  `time`, and `earlier: true`. `range` is every block the answer covers. When the list is
+  read on there is `following`, and its `complete` says whether that reading has reached
+  the newest block the reader holds.
 - `GET /xmr20/earlier/<transaction id | mint | number>`: one token with its record, its
   signature and the inscribed text.
 - `GET /xmr20/tokens` says how many earlier tokens there are (`earlier`), and `GET /info`
-  names the list's range and deployers.
+  names the range and the deployers.
 
 A token launched since has its deploy inscription on the XMR721 ledger and is listed under
 `/xmr20/tokens`. A launch can have both kinds of inscription; they name the same Solana
 mint, and a page shows it once.
-
-## Not covered
-
-Deploys in this format made after the list's last block are not read: the list ends at the
-XMR721 ledger's start block, and the reader does not yet look for this format in the blocks
-it follows.

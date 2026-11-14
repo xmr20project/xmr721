@@ -4,6 +4,8 @@ import { decodeMap, encodeMap } from './map-codec.mjs';
 import { decodeAddress, verifySpendSignature } from '../../rules/lib/monero.mjs';
 
 const standard = a => { try { return decodeAddress(a, 'mainnet').kind === 'main'; } catch { return false; } };
+// Are the record's addresses standard mainnet addresses, and is the signature its owner's spend-key signature?
+export const signedBy = ({ record: r, signature }) => [r.owner, ...(r.to ? [r.to] : [])].every(standard) && verifySpendSignature(signedText(r), r.owner, signature, 'mainnet');
 
 // A palette picture must decode and encode back to the same bytes. A WebP picture must be one still frame of
 // exactly the stated size without transparency; `webp(bytes)` -> {width, height, pages, hasAlpha} decodes it
@@ -33,18 +35,27 @@ export async function webpWithSharp() {
 
 // entries: [{txid, height, envelope}] in chain order (block, then position in the block), each at least
 // `confirmations` blocks deep at `tip`. -> {collections, tokens, events}
-export async function reduce(entries, { webp } = {}) {
+//
+// A mint's picture is judged last: only a mint that is valid in every other way needs it, and a WebP picture needs
+// a decoder. Options:
+//   webp      the WebP decoder (webpWithSharp above).
+//   known     Map(mint transaction id -> picture valid) for WebP mints that were judged with a decoder before; used
+//             only when no decoder is given, and never kept in `cache`.
+//   verified  Set of transaction ids whose addresses and signature the caller checked itself (signedBy below), for
+//             the same records as it passes here. Such a claim is taken as given and never kept in `cache`.
+//   cache     a Map kept between calls: a record's signature and picture are worked out once. What is kept for a
+//             transaction id is used only for the same record text, so this changes no result.
+export async function reduce(entries, { webp, known = null, verified = null, cache = null } = {}) {
   const collections = new Map(), tokens = new Map(), nonces = new Set(), events = [];
   for (const { txid, height, envelope } of entries) {
     const event = { txid, height };
     const refuse = reason => events.push({ ...event, status: 'refused', reason });
-    let r;
-    try { r = checkEnvelope(envelope).record; if (Buffer.byteLength(JSON.stringify(envelope)) > MAX_JSON) throw Error('JSON too large'); }
+    let r, text;
+    try { r = checkEnvelope(envelope).record; text = JSON.stringify(envelope); if (Buffer.byteLength(text) > MAX_JSON) throw Error('JSON too large'); }
     catch (e) { refuse(e.message); continue; }
-    if (![r.owner, ...(r.to ? [r.to] : [])].every(standard) || !verifySpendSignature(signedText(r), r.owner, envelope.signature, 'mainnet')) {
-      refuse('Invalid address or spend-key signature'); continue;
-    }
-    const picture = r.op !== 'nft_mint' || await pictureOk(r, { webp });
+    let memo = cache?.get(txid);
+    if (!memo || memo.text !== text) { memo = { text }; cache?.set(txid, memo); }
+    if (!verified?.has(txid) && !(memo.signed ??= signedBy(envelope))) { refuse('Invalid address or spend-key signature'); continue; }
     try {
       const nonce = r.owner + ':' + r.nonce;
       if (nonces.has(nonce)) throw Error('Nonce already used');
@@ -57,6 +68,7 @@ export async function reduce(entries, { webp } = {}) {
         if (r.collection !== c.name) throw Error('Collection name differs');
         if (r.edition > c.max || c.editions.includes(r.edition)) throw Error('Edition out of range or already minted');
         if (r.attributes.editions !== `${r.edition}/${c.max}`) throw Error('Edition label differs');
+        const picture = r.image.codec === 'json-text-webp-1' && !webp && known?.has(txid) ? known.get(txid) : (memo.picture ??= await pictureOk(r, { webp }));
         if (!picture) throw Error('Invalid picture data');
         c.editions.push(r.edition);
         tokens.set(txid, { id: txid, collection: c.id, edition: r.edition, owner: r.to, last: txid, art: artHash(r), mint: envelope, history: [{ ...event, op: 'nft_mint', owner: r.to }] });
@@ -69,7 +81,10 @@ export async function reduce(entries, { webp } = {}) {
       }
       nonces.add(nonce);
       events.push({ ...event, status: 'accepted', op: r.op });
-    } catch (e) { refuse(e.message); }
+    } catch (e) {
+      if (/decoder is needed/.test(e.message)) throw e;
+      refuse(e.message);
+    }
   }
   return { collections: [...collections.values()], tokens: [...tokens.values()], events };
 }

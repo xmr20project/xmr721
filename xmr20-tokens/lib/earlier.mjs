@@ -33,14 +33,15 @@ export function checkRecord(r){
 export const signedText=record=>DOMAINS[record.v]+canonical(record);
 
 // The envelope written in a carrier: {record, signature}, checked and with its signature verified against the record's
-// own `owner`. Throws with the reason. `text` is the exact JSON that was inscribed.
-export function openCarrier(carrier,network='mainnet'){
+// own `owner`. Throws with the reason. `text` is the exact JSON that was inscribed. `verify: false` leaves the signature
+// unchecked, for a carrier whose signature the caller checked before, or checks next.
+export function openCarrier(carrier,network='mainnet',{verify=true}={}){
  const bytes=Buffer.from(carrier);need(bytes.length<=MAX_CARRIER&&bytes.subarray(0,7).toString('latin1')===MAGIC,'Not an earlier XMR20 inscription.');
  const text=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(bytes.subarray(7));need(/^[\x20-\x7e]+$/.test(text),'The inscribed text is not plain ASCII.');
  const e=JSON.parse(text);need(e!==null&&typeof e==='object'&&!Array.isArray(e)&&Object.keys(e).sort().join(',')==='record,signature'&&typeof e.signature==='string','Not a record with its signature.');
  need(canonical(e)===text,'The inscribed text is not written the one way it can be.');
  checkRecord(e.record);
- need(verifySpendSignature(signedText(e.record),e.record.owner,e.signature,network),'The signature is not the owner\'s.');
+ need(!verify||verifySpendSignature(signedText(e.record),e.record.owner,e.signature,network),'The signature is not the owner\'s.');
  return {record:e.record,signature:e.signature,text};}
 
 // The earlier deploy in a transaction's extra field, or null when the transaction holds none (any other content, a

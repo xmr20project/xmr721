@@ -46,6 +46,8 @@ export function loadCollection(dir, name) {
   const extras = new Map(saved.transactions.map(t => [t.txid, t.extra])), files = new Map();
   return {
     key: name, header, items,
+    // The saved transactions of the collection in chain order: {txid, height, pos, extra}.
+    transactions: saved.transactions,
     // -> a promise of {type, bytes}, or null when there is no such edition. Drawn once, then kept.
     picture(edition, { plain = false } = {}) {
       const item = items.find(t => t.edition === edition);

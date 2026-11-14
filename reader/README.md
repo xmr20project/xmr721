@@ -12,6 +12,7 @@ is spent) and from then on it moves by signed records. Every record is a short b
 |---|---|---|
 | Carrier framing | `lib/transport.mjs` | A record rides in `tx_extra` of an ordinary Monero transaction (RULES.md section 8). |
 | Reader | `lib/reader.mjs` | Follows a Monero node block by block, finds records, judges each with the rule library, keeps an append-only log and periodic checkpoints. Handles restarts and chain reorganisations. |
+| Follower | `lib/follow.mjs`, `lib/earlier.mjs` | Behind the reader, keeps the transactions of the earlier XMR20 formats in the blocks it has read (new token deploys, transfers of the GENESIS NFTs) in `xmr20-earlier/` inside the state folder, and goes back with it on a reorganisation. Changes nothing of the ledger; `--no-xmr20-follow` turns it off. |
 | Relay | `lib/relay.mjs` | Takes a signed record over HTTP, checks it, and publishes it in a transaction it builds with its own small wallet. It holds no user key and cannot change a record. |
 | Carrier tool | `carrier/` → `bin/mordinals-carrier` | The relay's wallet: builds and publishes the carrying transactions, splits coins. |
 | Pictures | `lib/content.mjs` | Serves a Mordinal's inscribed bytes only after checking them against the hash in the owner list; only a short list of image types. |
@@ -97,6 +98,9 @@ JSON everywhere. Errors are `{"error": "plain text"}` with a 4xx/5xx status. Amo
 | `GET /nft/<id>` | `{height, nft, record (the mint record), collectionRecord, history:[event], waiting:[job]}` |
 | `GET /nft/<id>/content` | the inscribed bytes when they are a picture (by their first bytes) or plain text; `415` otherwise |
 | `GET /nft-collections`, `GET /nft-collection/<id>` | collections made on the ledger; one with its record and its minted NFTs |
+| `GET /collections`, `GET /collections/<key>`, `GET /collections/<key>/<edition>`, `…/picture` | the saved XMR20 NFT collections (GENESIS): the collection with its NFTs, one NFT with its moves, and its picture drawn as its own text over its picture (`?plain=1` for the bare picture). Owners are those at the block in `ownersAsOf`; see [`../xmr20-nfts/`](../xmr20-nfts) |
+| `GET /xmr20/tokens`, `GET /xmr20/token/<id>`, `GET /xmr20/deploys/<mint>` | XMR20 tokens inscribed on this ledger ([`../xmr20-tokens/FORMAT.md`](../xmr20-tokens/FORMAT.md)) |
+| `GET /xmr20/earlier`, `GET /xmr20/earlier/<transaction id, mint or number>` | XMR20 tokens of the earlier deploy inscriptions, read on in the blocks this reader follows ([`../xmr20-tokens/EARLIER.md`](../xmr20-tokens/EARLIER.md)) |
 | `GET /checkpoints` | `{height, checkpoints:[{schema, network, domain, owners, start, height, blockHash, records, listHash, stateHash}]}` |
 | `GET /checkpoint` | the same summary at the current block |
 | `GET /records?from=&limit=` | `{height, total, from, records:[hex]}`: accepted records in order, 1,000 at a time unless `limit` says otherwise (at most 5,000) |

@@ -8,7 +8,11 @@
  "minted": 100,
  "format": "XMR20-NFT-V2",
  "ownersAsOf": {
-  "height": 3803236,
-  "hash": "70b91890ae683ea020cd0d57bf3bc985031c7cb25c597e2e70a693adb14c22b7"
+  "height": 3804029,
+  "hash": "cddee72e248e6fc903d7850f73e29cceff64dd9a027f64afc7362d76784081cd"
+ },
+ "scanned": {
+  "from": 3772610,
+  "to": 3804029
  }
 }

@@ -97,8 +97,10 @@ well-known paintings, each one complete in a single transaction. They were made 
 XMR721, in an earlier format of their own, and are owned by Monero addresses from the
 start, so no coin is ever exposed.
 [`xmr20-nfts/`](xmr20-nfts) holds the collection as rebuilt from the chain, the
-[format](xmr20-nfts/FORMAT.md) and the code that decodes and checks it. That format is
-legacy; new inscriptions are planned to use XMR721.
+[format](xmr20-nfts/FORMAT.md) and the code that decodes and checks it. A reader serves it
+with every picture drawn as it is meant to be seen, its text over its picture, and keeps
+its owners current from the transfers in the blocks it follows. That format is legacy; new
+inscriptions are planned to use XMR721.
 
 ## Layout
 

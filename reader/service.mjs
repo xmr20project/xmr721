@@ -11,6 +11,7 @@
 //        [--content-dir <dir> | --content-archive [url]] [--collections <dir>] [--views <dir>] [--allow-origin <origin>] [--allow-extension <id>] [--behind-proxy] [--test-hooks]
 //        [--xmr20-inscribers <address>,…]   list the XMR20 tokens these addresses inscribed (xmr20-tokens/FORMAT.md)
 //        [--xmr20-earlier <dir> | --no-xmr20-earlier]   the earlier XMR20 deploy inscriptions (xmr20-tokens/EARLIER.md); the list this repository ships is served unless another is named
+//        [--no-xmr20-follow]   do not read the earlier formats on in the blocks this reader follows (lib/earlier.mjs): serve the shipped list and the saved collections as they are
 //
 // Lists are served whole (the owner list in pieces, every claimed number), so a wallet never has to name the
 // Mordinals it holds before it claims them.
@@ -26,6 +27,8 @@ import {served,readOwners} from './lib/owners.mjs';
 import {loadCollections} from '../xmr20-nfts/lib/collection.mjs';
 import {projectDeploys,TYPE_JSON} from '../xmr20-tokens/lib/token.mjs';
 import {loadEarlier,canonical as earlierText} from '../xmr20-tokens/lib/earlier.mjs';
+import {openFollower} from './lib/follow.mjs';
+import {picker,earlierTokens,collectionOwners,NAME as EARLIER_NAME} from './lib/earlier.mjs';
 
 const TYPES={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.woff2':'font/woff2'};
 const PAGE_CSP="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -35,7 +38,7 @@ const fail=(message,status=400)=>{const e=Error(message);e.status=status;return 
 const isJson=bytes=>{try{JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));return true;}catch{return false;}};
 const int=(v,fallback,min,max)=>{const n=v==null||v===''?NaN:Number(v);return Number.isInteger(n)?Math.min(max,Math.max(min,n)):fallback;};
 
-export function createService({reader,relay=null,owners,transfers=[],blockTimes=null,groups=null,content=null,collections=new Map(),views=null,origins=[],extensions=null,behindProxy=false,testHooks=false,extra=null,xmr20=null,earlier=null,chunk=4000,rate={perSecond:2,burst:60},log=()=>{}}){
+export function createService({reader,relay=null,owners,transfers=[],blockTimes=null,groups=null,content=null,collections=new Map(),views=null,origins=[],extensions=null,behindProxy=false,testHooks=false,extra=null,xmr20=null,earlier=null,follower=null,followLimit=25,followBudget=1000,chunk=4000,rate={perSecond:2,burst:60},log=()=>{}}){
  const m=reader.meta,list=owners.map(served),numbers=owners.map(o=>o.number),entry=new Map(owners.map(o=>[o.number,o])),byReg=new Map(owners.map(o=>[o.registrationTx,o]));
  // When the blocks of the original history were made: exact for the blocks in the list, and between two listed blocks
  // from the blocks on either side. Outside the list there is no date.
@@ -74,10 +77,29 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
  const contentOf=id=>decodeRecord(Buffer.from(reader.entryById(id).record,'hex'),m.network).body.content;
  // `inscription` counts every minted NFT on from the Mordinals' numbers, in ledger order: a number to show, where records use ids.
  const firstMinted=numbers.reduce((a,b)=>Math.max(a,b),-1)+1;
- // The earlier XMR20 deploy inscriptions (xmr20-tokens/EARLIER.md): a list from before this ledger, loaded and checked
- // once. One token by its transaction, its Solana mint or its number in the list.
- const earlierBy=earlier?new Map(earlier.tokens.flatMap(x=>[[x.txid,x],[x.mint,x],[String(x.number),x]])):null,earlierEntry=earlier?new Map(earlier.deploys.map(d=>[d.txid,d])):null;
- const earlierInfo=earlier?{count:earlier.tokens.length,from:earlier.header.from,to:earlier.header.to,deployers:earlier.header.deployers}:null;
+ // The earlier XMR20 formats (lib/earlier.mjs): the tokens' deploy inscriptions from before this ledger and the saved
+ // collections' NFTs, as the shipped files hold them, read on by the follower in the blocks this reader holds where the
+ // files end at its start block. Views of other formats: they change no record and no owner of this ledger.
+ // (A saved collection whose files cannot be read as one is served as it is, without owners of its own.)
+ const E=earlier?earlierTokens({base:earlier,follower,reader}):null,O=new Map();
+ for(const [key,c] of collections){if(!Array.isArray(c?.transactions))continue;try{O.set(key,collectionOwners({collection:c,follower,reader}));}catch(e){log({earlier:`collection ${key}: ${String(e?.message||e).slice(0,160)}`});}}
+ const earlierInfo=()=>{const at=E.reach;return {count:E.view.tokens.length,from:at.from,to:at.to,deployers:E.deployers,...(at.following?{following:{complete:at.complete}}:{})};};
+ const follows=()=>Boolean(follower)&&(Boolean(E?.on())||[...O.values()].some(o=>o.on()));
+ // One pass of the follower, short (some blocks, about a second), and then the views: the token view is made here so that
+ // no request has to, and each collection's owners are worked out again, which asks the node nothing. A failure in any of
+ // it is logged and tried again at the next turn; it never stops a sync or the relay.
+ // (The same failure again and again is logged once, then now and then.)
+ let noted='',times=0;const note=e=>{const m=String(e?.message||e).slice(0,200);if(m===noted&&++times%120!==0)return;if(m!==noted){noted=m;times=0;}log({earlier:m});};
+ // The views are made one at a time, in the order they were asked for.
+ let making=Promise.resolve();const remake=()=>making=making.then(async()=>{try{E?.view;}catch(e){note(e);}for(const o of O.values()){try{await o.refresh();}catch(e){note(e);}}});
+ const earlierStep=async()=>{let f=null;try{if(!follows())return null;f=await follower.run({limit:followLimit,budget:followBudget});}catch(e){note(e);}await remake();return f;};
+ // What the follower's folder already holds is shown from the start: `ready` settles when the views are made.
+ const ready=remake();
+ // A saved collection as it stands now: its files, with the owners the follower's transfers lead to where the files are
+ // continued. `ownersAsOf` is then the block those owners are the format's ledger at; `following.complete` says whether
+ // that is the newest block this reader holds, and `pending` counts kept transfers that are not 10 blocks deep yet.
+ const saved=(key,c)=>{const o=O.get(key),s=o?.state;if(!s)return c;const st=o.status;
+  return {header:{...c.header,ownersAsOf:st.asOf,following:{complete:st.complete,pending:st.pending}},items:c.items.map(t=>{const x=s.tokens.get(t.id);return x?{...t,owner:x.owner,last:x.last,transfers:x.history.length-1}:t;})};};
  // Who burned an NFT matters here: only its inscriber's own burn takes a token back.
  const tokens=()=>once('xmr20',()=>{const all=projectDeploys(reader.events.filter(e=>e.kind==='mint').map((e,i)=>{const x=L().nft(e.nft);
    return {id:e.nft,inscription:firstMinted+i,creator:x.minted.creator,collection:x.minted.collection,type:x.minted.type,burned:Boolean(x.burned),burnedBy:x.burned?x.history.find(h=>h.what==='burn')?.from??null:null,
@@ -94,12 +116,12 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
  const waitingFor=q=>relay?relay.waitingFor(q):[];
  // One sync and relay pass. The loop below runs it on a timer; tests call it directly.
  let stepping=null;
- const step=()=>{if(!stepping)stepping=(async()=>{const r=await reader.sync();const t=relay?await relay.tick():null;return {...r,relay:t};})().finally(()=>{stepping=null;});return stepping;};
+ const step=()=>{if(!stepping)stepping=(async()=>{const r=await reader.sync();const t=relay?await relay.tick():null;const f=await earlierStep();return {...r,relay:t,...(f?{earlier:f}:{})};})().finally(()=>{stepping=null;});return stepping;};
 
  async function route(method,url,body,req){
   const path=url.pathname,q=url.searchParams,height=reader.height;
   if(method==='GET'){
-   if(path==='/info')return {network:m.network,domain:m.domain,feeAddress:m.feeAddress,height,count:list.length,chunk,test:Boolean(testHooks),owners:m.owners,start:m.start,startHash:m.startHash,mintFrom:m.mintFrom??null,...(m.minters?{minters:m.minters.split(',')}:{}),...(xmr20||earlier?{xmr20:{...(xmr20?{inscribers:xmr20.inscribers}:{}),...(earlier?{earlier:earlierInfo}:{})}}:{}),
+   if(path==='/info')return {network:m.network,domain:m.domain,feeAddress:m.feeAddress,height,count:list.length,chunk,test:Boolean(testHooks),owners:m.owners,start:m.start,startHash:m.startHash,mintFrom:m.mintFrom??null,...(m.minters?{minters:m.minters.split(',')}:{}),...(xmr20||E?{xmr20:{...(xmr20?{inscribers:xmr20.inscribers}:{}),...(E?{earlier:earlierInfo()}:{})}}:{}),
     relay:relay?{networkFee:'relay',perAddress:relay.limits.perSigner,fees:relay.fees,payBlocks:relay.limits.payBlocks}:null,rules:{feeBps:RULES.feeBps,marketFeeCapBps:RULES.marketFeeCapBps,minPrice:RULES.minPrice.toString(),maxReserve:RULES.maxReserve,settle:RULES.settle}};
    if(path==='/owners'){const from=int(q.get('from'),0,0,list.length),limit=int(q.get('limit'),chunk,1,chunk);return {from,total:list.length,entries:list.slice(from,from+limit)};}
    if(path==='/claimed')return {height,numbers:claimed()};
@@ -172,12 +194,13 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
     return {height,collection:madeCollection(c),record:reader.entryById(c.id).record,items:mintedIds().filter(id=>L().nft(id).minted.collection===c.id).map(minted).sort((a,b)=>a.edition-b.edition)};}
    // XMR20 tokens, newest first; one token by its inscription id, its number or its Solana mint.
    if(xmr20&&path==='/xmr20/tokens'){const mode=q.get('mode'),all=mode?tokens().list.filter(t=>t.mode===mode):tokens().list,from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),60,1,200);
-    return {height,total:all.length,from,inscribers:xmr20.inscribers,...(earlier?{earlier:earlier.tokens.length}:{}),items:all.slice().reverse().slice(from,from+limit).map(t=>({...t,confirmations:height-t.height+1}))};}
-   // The earlier XMR20 tokens, newest first, and one of them with the text that was inscribed for it.
-   if(earlier&&path==='/xmr20/earlier'){const all=earlier.tokens,from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),60,1,200);
-    return {height,total:all.length,from,range:{from:earlier.header.from,to:earlier.header.to},deployers:earlier.header.deployers,items:all.slice().reverse().slice(from,from+limit)};}
-   if(earlier&&path.startsWith('/xmr20/earlier/')){const x=earlierBy.get(decodeURIComponent(path.slice(15)));if(!x)throw fail('This is not an earlier XMR20 token.',404);
-    const d=earlierEntry.get(x.txid);return {height,token:x,record:d.record,signature:d.signature,text:earlierText({record:d.record,signature:d.signature})};}
+    return {height,total:all.length,from,inscribers:xmr20.inscribers,...(E?{earlier:E.view.tokens.length}:{}),items:all.slice().reverse().slice(from,from+limit).map(t=>({...t,confirmations:height-t.height+1}))};}
+   // The earlier XMR20 tokens, newest first, and one of them with the text that was inscribed for it. `range` is every
+   // block the answer covers: the list's, and on from it the blocks the follower has read.
+   if(E&&path==='/xmr20/earlier'){const v=E.view,at=E.reach,all=v.tokens,from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),60,1,200);
+    return {height,total:all.length,from,range:{from:at.from,to:at.to},deployers:E.deployers,...(at.following?{following:{complete:at.complete}}:{}),items:all.slice().reverse().slice(from,from+limit)};}
+   if(E&&path.startsWith('/xmr20/earlier/')){const v=E.view,x=v.by.get(decodeURIComponent(path.slice(15)));if(!x)throw fail('This is not an earlier XMR20 token.',404);
+    const d=v.entry.get(x.txid);return {height,token:x,record:d.record,signature:d.signature,text:earlierText({record:d.record,signature:d.signature})};}
    if(xmr20&&path.startsWith('/xmr20/token/')){const t=tokens().by.get(decodeURIComponent(path.slice(13)));if(!t)throw fail('This is not an XMR20 token on this ledger.',404);
     return {height,token:{...t,confirmations:height-t.height+1},record:reader.entryById(t.id).record,text:Buffer.from(contentOf(t.id)).toString('utf8')};}
    // Every deploy inscription that names one Solana mint, listed as a token or not (burned by its inscriber, or behind an
@@ -185,11 +208,13 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
    if(xmr20&&path.startsWith('/xmr20/deploys/')){const mint=decodeURIComponent(path.slice(15));
     return {height,deploys:tokens().all.filter(t=>t.mint===mint).map(t=>({...t,confirmations:height-t.height+1,record:reader.entryById(t.id).record}))};}
    // Collections shown next to the Mordinals (read-only; see xmr20-nfts/).
-   if(path==='/collections')return {height,collections:[...collections.values()].map(c=>({key:c.key,...c.header}))};
+   if(path==='/collections')return {height,collections:[...collections].map(([key,c])=>({key,...saved(key,c).header}))};
    if(path.startsWith('/collections/')){const [key,edition]=path.slice(13).split('/'),c=collections.get(key);if(!c)throw fail('This collection is not known here.',404);
-    if(edition===undefined)return {height,collection:{key:c.key,...c.header},items:c.items};
-    const item=/^\d{1,5}$/.test(edition)?c.items.find(t=>t.edition===Number(edition)):null;if(!item)throw fail('This collection has no such edition.',404);
-    return {height,collection:{key:c.key,...c.header},item};}
+    const now=saved(key,c);if(edition===undefined)return {height,collection:{key,...now.header},items:now.items};
+    const item=/^\d{1,5}$/.test(edition)?now.items.find(t=>t.edition===Number(edition)):null;if(!item)throw fail('This collection has no such edition.',404);
+    // One NFT comes with its transfers, oldest first, where the files are continued.
+    const moves=O.get(key)?.state?.tokens.get(item.id)?.history.slice(1).map(x=>({txid:x.txid,height:x.height,to:x.owner}));
+    return {height,collection:{key,...now.header},item:moves?{...item,moves}:item};}
    if(path==='/checkpoints')return {height,checkpoints:reader.checkpoints};
    if(path==='/checkpoint')return reader.checkpoint();}
   if(method==='POST'&&path==='/records'){
@@ -254,7 +279,7 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
    // `held` names the record that already holds a launch with the relay.
    res.end(JSON.stringify({error:String(e?.message||e).slice(0,400),...(e?.rule?{rule:true}:{}),...(e?.held?{held:e.held}:{})}));}});
  let timer=null;
- return {reader,relay,server,step,
+ return {reader,relay,server,step,ready,
   listen:port=>new Promise((done,bad)=>{server.once('error',bad);server.listen(port,'127.0.0.1',()=>done(server.address().port));}),
   // Follow the chain on a timer. A failed pass is logged and tried again at the next turn.
   follow(every=5000){if(timer)return;const turn=()=>step().catch(e=>log({sync:String(e.message).slice(0,200)}));turn();timer=setInterval(turn,every);timer.unref?.();},
@@ -269,10 +294,21 @@ export async function startService(o){
   relay=createRelay({dir:join(o.state,'relay'),reader,chain,carrier,network,domain:o.domain,limits:o.limits,fees:o.fees,lane:o.minters||[],...(o.now?{now:o.now}:{}),log:o.log});}
  const source=o.contentDir?dirContent(o.contentDir):o.contentArchive?archiveContent(o.contentArchive===true?undefined:o.contentArchive):null;
  const times=o.blockTimes!==undefined?o.blockTimes:existsSync(BLOCK_TIMES)?BLOCK_TIMES:null,groupFile=o.groups!==undefined?o.groups:existsSync(GROUPS)?GROUPS:null;
- const service=createService({reader,relay,owners,transfers:o.transfers?readOwners(o.transfers):[],blockTimes:times?JSON.parse(readFileSync(times,'utf8')).times:null,groups:groupFile?JSON.parse(readFileSync(groupFile,'utf8')):null,content:source?createContent({source}):null,collections:o.collections?loadCollections(o.collections):new Map(),views:o.views||(existsSync(VIEWS)?VIEWS:null),xmr20:o.xmr20Inscribers?.length?{inscribers:o.xmr20Inscribers.map(a=>canonical(a,network))}:null,
-  // The earlier XMR20 tokens are a list of mainnet inscriptions: served on a mainnet reader, from the named folder or the shipped one.
-  earlier:network==='mainnet'&&o.xmr20Earlier!==false&&(o.xmr20Earlier||existsSync(join(EARLIER,'list.json')))?loadEarlier(o.xmr20Earlier||EARLIER,network):null,origins:o.origins||[],extensions:o.extensions?.length?o.extensions:null,behindProxy:Boolean(o.behindProxy),testHooks:Boolean(o.testHooks),...(o.rate?{rate:o.rate}:{}),log:o.log});
- const port=await service.listen(o.port==null?18951:Number(o.port));return {...service,port,chain,owners};}
+ // The earlier XMR20 tokens are a list of mainnet inscriptions: served on a mainnet reader, from the named folder or the shipped one.
+ const earlier=network==='mainnet'&&o.xmr20Earlier!==false&&(o.xmr20Earlier||existsSync(join(EARLIER,'list.json')))?loadEarlier(o.xmr20Earlier||EARLIER,network):null;
+ const collections=o.collections?loadCollections(o.collections):new Map();
+ // Both are read on in the blocks this reader follows, in a folder of its own inside the state folder, where they end at
+ // this reader's start block: new deploys of the list's deployers, and transfers of the NFTs of saved collections that are
+ // fully minted.
+ const full=network==='mainnet'?[...collections.values()].filter(c=>Array.isArray(c?.transactions)&&Array.isArray(c.items)&&c.header&&c.header.minted===c.header.max&&c.header.ownersAsOf?.height===Number(o.start)):[];
+ const choice=picker({deployers:earlier?.header.to===Number(o.start)?earlier.header.deployers:[],nfts:full.flatMap(c=>c.items.map(t=>t?.id)).filter(id=>typeof id==='string')});
+ // A follower that cannot be opened (its folder cannot be written, say) is done without: the shipped files are then served as they are.
+ let follower=null;
+ if(network==='mainnet'&&o.xmr20Follow!==false&&(earlier||full.length)){try{follower=openFollower({dir:join(o.state,EARLIER_NAME),chain,reader,pick:choice.pick,name:choice.name,log:o.log});}catch(e){o.log?.({earlier:'not read on: '+String(e?.message||e).slice(0,200)});}}
+ const service=createService({reader,relay,owners,transfers:o.transfers?readOwners(o.transfers):[],blockTimes:times?JSON.parse(readFileSync(times,'utf8')).times:null,groups:groupFile?JSON.parse(readFileSync(groupFile,'utf8')):null,content:source?createContent({source}):null,collections,views:o.views||(existsSync(VIEWS)?VIEWS:null),xmr20:o.xmr20Inscribers?.length?{inscribers:o.xmr20Inscribers.map(a=>canonical(a,network))}:null,
+  earlier,follower,...(o.followLimit?{followLimit:o.followLimit}:{}),origins:o.origins||[],extensions:o.extensions?.length?o.extensions:null,behindProxy:Boolean(o.behindProxy),testHooks:Boolean(o.testHooks),...(o.rate?{rate:o.rate}:{}),log:o.log});
+ // The views are made from what the follower's folder holds before anything is served; a few seconds at most are waited for it.
+ await Promise.race([service.ready,new Promise(done=>{setTimeout(done,5000).unref?.();})]);const port=await service.listen(o.port==null?18951:Number(o.port));return {...service,port,chain,owners};}
 
 if(process.argv[1]===import.meta.filename){
  const arg=name=>{const i=process.argv.indexOf('--'+name);return i<0?null:process.argv[i+1];},has=name=>process.argv.includes('--'+name);
@@ -282,7 +318,7 @@ if(process.argv[1]===import.meta.filename){
  const limits=Object.fromEntries((arg('relay-limits')||'').split(',').filter(Boolean).map(kv=>{const [k,v]=kv.split('=');if(!/^[a-zA-Z]+$/.test(k)||!/^\d{1,12}$/.test(v||''))throw Error('--relay-limits: name=number,…');return [k,Number(v)];}));
  const s=await startService({...(Object.keys(limits).length?{limits}:{}),owners:arg('owners'),transfers:arg('transfers'),...(arg('block-times')?{blockTimes:arg('block-times')}:{}),...(arg('groups')?{groups:arg('groups')}:{}),domain:arg('domain'),feeAddress:arg('fee-address'),node:arg('node'),start:arg('start'),startHash:arg('start-hash'),mintFrom:arg('mint-from'),
   // --minters given means a list: an empty value is refused, never read as "everyone".
-  ...(has('minters')?{minters:(arg('minters')||'').split(',').filter(Boolean)}:{}),state:arg('state'),network:arg('network'),xmr20Inscribers:(arg('xmr20-inscribers')||'').split(',').filter(Boolean),...(has('no-xmr20-earlier')?{xmr20Earlier:false}:arg('xmr20-earlier')?{xmr20Earlier:arg('xmr20-earlier')}:{}),
+  ...(has('minters')?{minters:(arg('minters')||'').split(',').filter(Boolean)}:{}),state:arg('state'),network:arg('network'),xmr20Inscribers:(arg('xmr20-inscribers')||'').split(',').filter(Boolean),...(has('no-xmr20-earlier')?{xmr20Earlier:false}:arg('xmr20-earlier')?{xmr20Earlier:arg('xmr20-earlier')}:{}),...(has('no-xmr20-follow')?{xmr20Follow:false}:{}),
   port:arg('port'),fees:{mint:arg('mint-fee')||0,collection:arg('collection-fee')||0},carrierBin:arg('carrier-bin'),carrierState:arg('carrier-state'),carrierStart:arg('carrier-start'),carrierNetwork:arg('carrier-network'),contentDir:arg('content-dir'),collections:arg('collections'),contentArchive:archive,views:arg('views'),
   origins:process.argv.flatMap((a,i)=>a==='--allow-origin'?[process.argv[i+1]]:[]),extensions:process.argv.flatMap((a,i)=>a==='--allow-extension'?[process.argv[i+1]]:[]),behindProxy:has('behind-proxy'),testHooks:has('test-hooks'),log:v=>console.log(new Date().toISOString(),JSON.stringify(v))});
  console.log(`Mordinals reader on http://127.0.0.1:${s.port} (${s.owners.length} Mordinals, block ${s.reader.height}${s.relay?', relay on':', reader only'})`);

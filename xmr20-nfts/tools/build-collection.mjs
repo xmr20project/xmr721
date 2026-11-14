@@ -3,11 +3,16 @@
 //
 //   node xmr20-nfts/tools/build-collection.mjs --node <monero node url> --collection <deploy txid> --name genesis
 //        (--reader <reader api url> | --txids <file with one txid per line>) [--extras <file>]
+//   node xmr20-nfts/tools/build-collection.mjs --scan <file made by scan-collection.mjs> --name genesis [--extras <file>]
 //
 // The transactions are read from the node, decoded and judged here with lib/. A reader service is only asked which
 // transactions belong to the collection (its deploy, mints and transfers); its owners are then compared with the
 // owners worked out here, and any difference stops the run. --extras also saves the raw extra fields, so the same
-// result can be rebuilt offline (tests/collections.test.mjs).
+// result can be rebuilt offline (tests/nfts.test.mjs).
+// With --scan nothing is asked of anyone: the transactions are those a scan of every block of a range found, and the
+// files then say that the owners are those at the range's last block (`ownersAsOf`) and which blocks were read. A scan
+// also finds records that name the collection and are not valid (anyone can publish one); they stay in the saved
+// transactions, change nothing, and are counted in what this prints.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { recordOf } from '../lib/format.mjs';
@@ -41,17 +46,18 @@ export async function fetchExtras(node, ids) {
   return out.sort((a, b) => a.height - b.height || a.pos - b.pos);
 }
 
-export async function build(extras, collectionId) {
+export async function build(extras, collectionId, { allowRefused = false } = {}) {
   const entries = extras.map(t => ({ txid: t.txid, height: t.height, envelope: recordOf(Buffer.from(t.extra, 'hex')) }));
   const missing = entries.filter(e => !e.envelope);
   if (missing.length) throw Error('Not an NFT record: ' + missing.map(e => e.txid).join(', '));
   const state = await reduce(entries, { webp: await webpWithSharp() });
   const refused = state.events.filter(e => e.status !== 'accepted');
-  if (refused.length) throw Error('Refused: ' + JSON.stringify(refused));
+  if (refused.length && !allowRefused) throw Error('Refused: ' + JSON.stringify(refused));
   const c = state.collections.find(x => x.id === collectionId);
   if (!c) throw Error('The collection was not deployed by these transactions');
   const tokens = state.tokens.filter(t => t.collection === c.id).sort((a, b) => a.edition - b.edition);
   return {
+    refused: refused.length,
     collection: { id: c.id, name: c.name, max: c.max, meta: c.meta, authority: c.authority, deployedAt: c.height, minted: tokens.length },
     items: tokens.map(t => {
       const r = t.mint.record;
@@ -62,13 +68,15 @@ export async function build(extras, collectionId) {
 }
 
 if (process.argv[1] === import.meta.filename) {
-  const node = arg('node'), id = arg('collection'), name = arg('name');
-  if (!node || !id || !name || !(arg('reader') || arg('txids'))) {
-    console.error('Usage: build-collection.mjs --node <url> --collection <deploy txid> --name <file name> (--reader <url> | --txids <file>) [--extras <file>]');
+  const scan = arg('scan') ? JSON.parse(readFileSync(arg('scan'), 'utf8')) : null;
+  const node = arg('node'), id = scan ? scan.collection : arg('collection'), name = arg('name');
+  if (!name || !(scan || (node && id && (arg('reader') || arg('txids'))))) {
+    console.error('Usage: build-collection.mjs --node <url> --collection <deploy txid> --name <file name> (--reader <url> | --txids <file>) [--extras <file>]\n       build-collection.mjs --scan <file> --name <file name> [--extras <file>]');
     process.exit(2);
   }
   let ids, theirs = null, checkpoint = null;
-  if (arg('reader')) {
+  if (scan) checkpoint = { height: scan.to, hash: scan.toHash };
+  else if (arg('reader')) {
     const base = arg('reader').replace(/\/$/, ''), list = await getJson(base + '/nfts');
     if (list.complete !== true) throw Error('The reader says its list is not complete');
     checkpoint = list.checkpoint;
@@ -81,7 +89,7 @@ if (process.argv[1] === import.meta.filename) {
     ids = [...ids];
   } else ids = [...new Set([id, ...readFileSync(arg('txids'), 'utf8').split(/\s+/).filter(Boolean)])];
 
-  const extras = await fetchExtras(node, ids), out = await build(extras, id);
+  const extras = scan ? scan.transactions : await fetchExtras(node, ids), out = await build(extras, id, { allowRefused: Boolean(scan) });
   if (theirs) {
     const mine = new Map(out.items.map(t => [t.id, t]));
     for (const t of theirs) {
@@ -90,9 +98,9 @@ if (process.argv[1] === import.meta.filename) {
     }
     if (theirs.length !== out.items.length) throw Error('The reader lists another number of NFTs');
   }
-  const header = { ...out.collection, format: 'XMR20-NFT-V2', ...(checkpoint ? { ownersAsOf: checkpoint } : {}) };
+  const header = { ...out.collection, format: 'XMR20-NFT-V2', ...(checkpoint ? { ownersAsOf: checkpoint } : {}), ...(scan ? { scanned: { from: scan.from, to: scan.to } } : {}) };
   writeFileSync(join(HERE, '..', 'collections', name + '.json'), JSON.stringify(header, null, 1) + '\n');
   writeFileSync(join(HERE, '..', 'collections', name + '.jsonl'), out.items.map(t => JSON.stringify(t) + '\n').join(''));
   if (arg('extras')) writeFileSync(arg('extras'), JSON.stringify({ collection: id, transactions: extras.map(({ txid, height, pos, extra }) => ({ txid, height, pos, extra })) }) + '\n');
-  console.log(JSON.stringify({ ...header, transactions: extras.length, comparedWithReader: Boolean(theirs) }));
+  console.log(JSON.stringify({ ...header, transactions: extras.length, refused: out.refused, comparedWithReader: Boolean(theirs), fromScan: Boolean(scan) }));
 }
