@@ -42,16 +42,18 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
  if(minters!==null&&!(Array.isArray(minters)&&minters.length))throw Error('Bad minter list');
  const minterList=minters===null?null:[...new Set(minters.map(a=>canonical(a,network)))].sort();
  if(openFrom!==null&&!(Number.isInteger(openFrom)&&minterList&&mintFrom!==null&&openFrom>mintFrom))throw Error('Bad opening block: it needs a minter list and comes after the first mint block');
+ // meta.json is replaced whole: written beside it, flushed, then put in its place.
+ const writeMeta=m=>{const tmp=files.meta+'.tmp',fd=openSync(tmp,'w',0o644);try{writeSync(fd,JSON.stringify(m,null,1)+'\n');fsyncSync(fd);}finally{closeSync(fd);}renameSync(tmp,files.meta);};
  const want={schema:openFrom!==null?SCHEMA_OPEN:minterList?SCHEMA_MINTERS:SCHEMA,network,domain,feeAddress:canonical(feeAddress,network),start,owners:ownersHash(owners),...(mintFrom!==null?{mintFrom}:{}),...(minterList?{minters:minterList.join(',')}:{}),...(openFrom!==null?{openFrom}:{})};
  let meta=existsSync(files.meta)?JSON.parse(readFileSync(files.meta,'utf8')):null;
  // A folder of the same listed ledger that has not read the opening block yet takes the opening in: up to that block
  // the two setups judge every record alike.
  if(meta&&openFrom!==null&&meta.openFrom==null&&meta.schema===SCHEMA_MINTERS&&[...Object.keys(want)].every(k=>k==='schema'||k==='openFrom'||(meta[k]??null)===(want[k]??null))){
   const read=lines(files.blocks).rows.at(-1)?.height??start;
-  if(read<openFrom){meta={...meta,schema:SCHEMA_OPEN,openFrom};writeFileSync(files.meta+'.tmp',JSON.stringify(meta,null,1)+'\n');renameSync(files.meta+'.tmp',files.meta);log({opened:openFrom,at:read});}}
+  if(read<openFrom){meta={...meta,schema:SCHEMA_OPEN,openFrom};writeMeta(meta);log({opened:openFrom,at:read});}}
  if(meta){for(const k of [...Object.keys(want),'mintFrom','minters','openFrom'])if((meta[k]??null)!==(want[k]??null))throw Error(`This state folder was made for another ledger (${k} differs).`);
   if(startHash&&meta.startHash&&meta.startHash!==startHash)throw Error('This state folder was made for another start block hash.');}
- else{meta={...want,startHash:startHash||null};writeFileSync(files.meta,JSON.stringify(meta,null,1)+'\n');}
+ else{meta={...want,startHash:startHash||null};writeMeta(meta);}
 
  let ledger,blocks,journal,checkpoints,events,lots,bodies,byId,byTx;
  function tipBlock(){return blocks.at(-1)||{height:start,hash:meta.startHash};}

@@ -142,6 +142,10 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
    if(path.startsWith('/tx/')){const id=path.slice(4);if(!/^[0-9a-f]{64}$/.test(id))throw fail('A transaction ID is 64 hexadecimal characters.');
     if(!allow(caller(req)))throw fail('Too many requests. Try again in a minute.',429);
     const [t]=await reader.lookup([id]);if(!t)throw fail('The Monero node does not know this transaction yet.',404);return {height,payment:t};}
+   // What became of the record a transaction carried: its entry in this reader's journal, accepted or refused.
+   if(path.startsWith('/entry/')){const id=path.slice(7);if(!/^[0-9a-f]{64}$/.test(id))throw fail('A transaction ID is 64 hexadecimal characters.');
+    const e=reader.entryByTx(id);if(!e)throw fail('This reader has read no record in this transaction.',404);
+    return {height,entry:{txid:e.txid,height:e.height,pos:e.pos,id:e.id??null,op:e.op??null,ok:e.ok,...(e.ok?{}:{error:e.error})},confirmations:height-e.height+1};}
    if(path==='/pending')return {height,jobs:relay?relay.pending():[],pool:await poolNow()};
    if(path==='/stats')return stats();
    if(path==='/activity'||path==='/sales'){
@@ -312,6 +316,7 @@ export async function startService(o){
  await Promise.race([service.ready,new Promise(done=>{setTimeout(done,5000).unref?.();})]);const port=await service.listen(o.port==null?18951:Number(o.port));return {...service,port,chain,owners};}
 
 if(process.argv[1]===import.meta.filename){
+ for(const a of process.argv.slice(2))if(/^--[a-z0-9-]+=/.test(a))throw Error(`Write "${a.split('=')[0]} <value>", with a space: ${a}`);
  const arg=name=>{const i=process.argv.indexOf('--'+name);return i<0?null:process.argv[i+1];},has=name=>process.argv.includes('--'+name);
  for(const need of ['owners','domain','fee-address','node','start','state'])if(!arg(need)){console.error('Missing --'+need+'. See the top of this file.');process.exit(2);}
  const archive=has('content-archive')?(arg('content-archive')?.startsWith('http')?arg('content-archive'):true):null;
@@ -319,7 +324,7 @@ if(process.argv[1]===import.meta.filename){
  const limits=Object.fromEntries((arg('relay-limits')||'').split(',').filter(Boolean).map(kv=>{const [k,v]=kv.split('=');if(!/^[a-zA-Z]+$/.test(k)||!/^\d{1,12}$/.test(v||''))throw Error('--relay-limits: name=number,…');return [k,Number(v)];}));
  const s=await startService({...(Object.keys(limits).length?{limits}:{}),owners:arg('owners'),transfers:arg('transfers'),...(arg('block-times')?{blockTimes:arg('block-times')}:{}),...(arg('groups')?{groups:arg('groups')}:{}),domain:arg('domain'),feeAddress:arg('fee-address'),node:arg('node'),start:arg('start'),startHash:arg('start-hash'),mintFrom:arg('mint-from'),
   // --minters given means a list: an empty value is refused, never read as "everyone".
-  ...(has('minters')?{minters:(arg('minters')||'').split(',').filter(Boolean)}:{}),...(arg('open-from')?{openFrom:arg('open-from')}:{}),state:arg('state'),network:arg('network'),xmr20Inscribers:(arg('xmr20-inscribers')||'').split(',').filter(Boolean),...(has('no-xmr20-earlier')?{xmr20Earlier:false}:arg('xmr20-earlier')?{xmr20Earlier:arg('xmr20-earlier')}:{}),...(has('no-xmr20-follow')?{xmr20Follow:false}:{}),
+  ...(has('minters')?{minters:(arg('minters')||'').split(',').filter(Boolean)}:{}),...(has('open-from')?{openFrom:(v=>{if(!/^[1-9]\d{0,9}$/.test(v||''))throw Error('--open-from <height>: the opening block is a whole number');return Number(v);})(arg('open-from'))}:{}),state:arg('state'),network:arg('network'),xmr20Inscribers:(arg('xmr20-inscribers')||'').split(',').filter(Boolean),...(has('no-xmr20-earlier')?{xmr20Earlier:false}:arg('xmr20-earlier')?{xmr20Earlier:arg('xmr20-earlier')}:{}),...(has('no-xmr20-follow')?{xmr20Follow:false}:{}),
   port:arg('port'),fees:{mint:arg('mint-fee')||0,collection:arg('collection-fee')||0},carrierBin:arg('carrier-bin'),carrierState:arg('carrier-state'),carrierStart:arg('carrier-start'),carrierNetwork:arg('carrier-network'),contentDir:arg('content-dir'),collections:arg('collections'),contentArchive:archive,views:arg('views'),
   origins:process.argv.flatMap((a,i)=>a==='--allow-origin'?[process.argv[i+1]]:[]),extensions:process.argv.flatMap((a,i)=>a==='--allow-extension'?[process.argv[i+1]]:[]),behindProxy:has('behind-proxy'),testHooks:has('test-hooks'),log:v=>console.log(new Date().toISOString(),JSON.stringify(v))});
  console.log(`Mordinals reader on http://127.0.0.1:${s.port} (${s.owners.length} Mordinals, block ${s.reader.height}${s.relay?', relay on':', reader only'})`);

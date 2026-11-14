@@ -228,7 +228,7 @@ test('a listed ledger can open minting at a block: before it only the list mints
  const w={alice:wallet('alice'),bob:wallet('bob'),fee:wallet('fee')},owners=[];
  const make=o=>createLedger({domain:DOMAIN,feeAddress:w.fee.address,owners,height:100,mintFrom:100,...o});
  const L=make({minters:[w.alice.address],openFrom:105}),mint=(who,text)=>{const p=L.prepareMint({creator:who.address,type:TEXT,content:Buffer.from(text)});return L.sign(p.bodyBytes,who.sign(p.text));};
- L.setHeight(104);assert.throws(()=>L.apply(mint(w.bob,'too early')),/only the listed addresses make collections and mint until block 105/);L.apply(mint(w.alice,'listed'));
+ L.setHeight(104);assert.throws(()=>L.apply(mint(w.bob,'too early')),/only the listed addresses make collections and mint\.$/);L.apply(mint(w.alice,'listed'));
  L.setHeight(105);L.apply(mint(w.bob,'open now'));L.apply(L.sign(L.prepareCollection({creator:w.bob.address,name:'mine',max:2}).bodyBytes,w.bob.sign(L.prepareCollection({creator:w.bob.address,name:'mine',max:2}).text)));
  // An opening needs a list and a first mint block before it.
  for(const o of [{openFrom:105},{minters:[w.alice.address],openFrom:100},{minters:[w.alice.address],openFrom:99},{minters:[w.alice.address],openFrom:'105'},{minters:[w.alice.address],openFrom:105,mintFrom:null}])

@@ -153,39 +153,52 @@ The `xmr721` command is a Monero wallet of its own that inscribes on the ledger:
 becomes an NFT, owned by the wallet or by any Monero address you name. The wallet pays the
 network fee of each transaction; there is no other fee.
 
-You need Node.js 22 or newer, a synchronized Monero node of your own (`monerod`, not a
-restricted public node: the wallet takes its decoys from it), and Rust once, to build the
-wallet's transaction tool.
+You need macOS or Linux, Node.js 22 or newer, a synchronized Monero node of your own
+(`monerod`, unrestricted: the wallet takes its decoys from it), and Rust once, to build the
+wallet's transaction tool. The command works on Monero mainnet unless told otherwise.
 
 ```
 npm install
 sh reader/carrier/build.sh                      # builds reader/bin/mordinals-carrier
 node cli/xmr721.mjs wallet create               # prints the wallet's address: send it a little XMR
 node cli/xmr721.mjs wallet balance
+node cli/xmr721.mjs wallet inscribe --file moon.png --name "Moon" --to <your Monero address> --dry-run
 node cli/xmr721.mjs wallet inscribe --file moon.png --name "Moon" --to <your Monero address>
 node cli/xmr721.mjs wallet inscriptions
 ```
 
-- **One transaction, one NFT.** A record is at most 1,000 bytes, so a picture of about
-  800 bytes fits. `--type` names the content type when the file ending does not (png, jpeg,
-  webp, gif, text, json, mp4, art); `--dry-run` shows the record and its signed text and
-  sends nothing.
-- **Collections.** `wallet collection --name <name> --max <n>` makes one; then
-  `wallet inscribe --file … --collection <id>` mints its next edition. Only the wallet that
-  made a collection mints its editions.
+- **One transaction, one NFT.** A record is at most 1,000 bytes: up to 824 bytes of content,
+  759 with `--to`, less by the length of the name. `--type` names the content type when the
+  file ending does not (png, jpeg, webp, gif, text, json, mp4, art). `--dry-run` shows the
+  record, its id and the text it signs, and builds and sends nothing.
+- **A record counts once.** The same file with the same name by the same wallet is the same
+  record; the command refuses to pay for it twice.
+- **Collections.** `wallet collection --name <name> --max <n>` makes one. Once it is in a
+  block, `wallet inscribe --file … --collection <id>` mints its next edition. Only the wallet
+  that made a collection mints its editions.
 - **Owning and moving.** With `--to` the NFT belongs to that address from the start, so a
   normal wallet (Feather, Cake Wallet, the XMR20 wallet) can send and sell it by signing a
   message. An NFT the `xmr721` wallet owns itself is sent with `wallet send <nft id> <address>`.
 - **Coins.** A coin can pay again 10 blocks after it arrived. `wallet split <n>` makes
   several small coins, so several records can go out in one block.
+- **If a send fails.** A transaction is kept from the moment it is built. `wallet resend`
+  sends it again as the same transaction; nothing is built or paid twice.
+  `wallet inscriptions` says where each record is: waiting for a block, on the ledger, or
+  refused by the ledger and why.
 - **The wallet folder** (`~/.xmr721/wallet`, or `--wallet <dir>`) holds the keys. Back it up.
-- **Which reader.** The command asks a reader for the ledger's settings and state before it
-  makes a record: by default `https://api.xmr20.org/xmr721`, or your own with
-  `--reader http://127.0.0.1:18951`. Whatever a reader says, a record counts only when the
-  rules accept it in a block.
+  The command cannot send XMR out: to move what is left, restore a wallet from keys in the
+  Monero command-line wallet (`--generate-from-keys`) with the address `wallet receive` shows
+  and the two keys in `carrier.keys.json`.
+- **Which reader.** Before it makes a record the command asks a reader for the ledger's
+  state: by default `https://api.xmr20.org/xmr721`, or your own with
+  `--reader http://127.0.0.1:18951`. What a reader says never changes what is signed, and on
+  mainnet the command inscribes on the one ledger above whatever a reader claims. A reader
+  that lies can make the wallet pay the network fee of a record the ledger then refuses, and
+  a reader sees which records you ask it about; your own reader avoids both.
+- **Stagenet.** `--network stagenet` with `--reader`, `--domain` and `--node` of a stagenet
+  ledger of your own.
 
-Minting is open to everyone from the ledger's opening block on (see [Status](#status));
-before it the command tells you when that is.
+`node cli/xmr721.mjs --help` lists every command and option.
 
 ## Try it
 

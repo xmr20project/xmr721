@@ -145,6 +145,10 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   const {number,signer}=describe(d),tip=reader.height;
   if(d.op===OP.reserve&&d.body.payBy<tip+limits.margin)throw bad('This reservation would run out before it reaches a block. Reserve again.');
   if(d.op===OP.list&&d.body.until<tip+limits.margin)throw bad('This listing would end before it reaches a block. Choose a later end.');
+  const ownLane=(d.op===OP.mint||d.op===OP.collection)&&laneOf.has(signer);
+  // A relay with a lane carries collections and mints for the lane alone: everyone else inscribes from a wallet of
+  // their own, which pays its own network fee. Every other record it carries for everyone.
+  if((d.op===OP.mint||d.op===OP.collection)&&laneOf.size&&!ownLane)throw bad('This relay carries collection and mint records of its own minters only. Inscribe from your own wallet with the xmr721 command (see the XMR721 README).',403);
   // One record per launch (a signer's deploy inscription for a Solana mint). A record for a launch is not taken while
   // another one stands for it: one this relay still has on its way (any state but refused), or one on the ledger that
   // its signer has not burned. Nor is it taken, by itself, for a launch that was inscribed before and withdrawn: that
@@ -165,10 +169,6 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   // The ledger's listed minters (the launchpad's inscriber) have a lane of their own for their collections and mints:
   // like a purchase, such a record is not held back by what everyone else has waiting, and it does not count against
   // everyone else's daily limits. The per-address limit still applies.
-  const ownLane=(d.op===OP.mint||d.op===OP.collection)&&laneOf.has(signer);
-  // A relay with a lane carries collections and mints for the lane alone: everyone else inscribes from a wallet of
-  // their own, which pays its own network fee. Every other record it carries for everyone.
-  if((d.op===OP.mint||d.op===OP.collection)&&laneOf.size&&!ownLane)throw bad('This relay carries collection and mint records of its own minters only. Inscribe from your own wallet with the xmr721 command (see the XMR721 README).',403);
   if(d.op!==OP.buy&&!ownLane){
    if(open.length>=limits.waiting)throw bad('The relay is busy. Try again in a few minutes.',503);
    if([...jobs.values()].filter(j=>j.createdAt>day&&j.txid&&j.op!==OP.buy&&!j.lane).length>=limits.perDay)throw bad('The relay reached its daily limit. Try again later, or publish the record yourself.',503);

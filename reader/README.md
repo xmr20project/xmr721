@@ -103,6 +103,7 @@ JSON everywhere. Errors are `{"error": "plain text"}` with a 4xx/5xx status. Amo
 | `GET /nft/<id>` | `{height, nft, record (the mint record), collectionRecord, history:[event], waiting:[job]}` |
 | `GET /nft/<id>/content` | the inscribed bytes when they are a picture (by their first bytes) or plain text; `415` otherwise |
 | `GET /nft-collections`, `GET /nft-collection/<id>` | collections made on the ledger; one with its record and its minted NFTs |
+| `GET /entry/<transaction id>` | what became of the record a transaction carried: accepted or refused, with the reason, its block and confirmations |
 | `GET /collections`, `GET /collections/<key>`, `GET /collections/<key>/<edition>`, `…/picture` | the saved XMR20 NFT collections (GENESIS): the collection with its NFTs, one NFT with its moves, and its picture drawn as its own text over its picture (`?plain=1` for the bare picture). Owners are those at the block in `ownersAsOf`; see [`../xmr20-nfts/`](../xmr20-nfts) |
 | `GET /xmr20/tokens`, `GET /xmr20/token/<id>`, `GET /xmr20/deploys/<mint>` | XMR20 tokens inscribed on this ledger ([`../xmr20-tokens/FORMAT.md`](../xmr20-tokens/FORMAT.md)) |
 | `GET /xmr20/earlier`, `GET /xmr20/earlier/<transaction id, mint or number>` | XMR20 tokens of the earlier deploy inscriptions, read on in the blocks this reader follows ([`../xmr20-tokens/EARLIER.md`](../xmr20-tokens/EARLIER.md)) |

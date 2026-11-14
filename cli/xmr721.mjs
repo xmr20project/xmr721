@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // xmr721: inscribe on Monero from a wallet of your own (README.md, "Inscribe").
 //
-//   xmr721 wallet create                         a new wallet; prints its address (send it some XMR)
+//   xmr721 wallet create                         a new wallet; prints its address (send it a little XMR)
 //   xmr721 wallet receive                        the wallet's address
 //   xmr721 wallet balance                        its balance and how many coins can pay right now
-//   xmr721 wallet split <n>                      makes n coins of 0.01 XMR, so n records can go out in one block
+//   xmr721 wallet split <n>                      makes n coins of 0.01 XMR (2 to 14), so n records can go out in one block
 //   xmr721 wallet inscribe --file <path> [--type <type>] [--name <text>] [--to <address>]
 //                          [--collection <id> [--edition <n>]] [--dry-run]
 //                                                one NFT; with --collection, an edition of one of the wallet's collections
@@ -13,54 +13,111 @@
 //   xmr721 wallet send <nft id> <address> [--dry-run]
 //                                                sends an NFT the wallet owns
 //   xmr721 wallet inscriptions                   what the wallet sent, and where each record is now
+//   xmr721 wallet resend                         sends again a transaction that was built and did not reach the node
+//   xmr721 wallet restore --height <n>           for a wallet folder that has only its keys: the block to scan from
 //
-// Options for every command:
+// Options for every command (written "--name value"):
 //   --wallet <dir>     the wallet folder (default ~/.xmr721/wallet); back it up, its keys are in it
-//   --node <url>       your Monero node (default http://127.0.0.1:18081); the wallet takes decoys and sends through it
-//   --reader <url>     an XMR721 reader (default https://api.xmr20.org/xmr721, or run your own)
 //   --network <name>   mainnet (default) or stagenet
+//   --node <url>       your Monero node (default http://127.0.0.1:18081, on stagenet :38081); the wallet takes its
+//                      decoys from it and sends through it
+//   --reader <url>     an XMR721 reader (default https://api.xmr20.org/xmr721 on mainnet; or run your own)
+//   --domain <hex>     the ledger's domain; needed on stagenet, fixed on mainnet
 //   --carrier <path>   the carrier tool (default reader/bin/mordinals-carrier; build it with sh reader/carrier/build.sh)
-//   --max-fee <xmr>    the highest network fee one transaction may pay (default 0.05)
-import {existsSync,readFileSync,statSync} from 'node:fs';
+//   --max-fee <xmr>    the highest network fee one transaction may pay (default 0.005)
+//   --help             this text
+import {existsSync,readFileSync,statSync,writeFileSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {homedir} from 'node:os';
 import {createCarrier} from '../reader/lib/relay.mjs';
 import {createChain} from '../reader/lib/chain.mjs';
-import {parseXmr,MAX_RECORD} from '../rules/lib/records.mjs';
-import {openWallet,readerAt,typeOf} from './lib/wallet.mjs';
+import {MAX_RECORD} from '../rules/lib/records.mjs';
+import {openWallet,readerAt,typeOf,clean} from './lib/wallet.mjs';
 
-const HERE=import.meta.dirname,args=process.argv.slice(2);
-const FLAGS=new Set(['--dry-run','--help']);
-const opt=name=>{const i=args.indexOf('--'+name);return i<0?null:args[i+1]??null;},has=name=>args.includes('--'+name);
-const words=args.filter((a,i)=>!a.startsWith('--')&&!(i>0&&args[i-1].startsWith('--')&&!FLAGS.has(args[i-1])));
-const stop=text=>{console.error(text);process.exit(2);};
-const usage=()=>stop(readFileSync(import.meta.filename,'utf8').split('\n').slice(1).filter(l=>l.startsWith('//')).map(l=>l.slice(3)).join('\n'));
+const HERE=import.meta.dirname;
+// The header of this file is the help text.
+const HELP=readFileSync(import.meta.filename,'utf8').split('\n').slice(1).filter((l,i,all)=>all.slice(0,i+1).every(x=>x.startsWith('//'))).map(l=>l.slice(3)).join('\n');
+const stop=text=>{console.error(clean(text,2000));process.exit(2);};
 
-if(words[0]!=='wallet'||has('help')||!words[1])usage();
-const network=opt('network')||'mainnet';if(!['mainnet','stagenet'].includes(network))stop('--network is mainnet or stagenet.');
-const dir=resolve(opt('wallet')||join(homedir(),'.xmr721','wallet')),node=opt('node')||'http://127.0.0.1:18081',bin=resolve(opt('carrier')||join(HERE,'..','reader','bin','mordinals-carrier'));
-const settings=existsSync(join(dir,'wallet.json'))?JSON.parse(readFileSync(join(dir,'wallet.json'),'utf8')):null;
-if(settings&&settings.network!==network)stop(`This wallet is for ${settings.network}; add --network ${settings.network}.`);
-if(!existsSync(bin))stop(`The carrier tool is not at ${bin}. Build it with: sh reader/carrier/build.sh (needs Rust), or give --carrier <path>.`);
-// The carrier tool sends on mainnet only when told so by its own environment: running this command on mainnet is that.
+// Options are "--name value"; flags stand alone. Anything else that begins with "--" is refused, not skipped.
+const VALUES=new Set(['wallet','network','node','reader','domain','carrier','max-fee','file','type','name','to','collection','edition','max','height']),FLAGS=new Set(['dry-run','help']);
+// Which options a command takes, beside the ones every command takes.
+const COMMANDS={create:[],receive:[],balance:[],split:[],inscribe:['file','type','name','to','collection','edition','dry-run'],collection:['name','max','dry-run'],send:['dry-run'],inscriptions:[],resend:[],restore:['height']};
+const EVERY=['wallet','network','node','reader','domain','carrier','max-fee','help'];
+function parse(argv){
+ const options=new Map(),words=[];
+ for(let i=0;i<argv.length;i++){const a=argv[i];
+  if(!a.startsWith('--')){words.push(a);continue;}
+  if(a.includes('='))stop(`Write "${clean(a.split('=')[0],40)} <value>", with a space instead of "=".`);
+  const name=a.slice(2);
+  if(options.has(name))stop(`--${name} is given twice.`);
+  if(FLAGS.has(name)){options.set(name,true);continue;}
+  if(!VALUES.has(name))stop(`There is no option --${clean(name,40)}. See: xmr721 --help`);
+  if(i+1>=argv.length)stop(`--${name} needs a value.`);
+  options.set(name,argv[++i]);}
+ return {options,words};}
+const {options,words}=parse(process.argv.slice(2));
+if(options.has('help')||!words.length){console.log(HELP);process.exit(options.has('help')?0:2);}
+if(words[0]!=='wallet'||!Object.hasOwn(COMMANDS,words[1]??''))stop('xmr721 wallet <create | receive | balance | split | inscribe | collection | send | inscriptions | resend | restore>. See: xmr721 --help');
+const command=words[1],rest=words.slice(2);
+for(const name of options.keys())if(!EVERY.includes(name)&&!COMMANDS[command].includes(name))stop(`"wallet ${command}" takes no --${name}.`);
+if(rest.length!==({split:1,send:2}[command]??0))stop({split:'xmr721 wallet split <n>',send:'xmr721 wallet send <nft id> <address>'}[command]??`"wallet ${command}" takes no "${clean(rest[0],60)}".`);
+const opt=name=>options.get(name)??null,text=name=>{const v=opt(name);if(v==='')stop(`--${name} is empty.`);return v;};
+const whole=(v,what)=>{if(!/^[1-9]\d{0,9}$/.test(v??''))stop(what+' is a whole number.');return Number(v);};
+
+const network=text('network')||'mainnet';if(!['mainnet','stagenet'].includes(network))stop('--network is mainnet or stagenet.');
+const dir=resolve(text('wallet')||join(homedir(),'.xmr721','wallet')),node=text('node')||(network==='mainnet'?'http://127.0.0.1:18081':'http://127.0.0.1:38081');
+const readerUrl=text('reader')||(network==='mainnet'?'https://api.xmr20.org/xmr721':null);if(!readerUrl)stop('On stagenet, give --reader <url> of your own reader.');
+const domain=text('domain');if(domain&&!/^[0-9a-f]{64}$/.test(domain))stop('--domain is 64 hex characters.');
+if(network!=='mainnet'&&!domain&&['inscribe','collection','send'].includes(command))stop('On stagenet, give --domain <hex>: the domain of the ledger to inscribe on.');
+let settings=null;
+if(existsSync(join(dir,'wallet.json'))){try{settings=JSON.parse(readFileSync(join(dir,'wallet.json'),'utf8'));}catch{settings=null;}
+ if(!settings||!['mainnet','stagenet'].includes(settings.network)||!Number.isSafeInteger(settings.start)||settings.start<1)stop(`${join(dir,'wallet.json')} is not readable. It holds {"network":"mainnet","start":<the block to scan from>}; write it again with: xmr721 wallet restore --height <n>`);
+ if(command!=='restore'&&settings.network!==network)stop(`This wallet is for ${settings.network}; add --network ${settings.network}.`);}
+else if(existsSync(join(dir,'carrier.keys.json'))&&command!=='restore')stop(`The wallet folder has keys and no wallet.json. Say which block to scan from: xmr721 wallet restore --height <n> (a block before the wallet first received anything).`);
+// --max-fee is XMR with a decimal point; nothing else is read as an amount.
+if(opt('max-fee')!=null){const m=/^(\d{1,3})(?:\.(\d{1,12}))?$/.exec(opt('max-fee'));if(!m)stop('--max-fee is an amount of XMR with a decimal point, like 0.02.');
+ const atomic=BigInt(m[1])*10n**12n+BigInt((m[2]||'').padEnd(12,'0'));if(atomic<=0n||atomic>10n**12n)stop('--max-fee is above 0 and at most 1 XMR.');process.env.MORDINALS_MAX_FEE=atomic.toString();}
+// The carrier tool sends on mainnet only when its own environment says so: running this command on mainnet is that.
 if(network==='mainnet')process.env.MORDINALS_MAINNET='1';
-if(opt('max-fee')){try{process.env.MORDINALS_MAX_FEE=parseXmr(opt('max-fee')).toString();}catch{stop('--max-fee is an amount of XMR, like 0.02.');}}
-const carrier=createCarrier({bin,stateDir:dir,node,network,start:settings?.start??1}),reader=readerAt(opt('reader')||'https://api.xmr20.org/xmr721');
-const wallet=openWallet({dir,carrier,reader,network}),show=v=>console.log(JSON.stringify(v,null,1));
+const dry=options.has('dry-run');
+// What the command is asked to do, checked before anything else is looked for.
+const asked={};
+if(command==='split'){asked.n=whole(rest[0],'The number of coins');if(asked.n<2||asked.n>14)stop('Split into 2 to 14 coins.');}
+if(command==='restore')asked.height=whole(opt('height'),'--height');
+if(command==='collection'){asked.name=text('name');if(!asked.name)stop('Give --name <text>.');asked.max=whole(opt('max'),'--max');}
+if(command==='inscribe'){const file=text('file');if(!file)stop('Give --file <path>.');if(!existsSync(file)||!statSync(file).isFile())stop('There is no file at '+file+'.');
+ if(statSync(file).size>MAX_RECORD)stop(`The file is ${statSync(file).size} bytes. A record is at most ${MAX_RECORD} bytes with everything in it: 824 bytes of content at most, less with --to and a name.`);
+ if(opt('edition')!=null&&opt('collection')==null)stop('--edition goes with --collection.');
+ let type;try{type=typeOf(file,opt('type'));}catch(e){stop(e.message);}
+ Object.assign(asked,{file,type,name:opt('name')??'',to:text('to'),collection:text('collection'),edition:opt('edition')==null?null:whole(opt('edition'),'--edition')});}
+const usesCarrier=['create','balance','split','resend'].includes(command)||(['inscribe','collection','send'].includes(command)&&!dry);
+const bin=resolve(text('carrier')||join(HERE,'..','reader','bin','mordinals-carrier'));
+if(usesCarrier&&!existsSync(bin))stop(`The carrier tool is not at ${bin}. Build it with: sh reader/carrier/build.sh (needs Rust), or give --carrier <path>.`);
+// A wallet that was not used for a while reads many blocks before it answers: the tool is given hours, not minutes.
+const carrier=createCarrier({bin,stateDir:dir,node,network,start:settings?.start??1,timeout:6*3600*1000}),chain=createChain(node);
+const wallet=openWallet({dir,carrier,reader:readerAt(readerUrl),chain,network,domain}),show=v=>console.log(JSON.stringify(v,null,1));
+// The node as the wallet needs it: on the wallet's network, and synchronized.
+async function nodeTip(){
+ let i;try{const r=await fetch(node.replace(/\/$/,'')+'/json_rpc',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:'0',method:'get_info'}),signal:AbortSignal.timeout(30000)});i=(await r.json()).result;}
+ catch(e){stop(`The Monero node at ${node} does not answer (${clean(e?.message,120)}). Give --node <url> of your own node.`);}
+ if(!i||typeof i.nettype!=='string')stop('The Monero node gave no information.');
+ if(i.nettype!==network)stop(`The node at ${node} is a ${clean(i.nettype,20)} node; this wallet is for ${network}.`);
+ if(i.synchronized===false||i.busy_syncing===true)stop('The Monero node is still synchronizing. Try again when it is done.');
+ if(!Number.isSafeInteger(i.height)||i.height<2)stop('The Monero node gave no height.');return i.height-1;}
 
 try{
- switch(words[1]){
-  case 'create':{const tip=(await createChain(node).info()).height;const made=await wallet.create({height:tip});
-   show({...made,wallet:dir});console.error(`\nSend some XMR to ${made.address}. Back up the folder ${dir}: the wallet's keys are in carrier.keys.json, and nothing else can restore it.`);break;}
+ switch(command){
+  case 'create':{const made=await wallet.create({height:await nodeTip()});show({...made,wallet:dir});
+   console.error(`\nSend a little XMR to ${made.address} (0.01 XMR pays for many inscriptions).\nBack up the folder ${dir}: it holds the wallet's keys and nothing else can restore it.`);break;}
+  case 'restore':{if(!existsSync(join(dir,'carrier.keys.json')))stop('There are no wallet keys in '+dir+'.');if(settings)stop('This wallet has its wallet.json already.');
+   writeFileSync(join(dir,'wallet.json'),JSON.stringify({network,start:asked.height})+'\n',{mode:0o600});show({address:wallet.address,wallet:dir});break;}
   case 'receive':show({address:wallet.address});break;
-  case 'balance':show(await wallet.balance());break;
-  case 'split':show(await wallet.split(Number(words[2])));break;
-  case 'inscribe':{const file=opt('file');if(!file)stop('Give --file <path>.');if(!existsSync(file)||!statSync(file).isFile())stop('There is no file at '+file+'.');
-   if(statSync(file).size>MAX_RECORD)stop(`The file is ${statSync(file).size} bytes; a record is at most ${MAX_RECORD} bytes with everything else in it.`);
-   const edition=opt('edition')==null?null:Number(opt('edition'));
-   show(await wallet.inscribe({content:readFileSync(file),type:typeOf(file,opt('type')),name:opt('name')??'',to:opt('to'),collection:opt('collection'),edition,dryRun:has('dry-run')}));break;}
-  case 'collection':{const name=opt('name'),max=Number(opt('max'));if(!name)stop('Give --name <text>.');show(await wallet.collection({name,max,dryRun:has('dry-run')}));break;}
-  case 'send':{if(!words[2]||!words[3])stop('Give the NFT id and the address: xmr721 wallet send <nft id> <address>');show(await wallet.send({nft:words[2],to:words[3],dryRun:has('dry-run')}));break;}
+  case 'balance':console.error('Reading the blocks since the wallet was last used…');show(await wallet.balance());break;
+  case 'split':show(await wallet.split(asked.n));break;
+  case 'inscribe':show(await wallet.inscribe({content:readFileSync(asked.file),type:asked.type,name:asked.name,to:asked.to,collection:asked.collection,edition:asked.edition,dryRun:dry}));break;
+  case 'collection':show(await wallet.collection({name:asked.name,max:asked.max,dryRun:dry}));break;
+  case 'send':show(await wallet.send({nft:rest[0],to:rest[1],dryRun:dry}));break;
   case 'inscriptions':show(await wallet.inscriptions());break;
-  default:usage();}
-}catch(e){stop(String(e?.message||e));}
+  case 'resend':show(await wallet.resend());break;}
+}catch(e){stop(e?.message||e);}

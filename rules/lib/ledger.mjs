@@ -105,7 +105,8 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
   if(applied.has(id))throw Error('This record is already on the ledger.');
   const signedBy=address=>{const ctx=ctxFor(d);if(!verifySpendSignature(renderText(op,b,bodyBytes,ctx)+SUFFIX[proof.variant],address,{c:proof.c,r:proof.r},network))throw Error('The signature does not match this record.');};
   if((op===OP.collection||op===OP.mint||op===OP.burn)&&(mintFrom===null||tip<mintFrom))throw Error(mintFrom===null?'Minting and burning are not part of this ledger.':`Minting and burning start at block ${mintFrom}.`);
-  if((op===OP.collection||op===OP.mint)&&mayMint&&!mayMint.has(b.creator)&&!(openFrom!==null&&tip>=openFrom))throw Error(openFrom===null?'On this ledger only the listed addresses make collections and mint.':`On this ledger only the listed addresses make collections and mint until block ${openFrom}.`);
+  // (The refusal reads the same with and without an opening block: a journal keeps the text a record was refused with.)
+  if((op===OP.collection||op===OP.mint)&&mayMint&&!mayMint.has(b.creator)&&!(openFrom!==null&&tip>=openFrom))throw Error('On this ledger only the listed addresses make collections and mint.');
   if(op===OP.collection){signedBy(b.creator);return out;}
   if(op===OP.mint){
    // Standard mints only: the whole record has to fit a relayed transaction.

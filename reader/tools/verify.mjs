@@ -30,7 +30,8 @@ const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 export async function verify({info,entries,checkpoints=[],owners,chain=null,published=[]}){
  const problems=[],bad=text=>{if(problems.length<50)problems.push(text);};
  if(ownersHash(owners)!==info.owners)return {ok:false,problems:['The owner list here is not the one this service uses (hash differs).'],accepted:0,refused:0,checkpoints:0,checkedOnNode:0};
- const ledger=createLedger({network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,height:info.start,mintFrom:info.mintFrom??null,minters:info.minters??null,openFrom:info.openFrom??null});
+ let ledger;try{ledger=createLedger({network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,height:info.start,mintFrom:info.mintFrom??null,minters:info.minters??null,openFrom:info.openFrom??null});}
+ catch(e){return {ok:false,problems:['The service states a setup the rules do not take: '+String(e?.message||e).slice(0,200)],accepted:0,refused:0,checkpoints:0,checkedOnNode:0};}
  // A checkpoint names the first mint block and the minter list of its ledger; they have to be this service's.
  const setup={mintFrom:info.mintFrom??null,minters:info.minters?[...info.minters].sort().join(','):null,openFrom:info.openFrom??null};
  for(const c of checkpoints){const minting=setup.mintFrom!==null&&c.height>=setup.mintFrom,opened=minting&&setup.openFrom!==null&&c.height>=setup.openFrom;
