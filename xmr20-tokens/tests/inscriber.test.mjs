@@ -3,7 +3,7 @@
 //   node --test xmr20-tokens/tests/inscriber.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,rmSync,readFileSync,existsSync,statSync,writeFileSync} from 'node:fs';
+import {mkdtempSync,rmSync,readFileSync,existsSync,statSync,writeFileSync,readdirSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -497,13 +497,18 @@ test('the relay holds a launch for the first record it takes: two runs with one 
   // deploy for the same mint is no business of the lane.
   const other=deployRecord({fields:{tick:'HELD',name:'another text',max:'1000000000',dec:'6',mode:'monero-curve',mint:mintOf('HELD')},inscriber:inscriberFrom(x.key),domain:DOMAIN});
   const r=await fetch(x.base+'/records',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({record:other.record})});
-  assert.equal(r.status,409);assert.deepEqual(await r.json(),{error:'Another record for this launch is with the relay already.',held:original});
+  assert.equal(r.status,409);assert.deepEqual(await r.json(),{error:'Another record for this launch is with the relay or on the ledger already.',held:original});
   assert.equal((await index.submit(replacement.entries()[0].record)).state,'done');
-  // A correction by hand still goes through: once the inscriber has burned the inscription, the relay holds the launch
-  // for nothing, and a record with another text is taken.
+  // A correction by hand still goes through once the inscriber has burned the inscription.
   const L=reader.ledger,key=inscriberFrom(x.key),p=L.prepareBurn({nft:original,owner:x.signer.address});
   await index.submit(Buffer.from(L.sign(p.bodyBytes,key.sign(p.text))).toString('hex'));await block();assert.deepEqual(await tokens(),[]);
-  assert.equal((await index.submit(other.record)).state,'sent');await block();assert.deepEqual((await tokens()).map(t=>t.name),['another text']);
+  // By itself a record for a withdrawn launch is not taken (an inscriber that has not heard of the burn would undo it);
+  // the word `anew` from a person lets it through.
+  const refused=await index.submit(other.record);assert.deepEqual([refused.state,refused.status,refused.held],['refused',409,original]);assert.match(refused.error,/hand the record over with "anew"/);
+  assert.equal((await index.submit(other.record,{anew:true})).state,'sent');await block();assert.deepEqual((await tokens()).map(t=>t.name),['another text']);
+  // `anew` does not get past a record that stands: the new inscription holds the launch now.
+  const third=deployRecord({fields:{tick:'HELD',name:'a third text',max:'1000000000',dec:'6',mode:'monero-curve',mint:mintOf('HELD')},inscriber:inscriberFrom(x.key),domain:DOMAIN});
+  assert.equal((await index.submit(third.record,{anew:true})).status,409);
  }finally{await x.service.close();}});
 
 test('a launch that was queued once is never new again, however long its list did not show it',async()=>{
@@ -521,4 +526,29 @@ test('a launch that was queued once is never new again, however long its list di
   // A restart keeps the identities; twenty-one launches never seen before are still held as many at once.
   const b=open({limits:{perDay:3,inFlight:50,perTurn:50},now:()=>clock});clock+=86_400_001;assert.equal((await b.turn()).found,3);
   for(let i=0;i<21;i++)curve.push(curveLaunch('N'+i,SINCE+500+i));const held=await b.turn();assert.equal(held.held,15+21);assert.ok(x.logs.some(l=>/more than 20 new launches at once/.test(l.why||'')));
+ }finally{await x.service.close();}});
+
+// ---- Found by the outside review's second confirmation ----
+
+test('what the ledger holds for a launch decides, also when the relay no longer knows the record: a late run cannot add a second inscription or bring a withdrawn launch back',async()=>{
+ const x=await world(),{curve,open,block,tokens,index,relay,reader}=x;
+ try{
+  curve.push(curveLaunch('LATE',SINCE+1,{name:'first name'}),curveLaunch('BACK',SINCE+2,{name:'first name'}));
+  const a=open({limits:{inFlight:5}});await a.turn();await block();await a.turn();const [late,backId]=[a.journal.launches[mintOf('LATE')].id,a.journal.launches[mintOf('BACK')].id];
+  // The relay forgets its finished jobs (as it does after their keep time), and BACK is withdrawn by its inscriber.
+  const L=reader.ledger,key=inscriberFrom(x.key),p=L.prepareBurn({nft:backId,owner:x.signer.address});await index.submit(Buffer.from(L.sign(p.bodyBytes,key.sign(p.text))).toString('hex'));await block();
+  for(const f of readdirSync(join(x.dir,'relay','jobs')))rmSync(join(x.dir,'relay','jobs',f));
+  const fresh=createRelay({dir:join(x.dir,'relay'),reader,chain:x.chain,carrier:x.carrier,domain:DOMAIN,limits:{resendMs:1000}});
+  assert.deepEqual(fresh.jobsOf(x.signer.address),[]);
+  // Records another run made for both launches under another name are handed over now, straight to the relay.
+  const other=n=>deployRecord({fields:{tick:n,name:'changed name',max:'1000000000',dec:'6',mode:'monero-curve',mint:mintOf(n)},inscriber:key,domain:DOMAIN});
+  await assert.rejects(fresh.submit(other('LATE').record),e=>e.status===409&&e.held===late);
+  await assert.rejects(fresh.submit(other('BACK').record),e=>e.status===409&&e.held===backId&&/anew/.test(e.message));
+  // The inscriber that made them follows the refusal: the one on the ledger is the launch's record, the withdrawn one stays withdrawn.
+  rmSync(join(x.dir,'inscriber'),{recursive:true});curve[0].name=curve[1].name='changed name';
+  // (Its own looks are stale: it saw no inscription, no token and no record at the relay when it made its records.)
+  const stale={...index,records:async()=>[],token:async()=>null,submit:async r=>{try{return await fresh.submit(r);}catch(e){return {state:'refused',error:e.message,status:e.status,held:e.held};}}};
+  let asked=0;const b=open({index:{...stale,deploys:async m=>(++asked>2?index.deploys(m):[])},limits:{inFlight:5}});await b.turn();
+  assert.deepEqual(b.entries().map(e=>[e.fields.tick,e.id,e.state]),[['LATE',late,'done'],['BACK',backId,'off']]);
+  await block();assert.equal(reader.journal.filter(e=>e.ok&&e.record.startsWith('4d4431fe08')).length,2);assert.deepEqual((await tokens()).map(t=>[t.tick,t.name]),[['LATE','first name']]);
  }finally{await x.service.close();}});

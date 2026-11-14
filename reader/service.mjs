@@ -184,7 +184,8 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
   if(method==='POST'&&path==='/records'){
    if(!relay)throw fail('This reader does not relay records. Publish the record yourself or use a relay.',503);
    if(!allow(caller(req)))throw fail('Too many requests. Try again in a minute.',429);
-   return {height,...await relay.submit(body.record,{caller:caller(req)})};}
+   // `anew`: the sender means to inscribe again a launch whose earlier inscription its signer burned (xmr20-tokens/FORMAT.md).
+   return {height,...await relay.submit(body.record,{caller:caller(req),anew:body.anew===true})};}
   if(testHooks&&method==='POST'&&path==='/test/step')return step();
   if(testHooks&&extra){const out=await extra(method,path,body,step);if(out!==undefined)return out;}
   throw fail('Not found',404);}

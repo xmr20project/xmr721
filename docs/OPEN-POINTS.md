@@ -102,6 +102,12 @@ all changed:
   launch for the first deploy record it takes for a signer and a mint, and takes records
   one at a time); a launch that had left the queue after 30 days counted as new when it
   came back (which launches were ever queued is remembered for good).
+- A second outside confirmation closed the queue and found that the relay's hold on a launch
+  ended with the relay's own job (dropped after its keep time) and with a burn, so a run
+  that had been stopped for more than a week, or one racing a burn, could still add a second
+  inscription or bring a withdrawn launch back. The relay now looks at the ledger itself
+  when it takes a deploy record, and takes a new record for a withdrawn launch only with
+  `anew`, the word of a person.
 - A check of these three changes found more, also changed: a queued launch that its list
   did not show for one pass was forgotten and counted as new on its return (it is set aside
   now); a record waiting for a place at the relay could be doubled by a second run with

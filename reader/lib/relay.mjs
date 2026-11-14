@@ -52,6 +52,14 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
  // signer's own (signer and mint together), so nobody holds a launch against another signer.
  const launchOf=d=>{if(d.op!==OP.mint||d.body.collection!==NO_COLLECTION||d.body.type!==TYPE_JSON)return null;
   const f=readDeploy(d.body.content);return f?.mint?d.body.creator+':'+f.mint:null;};
+ // The deploy inscriptions the ledger holds for a launch, oldest first: [{id, withdrawn}] (withdrawn: burned by its own
+ // signer). Read from the reader's accepted records and kept until the reader moves.
+ let inscribedAt='',inscribedBy=new Map();
+ const inscribed=launch=>{const at=reader.height+':'+reader.journal.length+':'+reader.hash;
+  if(at!==inscribedAt){inscribedAt=at;inscribedBy=new Map();
+   for(const e of reader.events){if(e.kind!=='mint'||e.type!==TYPE_JSON||e.collection!==NO_COLLECTION)continue;
+    try{const k=launchOf(decodeRecord(unhex(reader.entryById(e.nft).record),network));if(k){if(!inscribedBy.has(k))inscribedBy.set(k,[]);inscribedBy.get(k).push(e.nft);}}catch{}}}
+  return (inscribedBy.get(launch)||[]).map(nft=>{const x=reader.ledger.nft(nft);return {id:nft,withdrawn:Boolean(x?.burned)&&x.history.find(h=>h.what==='burn')?.from===x.minted.creator};});};
  const limits={...DEFAULT_LIMITS,...given},jobsDir=join(dir,'jobs'),splitFile=join(dir,'split.json'),payFile=join(dir,'pay.json');
  // Coins kept for the lane (none on a relay without one), and how many ready coins the relay keeps so that ordinary
  // records never wait on a count that starts no new split.
@@ -123,7 +131,7 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   catch(e){j.note=String(e.message).slice(0,200);j.tries=(j.tries||0)+1;save(j);log({job:j.id,note:j.note});}
   return j;}
 
- async function submit(recordHex,{caller=null}={}){
+ async function submit(recordHex,{caller=null,anew=false}={}){
   if(typeof recordHex!=='string'||!/^([0-9a-f]{2})+$/.test(recordHex)||recordHex.length>2*MAX_RECORD)throw bad('A record is hexadecimal and at most '+MAX_RECORD+' bytes.');
   const bytes=unhex(recordHex),d=decodeRecord(bytes,network),id=recordId(domain,d.bodyBytes);
   // A record this relay gave up on (refused, or not mined for so long that it was marked stuck) may be handed over again.
@@ -137,12 +145,18 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   const {number,signer}=describe(d),tip=reader.height;
   if(d.op===OP.reserve&&d.body.payBy<tip+limits.margin)throw bad('This reservation would run out before it reaches a block. Reserve again.');
   if(d.op===OP.list&&d.body.until<tip+limits.margin)throw bad('This listing would end before it reaches a block. Choose a later end.');
-  // One record per launch: a signer's first deploy record for a Solana mint holds that launch with this relay,
-  // and a different record for it is not taken while that one is known here (in any state but refused). Records are
-  // taken one at a time, so two runs of one inscriber cannot both get a record in for the same launch.
-  // (A record whose inscription was burned holds nothing any more: that is how a launch is inscribed anew by hand.)
-  const launch=launchOf(d),first=launch&&[...jobs.values()].find(j=>j.launch===launch&&j.id!==id&&j.state!=='refused'&&!reader.ledger.nft(j.id)?.burned);
-  if(first)throw Object.assign(bad('Another record for this launch is with the relay already.',409),{held:first.id});
+  // One record per launch (a signer's deploy inscription for a Solana mint). A record for a launch is not taken while
+  // another one stands for it: one this relay still has on its way (any state but refused), or one on the ledger that
+  // its signer has not burned. Nor is it taken, by itself, for a launch that was inscribed before and withdrawn: that
+  // needs `anew`, the word of a person who means to inscribe the launch again. What is on the ledger is looked at here,
+  // not remembered from the relay's own jobs, so it holds whatever became of them; and records are taken one at a time,
+  // so no two runs of one signer get a record in for the same launch.
+  const launch=launchOf(d);
+  if(launch){
+   const before=inscribed(launch).filter(x=>x.id!==id),standing=before.find(x=>!x.withdrawn);
+   const onItsWay=[...jobs.values()].find(j=>j.launch===launch&&j.id!==id&&j.state!=='refused'&&!reader.entryById(j.id));
+   if(onItsWay||standing)throw Object.assign(bad('Another record for this launch is with the relay or on the ledger already.',409),{held:(onItsWay||standing).id});
+   if(before.length&&!anew)throw Object.assign(bad('This launch was inscribed before and its inscription was burned. To inscribe it again, hand the record over with "anew".',409),{held:before.at(-1).id});}
   const all=waiting(),open=all.filter(j=>j.state!=='unpaid'),price=priceOf(d.op);
   if(number!=null&&open.some(j=>j.number===number))throw bad('Another record for this Mordinal is waiting for a block. Try again in a few minutes.',429);
   if(price&&all.length-open.length>=limits.unpaid)throw bad('The relay is busy. Try again in a few minutes.',503);

@@ -93,8 +93,9 @@ Only the inscriber takes a token back, by burning the inscription while it holds
 inscription the inscriber has moved to another owner is that owner's NFT: they can burn the
 NFT, and the token stays listed (marked `burned`), with its mint still taken.
 
-An inscriber corrects a mistake by burning the inscription and inscribing the token anew;
-the burned one keeps its number and the new one gets the next. The new text has to differ
+An inscriber corrects a mistake by burning the inscription and inscribing the token anew
+(by hand, see the launch inscriber below); the burned one keeps its number and the new one
+gets the next. The new text has to differ
 from the burned one in a field: a record with the same content by the same inscriber has
 the same id, and the ledger takes a record once.
 
@@ -151,12 +152,17 @@ as the launch's record, whatever the launch list says by then. It does not start
 index that cannot answer these two questions, and a journal folder belongs to one running
 inscriber.
 
-The relay holds a launch for the first deploy record it takes for a signer and a Solana
-mint: while it knows that record (in any state but refused), it takes no other record for
-the same signer and mint, and says which record holds the launch. Records are taken one at
-a time, so two runs of one inscriber cannot both get a record in; the one that is refused
-takes the other's record over. A burned inscription holds nothing, so a launch can still
-be inscribed anew by hand.
+The relay takes one record per launch (a signer and a Solana mint). It takes no record for
+a launch while another one stands for it: one the relay still has on its way (in any state
+but refused), or one on the ledger that its signer has not burned. It looks at the ledger
+itself for this, and it takes records one at a time, so two runs of one inscriber cannot
+both get a record in; the one that is refused is told which record stands and takes that
+one over.
+
+For a launch that was inscribed before and withdrawn, the relay takes a new record only
+with the word `anew` (`POST /records` with `{"record": …, "anew": true}`). That is how a
+person inscribes a corrected launch after burning the first inscription; the inscriber
+never gives the word, so a run that has not heard of a burn cannot undo it.
 
 What is inscribed stays on the chain, so the inscriber holds back rather than guess:
 

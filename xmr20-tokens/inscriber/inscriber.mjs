@@ -36,7 +36,8 @@ export function httpIndex(base,{timeout=20000}={}){
   info:async()=>need(await call('/info'),'info'),
   token:async key=>{const r=await call('/xmr20/token/'+encodeURIComponent(key));if(r.status===404)return null;return need(r,'token').token;},
   // The relay's answer for a record: {id, state, error, pay?}. A refusal comes back as {state:'refused', error}.
-  submit:async record=>{const r=await call('/records',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({record})});
+  // `anew` is for a person inscribing again a launch whose inscription was burned; the inscriber itself never gives it.
+  submit:async(record,{anew=false}={})=>{const r=await call('/records',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({record,...(anew?{anew:true}:{})})});
    // `rule` is set when the rules themselves refused the record (it will not change); anything else may pass later.
    // `held` is the id of another record that already holds the same launch with the relay.
    if(r.status===200&&r.body)return r.body;return {state:'refused',error:String(r.body?.error||'The relay answered '+r.status).slice(0,200),status:r.status,rule:r.body?.rule===true,held:r.body?.held};},
@@ -179,8 +180,14 @@ export function createInscriber({dir,sources,index,inscriber,domain,network='mai
    // (A hand-over that fails outright is a refusal that may pass later, like a busy relay.)
    let answer;try{answer=await index.submit(e.record);}catch(err){answer={state:'refused',error:String(err?.message||err).slice(0,200),status:err?.status,rule:err?.rule===true,held:err?.held};}
    handed++;
-   // The relay holds this launch for another record (another run got there first): that record is the launch's.
-   if(answer.held&&answer.held!==e.id){const theirs=(await earlier()).get(e.mint);
+   // The relay does not take the record because the launch has another one (another run got there first, or the launch
+   // was inscribed before): that one is the launch's record, on the ledger or still with the relay.
+   if(answer.held&&answer.held!==e.id){
+    const mine=(await index.deploys(e.mint)).filter(d=>d.inscriber===inscriber.address);
+    if(mine.length){const live=mine.find(d=>d.listed),d=live||mine.at(-1);
+     Object.assign(e,{fields:fieldsOf(d),id:d.id,record:d.record??null,state:live?'done':'off',...(live?{number:d.number,inscription:d.inscription,height:d.height,txid:d.txid}:{note:'an earlier inscription of this launch was burned; it is not inscribed again by itself'})});
+     if(live){delete e.note;out.done++;}log({taken:e.mint,id:d.id,state:e.state});continue;}
+    const theirs=(await earlier()).get(e.mint);
     if(theirs?.id===answer.held){Object.assign(e,{fields:theirs.fields,id:theirs.id,record:theirs.record,state:'sent',sentAt:height,tries:1});delete e.note;log({taken:e.mint,id:theirs.id,state:theirs.state});flying++;}
     else e.note='the relay holds this launch for another record';continue;}
    if(answer.pay){e.note='the relay asks a fee for this record; it must carry this inscriber\'s records without one';once('unpaid:'+e.id,{unpaid:e.mint,id:e.id});continue;}
