@@ -48,6 +48,9 @@ export const DEFAULT_LIMITS={perSigner:3,waiting:200,perDay:2000,margin:5,resend
 
 export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,limits:given={},fees:asked={},lane=[],now=()=>Date.now(),log=()=>{}}){
  const laneOf=new Set(lane.map(a=>canonical(a,network)));
+ // A collection or mint record of someone who is not one of this relay's own minters (on a relay that has any).
+ const NOT_CARRIED='This relay carries collection and mint records of its own minters only. Inscribe from your own wallet with the xmr721 command (see the XMR721 README).';
+ const foreign=d=>(d.op===OP.mint||d.op===OP.collection)&&laneOf.size>0&&!laneOf.has(canonical(d.body.creator,network));
  // The launch a record is for: a deploy inscription (xmr20-tokens/FORMAT.md) names a Solana mint. The launch is its
  // signer's own (signer and mint together), so nobody holds a launch against another signer.
  const launchOf=d=>{if(d.op!==OP.mint||d.body.collection!==NO_COLLECTION||d.body.type!==TYPE_JSON)return null;
@@ -134,6 +137,10 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
  async function submit(recordHex,{caller=null,anew=false}={}){
   if(typeof recordHex!=='string'||!/^([0-9a-f]{2})+$/.test(recordHex)||recordHex.length>2*MAX_RECORD)throw bad('A record is hexadecimal and at most '+MAX_RECORD+' bytes.');
   const bytes=unhex(recordHex),d=decodeRecord(bytes,network),id=recordId(domain,d.bodyBytes);
+  // A relay with a lane carries collections and mints for the lane alone: everyone else inscribes from a wallet of
+  // their own, which pays its own network fee. Every other record it carries for everyone. This comes first: nothing
+  // is looked up, kept or sent again for such a record.
+  if(foreign(d))throw bad(NOT_CARRIED,403);
   // A record this relay gave up on (refused, or not mined for so long that it was marked stuck) may be handed over again.
   const known=jobs.get(id);if(known&&known.state!=='refused'&&known.state!=='stuck')return view(known);
   const entry=reader.entryById(id);if(entry)return {id,state:'done',op:d.op,txid:entry.txid,error:null,note:null};
@@ -146,9 +153,6 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   if(d.op===OP.reserve&&d.body.payBy<tip+limits.margin)throw bad('This reservation would run out before it reaches a block. Reserve again.');
   if(d.op===OP.list&&d.body.until<tip+limits.margin)throw bad('This listing would end before it reaches a block. Choose a later end.');
   const ownLane=(d.op===OP.mint||d.op===OP.collection)&&laneOf.has(signer);
-  // A relay with a lane carries collections and mints for the lane alone: everyone else inscribes from a wallet of
-  // their own, which pays its own network fee. Every other record it carries for everyone.
-  if((d.op===OP.mint||d.op===OP.collection)&&laneOf.size&&!ownLane)throw bad('This relay carries collection and mint records of its own minters only. Inscribe from your own wallet with the xmr721 command (see the XMR721 README).',403);
   // One record per launch (a signer's deploy inscription for a Solana mint). A record for a launch is not taken while
   // another one stands for it: one this relay still has on its way (any state but refused), or one on the ledger that
   // its signer has not burned. Nor is it taken, by itself, for a launch that was inscribed before and withdrawn: that
@@ -201,6 +205,9 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
      else if(j.state==='refused'&&t-j.endedAt>limits.keepMs)drop(j);continue;}
     const ok=reader.entryById(j.id),mine=j.txid?reader.entryByTx(j.txid):null;
     if(ok){j.state='done';j.txid=ok.txid;j.doneHeight=ok.height;j.endedAt=t;j.note=null;save(j);continue;}
+    // A collection or mint of someone who is not one of this relay's minters that the relay took before it had that
+    // rule, and has not sent, is not carried either.
+    if(!j.txid&&(j.op===OP.mint||j.op===OP.collection)&&laneOf.size&&!laneOf.has(j.signer)){refuse(j,NOT_CARRIED);continue;}
     if(mine&&!mine.ok){
      // A purchase can be refused in its block only because replaced blocks put it before its own payment. If the
      // rules would accept it now, or once its payment is in a block, it goes out again in a new transaction, a

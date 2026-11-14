@@ -45,12 +45,12 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
  // meta.json is replaced whole: written beside it, flushed, then put in its place.
  const writeMeta=m=>{const tmp=files.meta+'.tmp',fd=openSync(tmp,'w',0o644);try{writeSync(fd,JSON.stringify(m,null,1)+'\n');fsyncSync(fd);}finally{closeSync(fd);}renameSync(tmp,files.meta);};
  const want={schema:openFrom!==null?SCHEMA_OPEN:minterList?SCHEMA_MINTERS:SCHEMA,network,domain,feeAddress:canonical(feeAddress,network),start,owners:ownersHash(owners),...(mintFrom!==null?{mintFrom}:{}),...(minterList?{minters:minterList.join(',')}:{}),...(openFrom!==null?{openFrom}:{})};
- let meta=existsSync(files.meta)?JSON.parse(readFileSync(files.meta,'utf8')):null;
+ let meta=existsSync(files.meta)?JSON.parse(readFileSync(files.meta,'utf8')):null,opened=null;
  // A folder of the same listed ledger that has not read the opening block yet takes the opening in: up to that block
  // the two setups judge every record alike.
  if(meta&&openFrom!==null&&meta.openFrom==null&&meta.schema===SCHEMA_MINTERS&&[...Object.keys(want)].every(k=>k==='schema'||k==='openFrom'||(meta[k]??null)===(want[k]??null))){
   const read=lines(files.blocks).rows.at(-1)?.height??start;
-  if(read<openFrom){meta={...meta,schema:SCHEMA_OPEN,openFrom};writeMeta(meta);log({opened:openFrom,at:read});}}
+  if(read<openFrom){meta={...meta,schema:SCHEMA_OPEN,openFrom};opened=read;}}
  if(meta){for(const k of [...Object.keys(want),'mintFrom','minters','openFrom'])if((meta[k]??null)!==(want[k]??null))throw Error(`This state folder was made for another ledger (${k} differs).`);
   if(startHash&&meta.startHash&&meta.startHash!==startHash)throw Error('This state folder was made for another start block hash.');}
  else{meta={...want,startHash:startHash||null};writeMeta(meta);}
@@ -94,6 +94,8 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
   blocks=blocks.filter(b=>b.height<=height);journal=journal.filter(e=>e.height<=height);checkpoints=checkpoints.filter(c=>c.height<=height);
   replace(files.records,journal);replace(files.blocks,blocks);replace(files.checkpoints,checkpoints);rebuild();}
  load();
+ // The opening is written into the folder only now, when the folder has passed every check and was read whole.
+ if(opened!==null){writeMeta(meta);log?.({opened:openFrom,at:opened});}
 
  // A summary anyone can compare: the accepted records so far and the ledger they lead to.
  function checkpoint(){
@@ -142,7 +144,7 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
   const info=await chain.info();let reorg=0,added=0;
   if(info.height<start)throw Error('The Monero node has not reached the start block yet.');
   const first=await chain.header(start);
-  if(!meta.startHash){meta.startHash=first.hash;writeFileSync(files.meta,JSON.stringify(meta,null,1)+'\n');}
+  if(!meta.startHash){meta.startHash=first.hash;writeMeta(meta);}
   if(first.hash!==meta.startHash)throw Error('The Monero node is on another chain at the start block; the owner list does not apply to it.');
   for(let round=0;round<50;round++){
    // Walk back to the last block this journal and the node agree on.

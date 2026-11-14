@@ -316,7 +316,15 @@ export async function startService(o){
  await Promise.race([service.ready,new Promise(done=>{setTimeout(done,5000).unref?.();})]);const port=await service.listen(o.port==null?18951:Number(o.port));return {...service,port,chain,owners};}
 
 if(process.argv[1]===import.meta.filename){
- for(const a of process.argv.slice(2))if(/^--[a-z0-9-]+=/.test(a))throw Error(`Write "${a.split('=')[0]} <value>", with a space: ${a}`);
+ // Every word that begins with a dash is an option this program knows, written "--name value", and given once (the
+ // two lists of allowed origins and extensions may repeat). A misspelt option stops the start: an ignored
+ // --open-from or --minters would make this another ledger than the one that was meant.
+ {const KNOWN=new Set(['owners','transfers','block-times','groups','domain','fee-address','node','start','start-hash','mint-from','minters','open-from','state','network','port','every','xmr20-inscribers','xmr20-earlier','no-xmr20-earlier','no-xmr20-follow',
+   'mint-fee','collection-fee','carrier-bin','carrier-state','carrier-start','carrier-network','relay-limits','content-dir','content-archive','collections','views','allow-origin','allow-extension','behind-proxy','test-hooks']),MANY=new Set(['allow-origin','allow-extension']),seen=new Set();
+  for(const a of process.argv.slice(2)){if(!a.startsWith('-'))continue;
+   if(a.includes('='))throw Error(`Write "${a.split('=')[0]} <value>", with a space: ${a}`);
+   const name=a.startsWith('--')?a.slice(2):null;if(!name||!KNOWN.has(name))throw Error(`There is no option ${a}. See the top of this file.`);
+   if(seen.has(name)&&!MANY.has(name))throw Error(`--${name} is given twice.`);seen.add(name);}}
  const arg=name=>{const i=process.argv.indexOf('--'+name);return i<0?null:process.argv[i+1];},has=name=>process.argv.includes('--'+name);
  for(const need of ['owners','domain','fee-address','node','start','state'])if(!arg(need)){console.error('Missing --'+need+'. See the top of this file.');process.exit(2);}
  const archive=has('content-archive')?(arg('content-archive')?.startsWith('http')?arg('content-archive'):true):null;

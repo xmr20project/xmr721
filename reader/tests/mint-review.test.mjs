@@ -3,7 +3,7 @@
 //   node --test reader/tests/mint-review.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,rmSync,readdirSync,readFileSync,existsSync} from 'node:fs';
+import {mkdtempSync,rmSync,readdirSync,readFileSync,existsSync,writeFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -111,7 +111,15 @@ test('a listed minter\'s mints are not crowded out by what everyone else has wai
  // Collections and mints of anyone else are not carried by a relay with a lane: they come from wallets of their own.
  const own=x.signed(x.L().prepareCollection({creator:w.bob.address,name:'mine',max:2}),w.bob);
  for(const r of [x.mint(w.bob,'not in the lane'),x.mint(w['anon0'],'junk'),own])assert.equal(await send(r),403);
- await assert.rejects(relay.submit(hex(x.mint(w.carol,'x').record)),/own minters only/);});
+ await assert.rejects(relay.submit(hex(x.mint(w.carol,'x').record)),/own minters only/);
+ // Nothing was kept for any of them, and a job of such a record left from before the rule is refused at the next pass, unsent.
+ assert.equal(relay.jobs().filter(j=>j.op===8||j.op===7).length,3,'only the three of the listed address');
+ const left=x.mint(w.carol,'left over'),file=join(x.dir,'relay','jobs',left.id+'.json');
+ writeFileSync(file,JSON.stringify({id:left.id,record:hex(left.record),op:8,number:null,signer:w.carol.address,caller:null,state:'queued',createdAt:1,createdHeight:100}));
+ const again=createRelay({dir:join(x.dir,'relay'),reader:x.reader,chain:x.chain,carrier:x.carrier,domain:DOMAIN,lane:[w.alice.address]});x.carrier.ready=5;await again.tick();
+ assert.deepEqual([again.status(left.id).state,/own minters only/.test(again.status(left.id).error),x.carrier.made.length],['refused',true,x.carrier.made.length]);
+ // Such a record marked stuck is not sent again either.
+ await assert.rejects(again.submit(hex(left.record)),/own minters only/);});
 
 test('a burned Mordinal says so wherever its state is served, and a page on an allowed origin can read an NFT\'s text',async()=>{
  const x=world({origins:['https://xmr20.org']}),{w,L,signed,block,reader}=x;await reader.sync();
@@ -143,6 +151,11 @@ test('the check tool\'s own scan reads with the service\'s minter list, and a mi
   openReader({dir:fresh,...x.setup,minters:x.pick(['alice'])});
   const run=(...more)=>spawnSync(process.execPath,[join(import.meta.dirname,'../service.mjs'),'--owners',join(import.meta.dirname,'../../ownership-index/added/added.jsonl'),'--domain',DOMAIN,'--fee-address',w.fee.address,'--node','http://127.0.0.1:9','--start','100','--state',join(x.dir,'cli'),'--port','0','--mint-from','101',...more],{encoding:'utf8',timeout:20000});
   for(const empty of [['--minters',''],['--minters']]){const r=run(...empty);assert.notEqual(r.status,0);assert.match(r.stderr,/Bad minter list/);}
+  // An option this program does not know, a misspelt one, one written with "=", or one given twice stops the start: an
+  // ignored --open-from would be another ledger than the one meant.
+  for(const [bad,why] of [[['--open-form','200'],/There is no option --open-form/],[['--openfrom','200'],/There is no option --openfrom/],[['--Open-From=200'],/with a space/],[['--open_from=200'],/with a space/],[['-open-from','200'],/There is no option -open-from/],
+   [['--open-from','200','--open-from','300'],/--open-from is given twice/],[['--open-from'],/the opening block is a whole number/],[['--open-from','2e2'],/whole number/],[['--minters',w.alice.address,'--open-from','101'],/opening block/]]){
+   const r=run(...bad);assert.notEqual(r.status,0,bad.join(' '));assert.match(r.stderr,why,bad.join(' '));}
   // A folder made with a list has a schema name of its own (code from before the list would refuse it, not read it without the list).
   assert.equal(JSON.parse(readFileSync(join(x.dir,'state','meta.json'),'utf8')).schema,SCHEMA_MINTERS);
   const plain=world();await plain.reader.sync();assert.equal(JSON.parse(readFileSync(join(plain.dir,'state','meta.json'),'utf8')).schema,SCHEMA);
