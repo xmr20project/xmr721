@@ -56,9 +56,21 @@ test('a wallet made by the command is funded, inscribes, makes a collection and 
   const edition=await wallet.inscribe({content:Buffer.from('lab set 1'),type:5,collection:set.id}),moved=await wallet.send({nft:own.id,to:alice.address});
   assert.equal(edition.edition,1);await mine(1);await pass();
   assert.deepEqual([L().nft(edition.id)?.minted.edition,L().nft(own.id)?.owner],[1,alice.address]);
-  // The same record again is refused before any coin is used.
+  // The same record again, now final on the ledger, is refused before any coin is used.
   await assert.rejects(wallet.inscribe({content:Buffer.from('kept'),type:5}),/on the ledger already/);
+  // The node drops a transaction it had taken (its pool is emptied): the wallet still has it, says so, and sends the
+  // very same transaction again; it then gets into a block.
+  await mine(10);await pass();
+  const dropped=await wallet.inscribe({content:Buffer.from('dropped by the node'),type:5});await call(chain.port,'flush_txpool');
+  assert.match((await wallet.inscriptions()).at(-1).state,/the node no longer has this transaction: run "xmr721 wallet resend"/);
+  const back=(await wallet.resend()).find(r=>r.txid===dropped.txid);assert.deepEqual([back.sentAgain,back.failed],[true,undefined]);
+  await mine(1);await pass();assert.equal(L().nft(dropped.id)?.owner,address);
+  // A second command while one is at work is told to wait.
+  const two=await Promise.allSettled([wallet.balance(),wallet.balance()]);assert.deepEqual(two.map(r=>r.status).sort(),['fulfilled','rejected']);
   // Every network fee the wallet paid is what it lacks now.
   const fees=(await wallet.inscriptions()).reduce((a,r)=>a+BigInt(Math.round(Number(r.fee)*1e12)),0n),after=await wallet.balance();
-  assert.equal(BigInt(Math.round(Number(after.balance)*1e12)),3n*XMR/10n-fees);assert.equal((await wallet.inscriptions()).length,5);void moved;
+  assert.equal(BigInt(Math.round(Number(after.balance)*1e12)),3n*XMR/10n-fees);assert.equal((await wallet.inscriptions()).length,6);void moved;
+  // Everything final: nothing is kept any more, and a rescan from the wallet's start block finds the same coins.
+  await mine(10);await pass();assert.ok((await wallet.inscriptions()).every(r=>/^on the ledger \(block \d+\)$/.test(r.state)));assert.equal((await wallet.balance()).kept,0);
+  const again=await wallet.rescan();assert.deepEqual([again.balance,again.address],[after.balance,address]);
  }finally{await service?.close().catch(()=>{});await stopAll([chain,...Object.values(W)]);await rm(dir,{recursive:true,force:true});}});
