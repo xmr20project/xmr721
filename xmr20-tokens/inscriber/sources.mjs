@@ -6,7 +6,7 @@
 // inscribed stays on the chain.
 import {checkDeploy,readable} from '../lib/token.mjs';
 
-const MOST=20000,AHEAD=600000;
+const MOST=20000,AHEAD=600000,EARLIEST=1e12;
 
 // Whole tokens from a raw supply and its decimals, when it divides evenly.
 function whole(raw,decimals){
@@ -15,17 +15,21 @@ function whole(raw,decimals){
 
 function collect(items,make,now){
  if(items.length>MOST)throw Error('The list is longer than a launch list can be.');
- const launches=[],skipped=[],seen=new Set();
+ const launches=[],skipped=[],seen=new Set(),count=new Map();
+ for(const item of items)if(typeof item?.mint==='string')count.set(item.mint,(count.get(item.mint)||0)+1);
  for(const item of items){
   const mint=typeof item?.mint==='string'&&item.mint.length<=64?item.mint:null;
   let at=null;
   try{const made=make(item);if(!made)continue;
    at=Number.isSafeInteger(made.at)&&made.at>0?made.at:null;if(made.skip)throw Error(made.skip);
+   // Two rows for one mint: which one is the launch cannot be told, so neither is taken.
+   if(count.get(item.mint)>1)throw Error('listed twice');
    // The name is optional. One that cannot be written (FORMAT.md: hidden characters, joined emoji) is left out and the
    // ticker stands alone; spaces at its ends are dropped.
    const f={...made.fields},name=typeof f.name==='string'?f.name.trim():'';if(name&&readable(name,64))f.name=name;else delete f.name;
    const d=checkDeploy({p:'xmr20',op:'deploy',...f});if(!d.mint)throw Error('no mint');
    if(at===null)throw Error('no launch time');
+   if(at<EARLIEST)throw Error('a launch time that is not in milliseconds');
    if(at>now()+AHEAD)throw Error('a launch time in the future');
    if(seen.has(d.mint))throw Error('listed twice');seen.add(d.mint);
    const {p,op,...fields}=d;launches.push({mint:d.mint,at,fields});}
@@ -34,22 +38,25 @@ function collect(items,make,now){
 
 // Launches on the Monero curve: the trading service's public lists. A launch is listed there once its market exists.
 // Its supply is the launch's own: what the list shows now plus what was burned when its pool opened (the service's
-// present parameters are not used: they may have changed since the launch). Tokens have 6 decimals; open and private
-// launches read the same.
+// present parameters are not used: they may have changed since the launch). The list and the markets are two reads; a
+// launch they do not show in the same phase is left for the next pass, so a supply is never put together from two
+// moments. Tokens have 6 decimals; open and private launches read the same.
 export function tradeSource({base,get,decimals=6,now=Date.now}){
  return {name:'monero-curve',async list(){
   const [answer,markets]=await Promise.all([get(base+'/api/launches'),get(base+'/api/markets')]),list=answer?.launches;
   if(!Array.isArray(list)||!Array.isArray(markets))throw Error('The trading service did not give its launches.');
-  const burned=new Map(markets.filter(m=>typeof m?.mint==='string'&&m.graduated?.burnedTokens!==undefined).map(m=>[m.mint,m.graduated.burnedTokens]));
-  const launched=x=>{const b=burned.get(x.mint)??'0';if(typeof x.supply!=='string'||!/^\d{1,40}$/.test(x.supply)||typeof b!=='string'||!/^\d{1,40}$/.test(b))return null;return (BigInt(x.supply)+BigInt(b)).toString();};
-  return collect(list,x=>{const max=whole(launched(x),decimals);if(!max)return {at:x.launchedAt,skip:'no whole supply'};
+  const market=new Map(markets.filter(m=>typeof m?.mint==='string').map(m=>[m.mint,m]));
+  const launched=(x,m)=>{const b=m.graduated?m.graduated.burnedTokens:'0';if(typeof x.supply!=='string'||!/^\d{1,40}$/.test(x.supply)||typeof b!=='string'||!/^\d{1,40}$/.test(b))return null;return (BigInt(x.supply)+BigInt(b)).toString();};
+  return collect(list,x=>{const m=market.get(x.mint);
+   if(!m||typeof x.phase!=='string'||m.phase!==x.phase||Boolean(m.graduated)!==(x.phase==='pool'))return {at:x.launchedAt,skip:'its market is not shown in the same phase; next pass'};
+   const max=whole(launched(x,m),decimals);if(!max)return {at:x.launchedAt,skip:'no whole supply'};
    return {at:x.launchedAt,fields:{tick:x.symbol,name:x.name,max,dec:String(decimals),mode:'monero-curve',mint:x.mint}};},now);}};}
 
 // Launches on the Solana bonding curve: the launch service's public list. A launch counts once Solana has finalized it,
 // and only while the list itself shows it (not hidden, halted, cancelled or kept out of the index). The pair is read
 // from the launch's venue, and a venue this source does not know is left out. These tokens have 6 decimals.
 export function bridgeSource({url,get,decimals=6,solanaNetwork='mainnet-beta',moneroNetwork='mainnet',now=Date.now}){
- const pairOf=x=>x.venue==='meteora-damm-v2'?'XMR20':(x.venue==='raydium-launchlab'&&x.flow==='wxmr-sponsored-curve-v1')||(x.venue==null&&x.launchPlatform===2)?'wXMR':null;
+ const pairOf=x=>x.venue==='meteora-damm-v2'&&x.flow==null?'XMR20':(x.venue==='raydium-launchlab'&&x.flow==='wxmr-sponsored-curve-v1')||(x.venue==null&&x.flow==null&&x.launchPlatform===2)?'wXMR':null;
  return {name:'bonding-curve',async list(){
   const answer=await get(url);if(answer?.schema!=='xmr20-launches-v1'||!Array.isArray(answer.tokens))throw Error('The launch service did not give its launches.');
   if(answer.solanaNetwork!==solanaNetwork||answer.moneroNetwork!==moneroNetwork)throw Error('The launch service is on another network.');

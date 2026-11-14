@@ -47,19 +47,35 @@ Changed:
   service and dropped by the relay. It applies now.
 - **A record marked stuck stayed stuck.** A record the relay could not get mined for 720
   blocks answered "stuck" on every later try, so it could never be published through that
-  relay. It can be handed over again, like a refused one.
+  relay. It can be handed over again. One whose transaction was built goes out as that
+  same transaction (a second one would be mined beside it and paid twice), and one that
+  reaches a block after all ends as done.
 - **Checkpoints did not name the first mint block.** Two readers with different first mint
-  blocks gave different state hashes with nothing in the checkpoint that differed. A
-  checkpoint names the first mint block and the minter list once the setup has them, and
-  `verify` compares them.
+  blocks gave different state hashes with nothing in the checkpoint that differed. From the
+  first mint block on a checkpoint names that block and the minter list, and `verify`
+  compares them (its own scan reads with the same list). Checkpoints of earlier blocks are
+  what they were, so what was published before a switch still compares.
 - **A burned Mordinal was shown as claimed with no owner.** The service says `burned`, and
-  the page shows it.
+  the Mordinal's page and the gallery show it.
 - **Minters.** A ledger's setup may list who makes collections and mints (RULES.md
-  section 9). The relay gives those addresses a lane of their own for their mints.
+  section 9). A list is never empty: `--minters` without an address stops the service
+  instead of opening minting to everyone. A state folder made with a list has a schema name
+  of its own, so code from before the list refuses the folder instead of reading it
+  without the list. The relay gives the listed addresses a lane for their collections and
+  mints: coins kept for it above the ones kept for purchases, and no part in the shared
+  daily counts.
+- **The launch inscriber** (`xmr20-tokens/`). A launch whose name held a joined emoji was
+  skipped for good (the name is left out now); the supply came from the service's present
+  parameters (it is the launch's own now); a start time given in seconds, or a mistyped
+  `--preview`, would have inscribed far more than meant (both stop the command); a list
+  could flood it (bounds per day and per pass); a record the relay refused for a passing
+  reason was closed (only the rules' own refusal closes one, and the service marks those
+  with `rule`); a burned inscription, or a record the relay gave up on, held a place for
+  good.
 - RULES.md said a reservation of a minted NFT ends "Mordinal to"; the signed text says
   "NFT to". The text of the document follows the code.
 - The page of an allowed origin can read an NFT's text (the content route sent no
-  cross-origin header).
+  cross-origin header); the route always varies by origin.
 
 Open, and the reason a ledger should list its minters until they are answered:
 
@@ -85,8 +101,14 @@ Open, and the reason a ledger should list its minters until they are answered:
   block needs a new folder. Fill it with a second, reader-only instance up to the tip, stop
   both, copy the old folder's `relay` into the new one, then start on the new folder. A
   relay that starts on an empty folder would pay again for records already on the chain.
+- **Reservations from addresses that hold nothing.** With a minter list, the only record
+  a sender with no Mordinal and no place on the list can have carried is a reservation of
+  an open listing (the known free-reservation point): about one per listing every 15
+  blocks. The lane's own coins keep the listed minter's records moving meanwhile.
 - Smaller: a failing wallet call is repeated per unpaid record in one pass; a relayed mint
-  whose block is replaced more than 10 blocks later is not sent again.
+  whose block is replaced more than 10 blocks later is not sent again; the create page is
+  offered to everyone although only listed addresses can mint; each IPv6 address is a
+  connection of its own to the per-connection limit.
 
 ## Found in review and changed
 

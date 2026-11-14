@@ -3,17 +3,18 @@
 //   node --test reader/tests/mint-review.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,rmSync,readdirSync,readFileSync} from 'node:fs';
+import {mkdtempSync,rmSync,readdirSync,readFileSync,existsSync} from 'node:fs';
+import {spawnSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {OP,decodeRecord,encodeBody,NO_COLLECTION} from '../../rules/lib/records.mjs';
 import {createLedger} from '../../rules/lib/ledger.mjs';
 import {outputSecret,signWithOutputKey} from '../../rules/lib/claim.mjs';
 import {wallet,makeTx,ownerEntry,DOMAIN} from '../../rules/tests/helpers.mjs';
-import {openReader} from '../lib/reader.mjs';
+import {openReader,SCHEMA,SCHEMA_MINTERS} from '../lib/reader.mjs';
 import {createRelay} from '../lib/relay.mjs';
 import {createService} from '../service.mjs';
-import {verify} from '../tools/verify.mjs';
+import {verify,scan} from '../tools/verify.mjs';
 import {fakeChain,fakeCarrier,carried} from './fake.mjs';
 
 const dirs=[];test.after(()=>{for(const d of dirs)rmSync(d,{recursive:true,force:true});});
@@ -71,7 +72,7 @@ test('the first mint block and the minter list are part of a state folder, of /i
   const mark=reader.checkpoint();assert.deepEqual([mark.mintFrom,mark.minters],[100,[w.alice.address,w.bob.address].sort().join(',')]);
   // The same folder opened for another setup is refused, whichever part differs; the order of the list does not matter.
   const again=o=>openReader({dir:join(x.dir,'state'),...setup,minters:x.pick(['alice','bob']),...o});
-  assert.throws(()=>again({minters:x.pick(['alice'])}),/minters differs/);assert.throws(()=>again({minters:null}),/minters differs/);assert.throws(()=>again({mintFrom:101}),/mintFrom differs/);
+  assert.throws(()=>again({minters:x.pick(['alice'])}),/minters differs/);assert.throws(()=>again({minters:null}),/schema differs/);assert.throws(()=>again({mintFrom:101}),/mintFrom differs/);
   again({minters:x.pick(['bob','alice'])});
   // The check tool replays with the service's setup and refuses a checkpoint of another one.
   const entries=(await web.get('/log?limit=500')).body.entries,checkpoints=(await web.get('/checkpoints')).body.checkpoints;
@@ -123,3 +124,77 @@ test('a burned Mordinal says so wherever its state is served, and a page on an a
   assert.deepEqual([text.status,text.body,text.headers.get('access-control-allow-origin')],[200,'a note','https://xmr20.org']);
   assert.equal((await web.get('/nft/'+note.id+'/content',{origin:'https://elsewhere.example'})).headers.get('access-control-allow-origin'),null);
  }finally{await x.service.close();}});
+
+// ---- Found in a second read, of the fixes above ----
+
+test('the check tool\'s own scan reads with the service\'s minter list, and a minter list is never empty',async()=>{
+ const x=world({minters:['alice']}),{w,reader,block,mint}=x;await reader.sync();
+ await block(mint(w.bob,'not listed').record,mint(w.alice,'listed').record);await block();
+ const web=await served(x);
+ try{
+  const info=(await web.get('/info')).body,entries=(await web.get('/log?limit=500')).body.entries;
+  assert.deepEqual(entries.map(e=>e.ok),[false,true]);
+  assert.deepEqual(await scan({info,entries,owners:x.owners,chain:x.chain,dir:join(x.dir,'scan'),height:info.height}),[]);
+  // An empty list is refused before anything is written, so the folder stays usable; so is the flag given without a value.
+  const fresh=join(x.dir,'fresh');assert.throws(()=>openReader({dir:fresh,...x.setup,minters:[]}),/Bad minter list/);assert.ok(!existsSync(join(fresh,'meta.json')));
+  openReader({dir:fresh,...x.setup,minters:x.pick(['alice'])});
+  const run=(...more)=>spawnSync(process.execPath,[join(import.meta.dirname,'../service.mjs'),'--owners',join(import.meta.dirname,'../../ownership-index/added/added.jsonl'),'--domain',DOMAIN,'--fee-address',w.fee.address,'--node','http://127.0.0.1:9','--start','100','--state',join(x.dir,'cli'),'--port','0','--mint-from','101',...more],{encoding:'utf8',timeout:20000});
+  for(const empty of [['--minters',''],['--minters']]){const r=run(...empty);assert.notEqual(r.status,0);assert.match(r.stderr,/Bad minter list/);}
+  // A folder made with a list has a schema name of its own (code from before the list would refuse it, not read it without the list).
+  assert.equal(JSON.parse(readFileSync(join(x.dir,'state','meta.json'),'utf8')).schema,SCHEMA_MINTERS);
+  const plain=world();await plain.reader.sync();assert.equal(JSON.parse(readFileSync(join(plain.dir,'state','meta.json'),'utf8')).schema,SCHEMA);
+ }finally{await x.service.close();}});
+
+test('a checkpoint names the first mint block and the minters from that block on, not before',async()=>{
+ const x=world({mintFrom:104,minters:['alice']}),{reader,block}=x;await reader.sync();
+ for(let i=0;i<6;i++)await block();
+ const web=await served(x);
+ try{
+  const info=(await web.get('/info')).body,checkpoints=(await web.get('/checkpoints')).body.checkpoints,entries=[];
+  assert.deepEqual(checkpoints.map(c=>[c.height,c.mintFrom??null,c.minters?1:0]),[[102,null,0],[104,104,1],[106,104,1]]);
+  assert.equal((await verify({info,entries,checkpoints,owners:x.owners})).ok,true);
+  // A checkpoint from before the block that names a setup, or one after it that names none, is not this ledger's.
+  for(const wrong of [checkpoints.map(c=>c.height===102?{...c,mintFrom:104}:c),checkpoints.map(c=>{const {mintFrom,minters,...rest}=c;return rest;})])
+   assert.match((await verify({info,entries,checkpoints:wrong,owners:x.owners})).problems.join(' '),/another first mint block or minter list/);
+ }finally{await x.service.close();}});
+
+test('a sent record marked stuck goes out again as the same transaction, once; one that reaches a block later ends as done',async()=>{
+ const x=world({limits:{stuckBlocks:2,resendMs:10**12}}),{relay,carrier,chain,service,w}=x;await x.reader.sync();
+ const m=x.mint(w.alice,'in the pool for long'),first=await relay.submit(hex(m.record));assert.equal(first.state,'sent');
+ // Blocks pass without the transaction (the node keeps it in its pool): the job is marked stuck.
+ for(let i=0;i<4;i++){chain.mine([],{only:[]});await service.step();}
+ assert.equal(relay.status(m.id).state,'stuck');assert.equal(carrier.made.length,1);
+ // Anyone hands the record over again (its bytes are public): no second transaction is built, the first one is sent again.
+ const again=await relay.submit(hex(m.record));assert.equal(again.state,'sent');assert.equal(again.txid,first.txid);assert.equal(carrier.made.length,1);
+ chain.mine();await service.step();
+ assert.equal(x.L().nft(m.id).owner,w.alice.address);assert.deepEqual(x.reader.journal.filter(e=>e.id===m.id).map(e=>e.ok),[true]);assert.equal(relay.status(m.id).state,'done');
+ // A stuck job nobody hands over again, whose transaction is mined after all, is done on disk too.
+ const n=x.mint(w.bob,'mined late'),sent=await relay.submit(hex(n.record));
+ for(let i=0;i<4;i++){chain.mine([],{only:[]});await service.step();}
+ const file=join(x.dir,'relay','jobs',n.id+'.json'),saved=()=>JSON.parse(readFileSync(file,'utf8')).state;assert.equal(saved(),'stuck');
+ chain.mine([],{only:[sent.txid]});await service.step();assert.equal(saved(),'done');});
+
+test('the lane has its own coins and counts: other records cannot take them, it does not take the purchases\' coins, and it does not use up others\' limits',async()=>{
+ // Two coins are kept for purchases and two above them for the lane.
+ const x=world({coins:4,limits:{buyReserve:2,laneReserve:2,minReady:0,perDay:2,perCallerDay:2},lane:['alice']}),{relay,carrier,w}=x;await x.reader.sync();
+ // The relay's wallet cannot split a coin in this test, so the counts stay put; that it tries is checked below.
+ let splits=0;carrier.split=async()=>{splits++;throw Error('no split in this test');};await x.service.step();
+ const send=async(r,o)=>{try{const a=await relay.submit(hex(r.record),o);return a.state+(a.note?': '+a.note:'');}catch(e){return e.status;}},waits='queued: Waiting for a coin of the relay; purchases go first.';
+ assert.equal(await send(x.mint(w.bob,'ordinary')),waits);
+ assert.equal(await send(x.mint(w.alice,'launch 1'),{caller:'local'}),'sent');assert.equal(await send(x.mint(w.alice,'launch 2'),{caller:'local'}),'sent');
+ // The lane stops at the purchases' coins.
+ assert.equal(await send(x.mint(w.alice,'launch 3'),{caller:'local'}),waits);assert.equal(carrier.ready,2);
+ // Lane records count neither toward the day's limit of everyone nor toward their connection's: others still get a place.
+ assert.equal(await send(x.mint(w.carol,'another service on this machine'),{caller:'local'}),waits);
+ // With coins this low the relay keeps trying to split one, so nothing waits on a count that never changes
+ // (its own setting asked for no ready coins at all: the kept coins decide).
+ assert.ok(splits>=1);const before=splits;await x.block();assert.ok(splits>before);
+ // A relay without a lane keeps nothing back for one: the live relay's behaviour is unchanged.
+ const y=world({coins:3,limits:{buyReserve:2,laneReserve:2,minReady:0}});await y.reader.sync();await y.service.step();
+ const got=await y.relay.submit(hex(y.mint(y.w.bob,'no lane here').record));assert.equal(got.state,'sent');});
+
+test('the content route always varies by origin, so a cached copy cannot fail an allowed page',async()=>{
+ const x=world({origins:['https://xmr20.org']});await x.reader.sync();const note=x.mint(x.w.bob,'a note');await x.block(note.record);
+ const web=await served(x);
+ try{for(const origin of [undefined,'https://xmr20.org','https://elsewhere.example'])assert.equal((await web.get('/nft/'+note.id+'/content',origin?{origin}:{})).headers.get('vary'),'origin',String(origin));}
+ finally{await x.service.close();}});

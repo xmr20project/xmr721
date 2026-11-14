@@ -16,7 +16,7 @@ import {createService} from '../../reader/service.mjs';
 import {fakeChain,fakeCarrier} from '../../reader/tests/fake.mjs';
 import {newSecret,inscriberFrom,deployRecord} from '../lib/inscribe.mjs';
 import {deployText,readDeploy,TYPE_JSON} from '../lib/token.mjs';
-import {createInscriber,httpIndex} from '../inscriber/inscriber.mjs';
+import {createInscriber,httpIndex,preview} from '../inscriber/inscriber.mjs';
 import {tradeSource,bridgeSource} from '../inscriber/sources.mjs';
 
 const dirs=[];test.after(()=>{for(const d of dirs)rmSync(d,{recursive:true,force:true});});
@@ -32,16 +32,16 @@ const bridgeLaunch=(ticker,at,o={})=>({id:'00000000-0000-4000-8000-'+Buffer.from
 function lists(){
  const curve=[],bridge=[],markets=[];let down=null;
  const get=async url=>{if(down&&url.includes(down))throw Error('host answered 502');
-  if(url==='https://trade.test/api/launches')return {launches:curve.slice().reverse()};if(url==='https://trade.test/api/markets')return markets.slice();
+  if(url==='https://trade.test/api/launches')return {launches:curve.slice().reverse()};if(url==='https://trade.test/api/markets')return curve.filter(c=>c?.mint).map(c=>markets.find(m=>m.mint===c.mint)||{mint:c.mint,symbol:c.symbol,phase:c.phase}).concat(markets.filter(m=>!curve.some(c=>c?.mint===m.mint)));
   if(url==='https://site.test/api/xmr20/tokens')return {schema:'xmr20-launches-v1',moneroNetwork:'mainnet',solanaNetwork:'mainnet-beta',confirmations:10,tokens:bridge.slice()};
   throw Error('unexpected '+url);};
  return {curve,bridge,markets,get,down:v=>{down=v;},sources:()=>[tradeSource({base:'https://trade.test',get,now:NOW}),bridgeSource({url:'https://site.test/api/xmr20/tokens',get,now:NOW})]};}
 
-async function world({fees,inscribers,mintFrom=100,coins=30,relayOn=true}={}){
+async function world({fees,inscribers,minters=null,mintFrom=100,coins=30,relayOn=true}={}){
  const w=Object.fromEntries(['holder','fee'].map(n=>[n,wallet(n)])),key=newSecret(),signer=inscriberFrom(key);
  const owners=[makeTx('reg0',[{to:w.holder,amount:10n**9n}])].map((t,i)=>({...ownerEntry(i,t),registrationHeight:50,ownerHeight:50}));
  const dir=mkdtempSync(join(tmpdir(),'xmr20-inscriber-'));dirs.push(dir);
- const chain=fakeChain({start:100}),reader=openReader({dir:join(dir,'state'),chain,domain:DOMAIN,feeAddress:w.fee.address,owners,start:100,mintFrom});
+ const chain=fakeChain({start:100}),reader=openReader({dir:join(dir,'state'),chain,domain:DOMAIN,feeAddress:w.fee.address,owners,start:100,mintFrom,minters:minters?minters(signer.address):null});
  const carrier=fakeCarrier(chain,{coins}),relay=relayOn?createRelay({dir:join(dir,'relay'),reader,chain,carrier,domain:DOMAIN,limits:{resendMs:1000},...(fees?{fees}:{})}):null;
  const service=createService({reader,relay,owners,xmr20:{inscribers:inscribers||[signer.address]},testHooks:true}),port=await service.listen(0),base='http://127.0.0.1:'+port;
  await service.step();
@@ -125,7 +125,7 @@ test('a replaced block: the inscription goes out again and the token comes back 
 
 test('it waits while the index would not list its tokens, minting is closed or there is no relay; another ledger is refused',async()=>{
  const other=inscriberFrom(newSecret()).address;
- for(const [setup,why] of [[{inscribers:[other]},/does not list the tokens of this inscriber/],[{mintFrom:200},/minting is not open/],[{relayOn:false},/no relay/]]){
+ for(const [setup,why] of [[{inscribers:[other]},/does not list the tokens of this inscriber/],[{mintFrom:200},/minting is not open/],[{relayOn:false},/no relay/],[{minters:()=>[other]},/not among the ledger's minters/]]){
   const x=await world(setup);
   try{x.curve.push(curveLaunch('WAITS',SINCE+1));const a=x.open(),out=await a.turn();
    assert.match(out.waiting,why);assert.deepEqual([out.found,out.sent,a.entries().length],[0,0,0]);assert.ok(!existsSync(join(x.dir,'inscriber','journal.json')));}
@@ -153,7 +153,7 @@ test('the lists: what cannot be described fully is left out with the reason, and
   bridge.push(bridgeLaunch('ODD',SINCE+5,{supply:'1000000000000001'}),bridgeLaunch('FINE',SINCE+6),bridgeLaunch('DEV',SINCE+7,{network:'devnet'}),{...bridgeLaunch('GOOD2',SINCE+8),mint:mintOf('GOOD')});
   const [t,b]=x.sources(),tl=await t.list(),bl=await b.list();
   assert.deepEqual(tl.launches.map(l=>l.fields.tick),['GOOD']);
-  assert.deepEqual(tl.skipped,[{mint:null,why:'no whole supply',at:SINCE+4},{mint:mintOf('NOTIME'),why:'no launch time',at:null},{mint:'not-an-address',why:'mint: a Solana address.',at:SINCE+2}]);
+  assert.deepEqual(tl.skipped,[{mint:null,why:'its market is not shown in the same phase; next pass',at:SINCE+4},{mint:mintOf('NOTIME'),why:'no launch time',at:null},{mint:'not-an-address',why:'mint: a Solana address.',at:SINCE+2}]);
   assert.deepEqual(bl.launches.map(l=>l.fields.tick),['FINE','GOOD2']);assert.deepEqual(bl.skipped,[{mint:mintOf('ODD'),why:'no whole supply',at:SINCE+5}]);
   // The same mint on both lists is inscribed once, for the list that is read first.
   const a=open();assert.deepEqual(await a.turn(),{height:100,found:2,sent:2,done:0,counts:{sent:2}});
@@ -194,8 +194,8 @@ test('the supply inscribed is the launch\'s own: what is listed now plus what wa
  const x=await world(),{curve,markets,open,block,tokens}=x;
  try{
   // A pool opened and burned tokens: the list shows less, the market says how much was burned.
-  curve.push(curveLaunch('POOL',SINCE+1,{phase:'pool',supply:'999986016092513'}),curveLaunch('CURVE',SINCE+2),curveLaunch('SMALL',SINCE+3,{supply:'21000000000000'}),curveLaunch('ODDBURN',SINCE+4,{supply:'999999999999999'}));
-  markets.push({mint:mintOf('POOL'),symbol:'POOL',phase:'pool',graduated:{burnedTokens:'13983907487',keptTokens:'206900000000000'}},{mint:mintOf('CURVE'),phase:'curve'},{mint:mintOf('ODDBURN'),graduated:{burnedTokens:7}});
+  curve.push(curveLaunch('POOL',SINCE+1,{phase:'pool',supply:'999986016092513'}),curveLaunch('CURVE',SINCE+2),curveLaunch('SMALL',SINCE+3,{supply:'21000000000000'}),curveLaunch('ODDBURN',SINCE+4,{phase:'pool',supply:'999999999999999'}));
+  markets.push({mint:mintOf('POOL'),symbol:'POOL',phase:'pool',graduated:{burnedTokens:'13983907487',keptTokens:'206900000000000'}},{mint:mintOf('CURVE'),phase:'curve'},{mint:mintOf('ODDBURN'),phase:'pool',graduated:{burnedTokens:7}});
   const a=open();for(let i=0;i<3;i++){await a.turn();await block();}await a.turn();
   assert.deepEqual((await tokens()).reverse().map(t=>[t.tick,t.max]),[['POOL','1000000000'],['CURVE','1000000000'],['SMALL','21000000']]);
   assert.ok(x.logs.some(l=>l.skipped===mintOf('ODDBURN')&&l.why==='no whole supply'));
@@ -225,7 +225,7 @@ test('a list that suddenly shows many new launches is not taken from; a day has 
   assert.deepEqual(x.logs.filter(l=>l.held).map(l=>[l.held,l.launches,l.why]),[['monero-curve',30,'more than 20 new launches at once']]);
   await block();await a.turn();assert.deepEqual((await tokens()).map(t=>t.tick),['REAL']);assert.equal(x.logs.filter(l=>l.held).length,1);
   // A person lets them through (a higher limit): the day's bound still holds, oldest first.
-  const b=open({limits:{burst:100,perDay:4,inFlight:10}}),next=await b.turn();assert.deepEqual([next.found,next.held],[3,1]);
+  const b=open({limits:{burst:100,perDay:4,inFlight:10}}),next=await b.turn();assert.deepEqual([next.found,next.held],[3,27]);
   assert.deepEqual(b.entries().map(e=>e.fields.tick),['REAL','J0','J1','J2']);
   // A launch time far in the future and a list longer than a launch list can be are refused by the source.
   curve.length=0;curve.push(curveLaunch('FUTURE',NOW()+86_400_000));assert.deepEqual((await x.sources()[0].list()).skipped.map(s=>s.why),['a launch time in the future']);
@@ -246,16 +246,22 @@ test('records that will never be tokens do not hold the way: a burned inscriptio
   for(let i=0;i<4;i++){await block();await b.turn();}await block();await b.turn();
   assert.deepEqual(b.entries().map(e=>[e.fields.tick,e.state]),[['B1','off'],['B2','off'],['B3','off'],['NEW','done']]);
   assert.deepEqual((await tokens()).map(t=>t.tick),['NEW']);
-  // A record the relay reports as stuck, and one the rules refuse, are closed too.
-  curve.push(curveLaunch('STUCK',SINCE+5),curveLaunch('BAD',SINCE+6));
-  const states={},odd={...index,status:async id=>states[id]?{id,state:states[id],error:null}:index.status(id),
-   submit:async record=>{const id=c.entries().find(e=>e.record===record)?.id;if(c.journal.launches[mintOf('BAD')]?.id===id)return {state:'refused',error:'A rule says no.',status:400};return index.submit(record);}};
-  const c=open({index:odd});await c.turn();states[c.journal.launches[mintOf('STUCK')].id]='stuck';
-  for(let i=0;i<3;i++)await c.turn();
-  assert.deepEqual(c.entries().slice(-2).map(e=>[e.fields.tick,e.state]),[['STUCK','stuck'],['BAD','refused']]);
-  // A relay that is only busy does not close anything.
-  curve.push(curveLaunch('BUSY',SINCE+7));const busy={...index,submit:async()=>({state:'refused',error:'The relay is busy.',status:503})},d=open({index:busy});
-  for(let i=0;i<5;i++)await d.turn();assert.equal(d.journal.launches[mintOf('BUSY')].state,'made');
+  // A record the relay keeps as stuck holds no in-flight place and is offered again every few blocks until the relay
+  // takes it; a record the rules refuse is closed after three tries; a relay that is busy or failing closes nothing.
+  curve.push(curveLaunch('STUCK',SINCE+5),curveLaunch('BAD',SINCE+6),curveLaunch('BUSY',SINCE+7));
+  let relayTakesIt=false;const idOf=n=>c.journal.launches[mintOf(n)]?.id,of=record=>c.entries().find(e=>e.record===record)?.id;
+  const odd={...index,status:async id=>id===idOf('STUCK')&&!relayTakesIt?{id,state:'stuck',error:null}:index.status(id),
+   submit:async record=>{const id=of(record);
+    if(id===idOf('BAD'))return {state:'refused',error:'A rule says no.',status:400,rule:true};
+    if(id===idOf('BUSY'))return {state:'refused',error:'The wallet tool failed.',status:400,rule:false};
+    if(id===idOf('STUCK')&&c.journal.launches[mintOf('STUCK')].state!=='made'&&!relayTakesIt)return {id,state:'stuck'};
+    return index.submit(record);}};
+  const c=open({index:odd,limits:{resendAfter:2}});await c.turn();
+  for(let i=0;i<4;i++)await c.turn();
+  assert.deepEqual(c.entries().slice(-3).map(e=>[e.fields.tick,e.state]),[['STUCK','stuck'],['BAD','refused'],['BUSY','made']]);
+  assert.equal(c.entries().filter(e=>e.state==='sent').length,0);
+  relayTakesIt=true;await block();await block();await c.turn();assert.ok(['sent','done'].includes(c.journal.launches[mintOf('STUCK')].state));
+  await block();await c.turn();assert.deepEqual((await tokens()).map(t=>t.tick),['STUCK','NEW']);assert.equal(c.journal.launches[mintOf('STUCK')].state,'done');
  }finally{await service.close();}});
 
 test('a new journal waits before its first record, so a record of an earlier run is found in its block and not made a second time',async()=>{
@@ -290,6 +296,10 @@ test('the command refuses a start time given in seconds, in the future, or far b
  const run=join(import.meta.dirname,'../inscriber/run.mjs'),dir=mkdtempSync(join(tmpdir(),'xmr20-run-'));dirs.push(dir);
  const key=join(dir,'key');writeFileSync(key,newSecret()+'\n',{mode:0o600});
  const go=(...more)=>spawnSync(process.execPath,[run,'--index','http://127.0.0.1:9','--domain',DOMAIN,'--key-file',key,'--state',join(dir,'state'),'--trade','http://127.0.0.1:9',...more],{encoding:'utf8',timeout:20000});
+ // A mistyped argument stops the command (a mistyped --preview must never start the real inscriber).
+ for(const wrong of [['--previw'],['--dry-run'],['--per-day=0'],['extra'],['--since','1','--since','2'],['--burst'],['--burst','0'],['--per-day','-1'],['--every','5']]){
+  const r=go('--since',String(Date.now()),...wrong);assert.equal(r.status,2,wrong.join(' ')+' '+r.stderr);}
+ assert.match(go('--since','2026-11-14T00:00:00').stderr,/with its zone/);
  const seconds=go('--since','1794700000');assert.equal(seconds.status,2);assert.match(seconds.stderr,/milliseconds \(13 digits\)/);
  const future=go('--since',String(Date.now()+86_400_000));assert.equal(future.status,2);assert.match(future.stderr,/in the future/);
  const back=go('--since','2026-01-01T00:00:00Z');assert.equal(back.status,2);assert.match(back.stderr,/--backfill/);
@@ -298,3 +308,64 @@ test('the command refuses a start time given in seconds, in the future, or far b
  const made=spawnSync(process.execPath,[run,'--new-key',join(dir,'new-key')],{encoding:'utf8'});
  assert.match(made.stdout,/^Inscriber address: 4[1-9A-HJ-NP-Za-km-z]{94}\n$/);assert.equal(statSync(join(dir,'new-key')).mode&0o777,0o600);assert.ok(!made.stdout.includes(readFileSync(join(dir,'new-key'),'utf8').trim()));
  assert.equal(spawnSync(process.execPath,[run,'--new-key',join(dir,'new-key')],{encoding:'utf8'}).status,2);});
+
+// ---- Found in a second read, of the fixes above ----
+
+test('one launch on two rows, a launch whose market is not in the same phase, a time in seconds, an unknown flow: left out, never guessed',async()=>{
+ const x=await world(),{curve,bridge,markets}=x;
+ try{
+  curve.push(curveLaunch('TWIN',SINCE+1),{...curveLaunch('TWIN',SINCE+2),symbol:'OTHER',name:'other'},curveLaunch('AHEAD',SINCE+3),curveLaunch('SECONDS',1_800_000_100),curveLaunch('NOMARKET',SINCE+5),curveLaunch('FINE',SINCE+6));
+  // The list still shows AHEAD on the curve while the markets already show its pool and what was burned.
+  markets.push({mint:mintOf('AHEAD'),phase:'pool',graduated:{burnedTokens:'14000000000000'}},{mint:mintOf('NOMARKET'),phase:null});
+  const t=await x.sources()[0].list();
+  assert.deepEqual(t.launches.map(l=>l.fields.tick),['FINE']);
+  assert.deepEqual(t.skipped.map(s=>s.why).sort(),['a launch time that is not in milliseconds','its market is not shown in the same phase; next pass','its market is not shown in the same phase; next pass','listed twice','listed twice']);
+  // The next pass shows both in the pool phase: the supply is the launch's own.
+  Object.assign(curve.find(c=>c.symbol==='AHEAD'),{phase:'pool',supply:'986000000000000'});
+  assert.deepEqual((await x.sources()[0].list()).launches.map(l=>[l.fields.tick,l.fields.max]),[['AHEAD','1000000000'],['FINE','1000000000']]);
+  bridge.push(bridgeLaunch('FLOWN',SINCE+1,{flow:'something-new'}),bridgeLaunch('FLOWM',SINCE+2,{venue:'meteora-damm-v2',flow:'x'}),bridgeLaunch('PLAIN',SINCE+3),bridgeLaunch('PAIR',SINCE+4,{venue:'meteora-damm-v2'}),
+   bridgeLaunch('DUP',SINCE+5),{...bridgeLaunch('DUP2',SINCE+6),mint:mintOf('DUP')});
+  const b=await x.sources()[1].list();
+  assert.deepEqual(b.launches.map(l=>[l.fields.tick,l.fields.pair]),[['PLAIN','wXMR'],['PAIR','XMR20']]);
+  assert.deepEqual(b.skipped.map(s=>s.why),['a launch venue this source does not know','a launch venue this source does not know','listed twice','listed twice']);
+ }finally{await x.service.close();}});
+
+test('launches put off by the day\'s bound do not count as a sudden many; they go out as the day moves on',async()=>{
+ const x=await world(),{curve,open}=x;let clock=NOW();
+ try{
+  const a=open({limits:{burst:3,perDay:4,inFlight:10},now:()=>clock});
+  // Two launches a pass, for six passes: never more than three new at once, but more than a day's bound in all.
+  const seen=[];for(let i=0;i<6;i++){curve.push(curveLaunch('D'+(2*i),SINCE+10+2*i),curveLaunch('D'+(2*i+1),SINCE+11+2*i));const out=await a.turn();seen.push([out.found,out.held||0]);await x.block();}
+  assert.deepEqual(seen,[[2,0],[2,0],[0,2],[0,4],[0,6],[0,8]]);
+  assert.ok(!x.logs.some(l=>/new launches at once/.test(l.why||'')));
+  // A day later the bound has room again: the oldest four go out, the rest wait for the next day, none is lost.
+  clock+=86_400_001;const next=await a.turn();assert.deepEqual([next.found,next.held],[4,4]);
+  assert.deepEqual(a.entries().map(e=>e.fields.tick),['D0','D1','D2','D3','D4','D5','D6','D7']);
+  clock+=86_400_001;assert.equal((await a.turn()).found,4);assert.equal(Object.keys(a.journal.deferred).length,0);
+  // A real burst is still held: five new ones in one pass.
+  for(let i=0;i<5;i++)curve.push(curveLaunch('Z'+i,SINCE+100+i));clock+=86_400_001;const held=await a.turn();assert.deepEqual([held.found,held.held],[0,5]);
+ }finally{await x.service.close();}});
+
+test('a new journal waits for as long as the relay still holds records of an earlier run, however many blocks that takes',async()=>{
+ const x=await world({coins:0}),{curve,open,tokens,carrier,reader}=x;
+ try{
+  curve.push(curveLaunch('SLOW',SINCE+1,{name:'first name'}));const a=open();await a.turn();assert.equal(a.entries()[0].state,'sent');
+  // The relay has no coin: the record waits there for many blocks. Meanwhile the journal is lost and the list changes the name.
+  rmSync(join(x.dir,'inscriber'),{recursive:true});curve[0].name='second name';
+  const b=open({limits:{quiet:2}});for(let i=0;i<5;i++){const out=await b.turn();assert.equal(out.found,0,'pass '+i);assert.ok(out.quiet>out.height);await x.block();}
+  carrier.ready=5;for(let i=0;i<3;i++)await x.block();
+  const out=await b.turn();assert.deepEqual([out.found,out.done],[1,1]);
+  assert.deepEqual((await tokens()).map(t=>t.name),['first name']);assert.equal(reader.journal.filter(e=>e.ok).length,1);
+ }finally{await x.service.close();}});
+
+test('left-out launches past the bound are not noted again and again; a preview needs no key and writes nothing',async()=>{
+ const x=await world(),{curve,bridge,open}=x;
+ try{
+  for(let i=0;i<8;i++)bridge.push(bridgeLaunch('V'+i,SINCE+1+i,{venue:'unknown-'+i}));curve.push(curveLaunch('GOOD',SINCE+20,{private:true,creatorWallet:'private'}));
+  const a=open({limits:{skipped:5}});for(let i=0;i<3;i++)await a.turn();
+  assert.equal(Object.keys(a.journal.skipped).length,5);assert.equal(x.logs.filter(l=>typeof l.skipped==='string'&&l.source).length,5);
+  assert.equal(x.logs.filter(l=>/further ones are not noted/.test(l.skipped||'')).length,1);
+  const lines=await preview({sources:x.sources(),since:SINCE});
+  assert.deepEqual(lines.filter(l=>l.text).map(l=>[l.source,l.text]),[['monero-curve',deployText({tick:'GOOD',name:'good',max:'1000000000',dec:'6',mode:'monero-curve',mint:mintOf('GOOD')})]]);
+  assert.equal(lines.filter(l=>l.skipped).length,8);assert.ok(!JSON.stringify(lines).includes('private'));
+ }finally{await x.service.close();}});

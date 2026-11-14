@@ -210,7 +210,7 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
    const made=/^\/nft\/([0-9a-f]{64})\/content$/.exec(url.pathname);
    if(req.method==='GET'&&made){const x=reader.ledger.nft(made[1]),e=x&&reader.entryById(made[1]);
     // A page on an allowed origin may read the bytes (text and JSON are shown by the page itself).
-    if(headers['access-control-allow-origin'])for(const k of ['access-control-allow-origin','vary'])res.setHeader(k,headers[k]);
+    res.setHeader('vary','origin');if(headers['access-control-allow-origin'])res.setHeader('access-control-allow-origin',headers['access-control-allow-origin']);
     if(!x){res.writeHead(404,headers);res.end(JSON.stringify({error:'This NFT does not exist.'}));return;}
     const bytes=Buffer.from(decodeRecord(Buffer.from(e.record,'hex'),m.network).body.content),type=pictureType(bytes)||(x.minted.type===5?'text/plain; charset=utf-8':x.minted.type===TYPE_JSON&&isJson(bytes)?'application/json; charset=utf-8':null);
     if(!type){res.writeHead(415,headers);res.end(JSON.stringify({error:'This content is not shown.'}));return;}
@@ -228,7 +228,9 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
     const parts=[];let size=0;for await(const c of req){size+=c.length;if(size>65536)throw fail('Request too large',413);parts.push(c);}
     try{body=JSON.parse(Buffer.concat(parts).toString('utf8')||'{}');}catch{throw fail('The request is not JSON.');}if(!body||typeof body!=='object')throw fail('The request is not JSON.');}
    const out=await route(req.method,url,body,req);res.writeHead(200,headers);res.end(JSON.stringify(out));}
-  catch(e){if(!e.status||e.status>=500)log({error:String(e?.message||e).slice(0,200)});if(!res.headersSent)res.writeHead(e.status||400,headers);res.end(JSON.stringify({error:String(e?.message||e).slice(0,400)}));}});
+  catch(e){if(!e.status||e.status>=500)log({error:String(e?.message||e).slice(0,200)});if(!res.headersSent)res.writeHead(e.status||400,headers);
+   // `rule` marks a refusal by the rules themselves: it will not change, where a busy or failing relay may answer differently later.
+   res.end(JSON.stringify({error:String(e?.message||e).slice(0,400),...(e?.rule?{rule:true}:{})}));}});
  let timer=null;
  return {reader,relay,server,step,
   listen:port=>new Promise((done,bad)=>{server.once('error',bad);server.listen(port,'127.0.0.1',()=>done(server.address().port));}),
@@ -239,7 +241,7 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
 // Everything from command-line style options: used by the command below and by tests.
 export async function startService(o){
  const owners=readOwners(o.owners),chain=createChain(o.node),network=o.network||'mainnet';
- const reader=openReader({dir:o.state,chain,network,domain:o.domain,feeAddress:o.feeAddress,owners,start:Number(o.start),startHash:o.startHash||null,mintFrom:o.mintFrom==null?null:Number(o.mintFrom),minters:o.minters?.length?o.minters:null,checkpointEvery:o.checkpointEvery??720,log:o.log});
+ const reader=openReader({dir:o.state,chain,network,domain:o.domain,feeAddress:o.feeAddress,owners,start:Number(o.start),startHash:o.startHash||null,mintFrom:o.mintFrom==null?null:Number(o.mintFrom),minters:o.minters??null,checkpointEvery:o.checkpointEvery??720,log:o.log});
  let relay=null;
  if(o.carrierBin){const carrier=createCarrier({bin:o.carrierBin,stateDir:o.carrierState,node:o.node,network:o.carrierNetwork||'offline-fakechain',start:Number(o.carrierStart||o.start)});
   relay=createRelay({dir:join(o.state,'relay'),reader,chain,carrier,network,domain:o.domain,limits:o.limits,fees:o.fees,lane:o.minters||[],...(o.now?{now:o.now}:{}),log:o.log});}
@@ -254,7 +256,9 @@ if(process.argv[1]===import.meta.filename){
  const archive=has('content-archive')?(arg('content-archive')?.startsWith('http')?arg('content-archive'):true):null;
  // --relay-limits minReady=4,splitInto=12,buyReserve=2: whole numbers for the relay's limits (lib/relay.mjs DEFAULT_LIMITS).
  const limits=Object.fromEntries((arg('relay-limits')||'').split(',').filter(Boolean).map(kv=>{const [k,v]=kv.split('=');if(!/^[a-zA-Z]+$/.test(k)||!/^\d{1,12}$/.test(v||''))throw Error('--relay-limits: name=number,…');return [k,Number(v)];}));
- const s=await startService({...(Object.keys(limits).length?{limits}:{}),owners:arg('owners'),transfers:arg('transfers'),...(arg('block-times')?{blockTimes:arg('block-times')}:{}),...(arg('groups')?{groups:arg('groups')}:{}),domain:arg('domain'),feeAddress:arg('fee-address'),node:arg('node'),start:arg('start'),startHash:arg('start-hash'),mintFrom:arg('mint-from'),minters:(arg('minters')||'').split(',').filter(Boolean),state:arg('state'),network:arg('network'),xmr20Inscribers:(arg('xmr20-inscribers')||'').split(',').filter(Boolean),
+ const s=await startService({...(Object.keys(limits).length?{limits}:{}),owners:arg('owners'),transfers:arg('transfers'),...(arg('block-times')?{blockTimes:arg('block-times')}:{}),...(arg('groups')?{groups:arg('groups')}:{}),domain:arg('domain'),feeAddress:arg('fee-address'),node:arg('node'),start:arg('start'),startHash:arg('start-hash'),mintFrom:arg('mint-from'),
+  // --minters given means a list: an empty value is refused, never read as "everyone".
+  ...(has('minters')?{minters:(arg('minters')||'').split(',').filter(Boolean)}:{}),state:arg('state'),network:arg('network'),xmr20Inscribers:(arg('xmr20-inscribers')||'').split(',').filter(Boolean),
   port:arg('port'),fees:{mint:arg('mint-fee')||0,collection:arg('collection-fee')||0},carrierBin:arg('carrier-bin'),carrierState:arg('carrier-state'),carrierStart:arg('carrier-start'),carrierNetwork:arg('carrier-network'),contentDir:arg('content-dir'),collections:arg('collections'),contentArchive:archive,views:arg('views'),
   origins:process.argv.flatMap((a,i)=>a==='--allow-origin'?[process.argv[i+1]]:[]),extensions:process.argv.flatMap((a,i)=>a==='--allow-extension'?[process.argv[i+1]]:[]),behindProxy:has('behind-proxy'),testHooks:has('test-hooks'),log:v=>console.log(new Date().toISOString(),JSON.stringify(v))});
  console.log(`Mordinals reader on http://127.0.0.1:${s.port} (${s.owners.length} Mordinals, block ${s.reader.height}${s.relay?', relay on':', reader only'})`);

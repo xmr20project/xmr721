@@ -33,7 +33,8 @@ export async function verify({info,entries,checkpoints=[],owners,chain=null,publ
  const ledger=createLedger({network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,height:info.start,mintFrom:info.mintFrom??null,minters:info.minters??null});
  // A checkpoint names the first mint block and the minter list of its ledger; they have to be this service's.
  const setup={mintFrom:info.mintFrom??null,minters:info.minters?[...info.minters].sort().join(','):null};
- for(const c of checkpoints)if((c.mintFrom??null)!==setup.mintFrom||(c.minters??null)!==setup.minters){bad(`The checkpoint at block ${c.height} is for a ledger with another first mint block or minter list.`);break;}
+ for(const c of checkpoints){const minting=setup.mintFrom!==null&&c.height>=setup.mintFrom;
+  if((c.mintFrom??null)!==(minting?setup.mintFrom:null)||(c.minters??null)!==(minting?setup.minters:null)){bad(`The checkpoint at block ${c.height} is for a ledger with another first mint block or minter list.`);break;}}
  const marks=[...checkpoints].sort((a,b)=>a.height-b.height),accepted=[];let mark=0,last=[info.start,-1],ok=0,refused=0;
  const settle=upTo=>{for(;mark<marks.length&&marks[mark].height<=upTo;mark++){const c=marks[mark];ledger.setHeight(c.height);
   const mine={records:accepted.length,listHash:sha(accepted.map(e=>`${e.height}:${e.txid}\n`).join('')),stateHash:sha(JSON.stringify(ledger.toJSON()))};
@@ -72,7 +73,7 @@ export async function verify({info,entries,checkpoints=[],owners,chain=null,publ
 
 // A reader of your own over the same blocks; the two logs must be equal. -> list of problems
 export async function scan({info,entries,owners,chain,dir,height}){
- const reader=openReader({dir,chain,network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,start:info.start,startHash:info.startHash,mintFrom:info.mintFrom??null,checkpointEvery:0});
+ const reader=openReader({dir,chain,network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,start:info.start,startHash:info.startHash,mintFrom:info.mintFrom??null,minters:info.minters??null,checkpointEvery:0});
  while(reader.height<height){const before=reader.height;await reader.sync({limit:height-reader.height});if(reader.height===before)break;}
  if(reader.height<height)return [`The node only reaches block ${reader.height}; the service is at ${height}.`];
  const mine=reader.journal.filter(e=>e.height<=height),theirs=entries.filter(e=>e.height<=height),problems=[];

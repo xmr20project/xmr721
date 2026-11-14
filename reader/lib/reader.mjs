@@ -19,7 +19,9 @@ import {hex,unhex} from '../../rules/lib/monero.mjs';
 import {unframe} from './transport.mjs';
 import {ownersHash} from './owners.mjs';
 
-export const SCHEMA='mordinals-reader-v3';
+// A state folder made for a ledger with a minter list has a schema name of its own, so code from before the list existed
+// refuses the folder instead of reading it without the list.
+export const SCHEMA='mordinals-reader-v3',SCHEMA_MINTERS='mordinals-reader-v3-minters';
 const sha=text=>createHash('sha256').update(text).digest('hex');
 // Only the parts of a payment transaction the rules read. A transaction of another kind is kept as it is not: the
 // rule library then refuses it by its own check.
@@ -35,8 +37,9 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
  mkdirSync(dir,{recursive:true});
  const files={meta:join(dir,'meta.json'),blocks:join(dir,'blocks.jsonl'),records:join(dir,'records.jsonl'),checkpoints:join(dir,'checkpoints.jsonl')};
  // The minter list is kept as one text (its addresses in order), so two setups compare as texts.
+ if(minters!==null&&!(Array.isArray(minters)&&minters.length))throw Error('Bad minter list');
  const minterList=minters===null?null:[...new Set(minters.map(a=>canonical(a,network)))].sort();
- const want={schema:SCHEMA,network,domain,feeAddress:canonical(feeAddress,network),start,owners:ownersHash(owners),...(mintFrom!==null?{mintFrom}:{}),...(minterList?{minters:minterList.join(',')}:{})};
+ const want={schema:minterList?SCHEMA_MINTERS:SCHEMA,network,domain,feeAddress:canonical(feeAddress,network),start,owners:ownersHash(owners),...(mintFrom!==null?{mintFrom}:{}),...(minterList?{minters:minterList.join(',')}:{})};
  let meta=existsSync(files.meta)?JSON.parse(readFileSync(files.meta,'utf8')):null;
  if(meta){for(const k of [...Object.keys(want),'mintFrom','minters'])if((meta[k]??null)!==(want[k]??null))throw Error(`This state folder was made for another ledger (${k} differs).`);
   if(startHash&&meta.startHash&&meta.startHash!==startHash)throw Error('This state folder was made for another start block hash.');}
@@ -85,9 +88,10 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
  // A summary anyone can compare: the accepted records so far and the ledger they lead to.
  function checkpoint(){
   const t=tipBlock(),accepted=journal.filter(e=>e.ok);
-  // The first mint block and the minter list are named once the setup has them, so two readers with different ones
-  // never look alike. A ledger without them has the checkpoints it always had.
-  return {schema:'mordinals-checkpoint-v1',network,domain,owners:meta.owners,start,...(meta.mintFrom!=null?{mintFrom:meta.mintFrom}:{}),...(meta.minters?{minters:meta.minters}:{}),height:t.height,blockHash:t.hash,records:accepted.length,
+  // From the first mint block on a checkpoint names that block and the minter list, so two readers with different ones
+  // never look alike. Before it, and on a ledger without one, a checkpoint is what it always was.
+  const minting=meta.mintFrom!=null&&t.height>=meta.mintFrom;
+  return {schema:'mordinals-checkpoint-v1',network,domain,owners:meta.owners,start,...(minting?{mintFrom:meta.mintFrom,...(meta.minters?{minters:meta.minters}:{})}:{}),height:t.height,blockHash:t.hash,records:accepted.length,
    listHash:sha(accepted.map(e=>`${e.height}:${e.txid}\n`).join('')),stateHash:sha(JSON.stringify(ledger.toJSON()))};}
  // Payment transactions a buy record names, as the node has them now.
  // With `upTo`, only payments in a block at or below that height are returned, so every reader judging the same

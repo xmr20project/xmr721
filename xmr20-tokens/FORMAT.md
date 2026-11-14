@@ -42,7 +42,7 @@ marks, joiners, variation selectors, blank look-alikes, every space but U+0020, 
 code points and noncharacters. The list is fixed, so that every reader refuses the same
 texts whatever Unicode tables it has:
 
-> U+0000–U+001F, U+007F–U+00A0, U+00AD, U+034F, U+0600–U+0605, U+061C, U+06DD, U+070F, U+0890–U+0891, U+08E2, U+115F–U+1160, U+1680, U+17B4–U+17B5, U+180B–U+180F, U+2000–U+200F, U+2028–U+202F, U+205F–U+206F, U+2800, U+3000, U+3164, U+E000–U+F8FF, U+FDD0–U+FDEF, U+FE00–U+FE0F, U+FEFF, U+FFA0, U+FFF0–U+FFFF, U+110BD, U+110CD, U+13430–U+1343F, U+1BCA0–U+1BCA3, U+1D173–U+1D17A, U+E0000–U+E0FFF, U+F0000–U+10FFFF
+> U+0000–U+001F, U+007F–U+00A0, U+00AD, U+034F, U+0600–U+0605, U+061C, U+06DD, U+070F, U+0890–U+0891, U+08E2, U+115F–U+1160, U+1680, U+17B4–U+17B5, U+180B–U+180F, U+2000–U+200F, U+2028–U+202F, U+205F–U+206F, U+2800, U+3000, U+3164, U+E000–U+F8FF, U+FDD0–U+FDEF, U+FE00–U+FE0F, U+FEFF, U+FFA0, U+FFF0–U+FFFF, U+110BD, U+110CD, U+13430–U+1343F, U+1BCA0–U+1BCA3, U+1D173–U+1D17A, U+1FFFE–U+1FFFF, U+2FFFE–U+2FFFF, U+3FFFE–U+3FFFF, U+4FFFE–U+4FFFF, U+5FFFE–U+5FFFF, U+6FFFE–U+6FFFF, U+7FFFE–U+7FFFF, U+8FFFE–U+8FFFF, U+9FFFE–U+9FFFF, U+AFFFE–U+AFFFF, U+BFFFE–U+BFFFF, U+CFFFE–U+CFFFF, U+DFFFE–U+DFFFF, U+E0000–U+E0FFF, U+EFFFE–U+EFFFF, U+F0000–U+10FFFF
 
 A name that holds one of these (an emoji joined from several, for example) cannot be
 written; the launch inscriber then leaves the name out, and the ticker stands alone.
@@ -139,14 +139,24 @@ What is inscribed stays on the chain, so the inscriber holds back rather than gu
 - `--since` sets the time from which launches are inscribed; earlier launches are left
   alone. A time more than two days back needs `--backfill`.
 - A launch it cannot describe fully and for certain is left out and logged: no whole
-  supply, a venue it does not know, a launch the launch list itself hides or halts.
+  supply, a venue or flow it does not know, a launch the launch list itself hides or halts,
+  a mint listed on two rows, a time that is not in milliseconds.
 - The supply is the launch's own (for a launch on the Monero curve: what is listed now plus
-  what was burned when its pool opened), never a present default.
-- It makes at most `--per-day` records in 24 hours (50), and takes nothing from a list that
-  shows more than `--burst` new launches at once (20) until a person has looked.
-- A new journal waits two blocks before its first record.
+  what was burned when its pool opened), never a present default. The launch list and the
+  markets are two reads; a launch they do not show in the same phase waits for the next
+  pass.
+- It makes at most `--per-day` records in 24 hours (50); launches past that wait for the
+  next day. It takes nothing from a list that shows more than `--burst` new launches in one
+  pass (20) until a person has looked.
+- A new journal waits two blocks before its first record, and for as long as the relay
+  still holds records of its address.
+- It waits while the ledger does not list its address as a minter or the index does not
+  list it as an inscriber.
+- Only a refusal by the rules closes a record (after three); a busy or failing relay is
+  tried again, and a record the relay gave up on is offered again every 20 blocks.
+- Every argument of the command has to be a known one; a mistyped one stops it.
 
-`--preview` prints the texts it would inscribe, and what it would leave out and why, and
-sends nothing.
+`--preview` prints the texts it would inscribe, and what it would leave out and why. It
+reads the lists and nothing else: no key, no journal, nothing signed or sent.
 
 Tests: `node --test xmr20-tokens/tests/*.test.mjs` (offline).

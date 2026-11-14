@@ -20,7 +20,7 @@ export function base58(text){
 // how the text around them shows (FORMAT.md lists them: control and formatting characters, direction marks, joiners,
 // variation selectors, blank look-alikes, every space but U+0020, private-use and unassigned-for-good code points).
 // The list is fixed here rather than taken from the runtime's Unicode tables, so every reader refuses the same texts.
-const HIDDEN=/[\u0000-\u001f\u007f-\u00a0\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890-\u0891\u08e2\u115f-\u1160\u1680\u17b4-\u17b5\u180b-\u180f\u2000-\u200f\u2028-\u202f\u205f-\u206f\u2800\u3000\u3164\ue000-\uf8ff\ufdd0-\ufdef\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\u{110bd}\u{110cd}\u{13430}-\u{1343f}\u{1bca0}-\u{1bca3}\u{1d173}-\u{1d17a}\u{e0000}-\u{e0fff}\u{f0000}-\u{10ffff}]/u;
+const HIDDEN=/[\u0000-\u001f\u007f-\u00a0\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890-\u0891\u08e2\u115f-\u1160\u1680\u17b4-\u17b5\u180b-\u180f\u2000-\u200f\u2028-\u202f\u205f-\u206f\u2800\u3000\u3164\ue000-\uf8ff\ufdd0-\ufdef\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\u{110bd}\u{110cd}\u{13430}-\u{1343f}\u{1bca0}-\u{1bca3}\u{1d173}-\u{1d17a}\u{1fffe}-\u{1ffff}\u{2fffe}-\u{2ffff}\u{3fffe}-\u{3ffff}\u{4fffe}-\u{4ffff}\u{5fffe}-\u{5ffff}\u{6fffe}-\u{6ffff}\u{7fffe}-\u{7ffff}\u{8fffe}-\u{8ffff}\u{9fffe}-\u{9ffff}\u{afffe}-\u{affff}\u{bfffe}-\u{bffff}\u{cfffe}-\u{cffff}\u{dfffe}-\u{dffff}\u{e0000}-\u{e0fff}\u{efffe}-\u{effff}\u{f0000}-\u{10ffff}]/u;
 export const readable=(v,max)=>typeof v==='string'&&v.length>0&&[...v].length<=max&&v===v.trim()&&v.isWellFormed()&&!HIDDEN.test(v);
 const words=readable;
 

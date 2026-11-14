@@ -41,13 +41,16 @@ export function createCarrier({bin,stateDir,node,network='offline-fakechain',sta
  return {init:()=>run('init'),status:()=>run('status'),carry:record=>run('carry',record),split:n=>run('split',n),publish:blob=>run('publish',blob),address:n=>run('address',n)};}
 
 const FINAL=new Set(['done','refused','stuck']);
-export const DEFAULT_LIMITS={perSigner:3,waiting:200,perDay:2000,margin:5,resendMs:600000,stuckBlocks:720,holdBlocks:60,settleBlocks:10,sendAgain:2,minReady:3,splitInto:8,keepMs:7*86400000,payBlocks:30,unpaid:2000,payAddresses:5000,buyReserve:2,perCallerDay:200};
+export const DEFAULT_LIMITS={perSigner:3,waiting:200,perDay:2000,margin:5,resendMs:600000,stuckBlocks:720,holdBlocks:60,settleBlocks:10,sendAgain:2,minReady:3,splitInto:8,keepMs:7*86400000,payBlocks:30,unpaid:2000,payAddresses:5000,buyReserve:2,laneReserve:2,perCallerDay:200};
 // A purchase is never held back by the shared limits: once a buyer has paid, the record that makes the Mordinal
 // theirs goes first, with coins kept back for it (buyReserve), so nobody can crowd it out until the reservation runs out.
 
 export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,limits:given={},fees:asked={},lane=[],now=()=>Date.now(),log=()=>{}}){
  const laneOf=new Set(lane.map(a=>canonical(a,network)));
  const limits={...DEFAULT_LIMITS,...given},jobsDir=join(dir,'jobs'),splitFile=join(dir,'split.json'),payFile=join(dir,'pay.json');
+ // Coins kept for the lane (none on a relay without one), and how many ready coins the relay keeps so that ordinary
+ // records never wait on a count that starts no new split.
+ const laneReserve=laneOf.size?limits.laneReserve:0,keepReady=Math.max(limits.minReady,limits.buyReserve+laneReserve+1);
  const fees={collection:BigInt(asked.collection||0),mint:BigInt(asked.mint||0)},priceOf=op=>op===OP.collection?fees.collection:op===OP.mint?fees.mint:0n;
  mkdirSync(jobsDir,{recursive:true});
  const write=(file,value)=>{const tmp=file+'.tmp',fd=openSync(tmp,'w',0o600);try{writeSync(fd,JSON.stringify(value)+'\n');fsyncSync(fd);}finally{closeSync(fd);}renameSync(tmp,file);};
@@ -106,8 +109,9 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   const signer=signerOf(d.op,b)||(d.op===OP.claim?b.to:l?.reservations.at(-1)?.buyer)||'';
   return {number,signer};}
  async function send(j){
-  // While only the coins kept for purchases are left, other records wait.
-  if(j.op!==OP.buy&&j.state!=='built'&&ready!=null&&ready<=limits.buyReserve){j.note='Waiting for a coin of the relay; purchases go first.';save(j);return j;}
+  // Coins are kept back in two steps: the last ones for purchases, the ones above them for the listed minters' lane.
+  // A purchase never waits here, a lane record waits only for the purchases' coins, every other record for both.
+  if(j.state!=='built'&&ready!=null&&ready<=(j.op===OP.buy?-1:j.lane?limits.buyReserve:limits.buyReserve+laneReserve)){j.note='Waiting for a coin of the relay; purchases go first.';save(j);return j;}
   try{
    if(j.state!=='built'){const t=await carrier.carry(j.record);if(ready!=null)ready=Math.max(0,ready-1);j.txid=t.txid;j.blob=t.blob;j.fee=t.fee;j.state='built';j.note=null;save(j);}
    await carrier.publish(j.blob);j.state='sent';j.sentAt=now();j.sentHeight=reader.height;j.note=null;save(j);}
@@ -120,6 +124,9 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   // A record this relay gave up on (refused, or not mined for so long that it was marked stuck) may be handed over again.
   const known=jobs.get(id);if(known&&known.state!=='refused'&&known.state!=='stuck')return view(known);
   const entry=reader.entryById(id);if(entry)return {id,state:'done',op:d.op,txid:entry.txid,error:null,note:null};
+  // A stuck record whose transaction was built goes out as that same transaction: the node may still hold it, and a second
+  // transaction for the same record would be mined beside it and paid for twice.
+  if(known?.state==='stuck'&&known.blob){known.state='built';known.note=null;known.endedAt=null;save(known);await send(known);return view(known);}
   // The rules' own answers go back as they are; a node that cannot be reached is the relay's trouble, not the record's.
   let isReady;try{({ready:isReady}=await judge(bytes,d,{fresh:true}));}catch(e){if(!e.rule&&!e.status)e.status=503;throw e;}
   const {number,signer}=describe(d),tip=reader.height;
@@ -131,14 +138,15 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   if(all.filter(j=>j.signer===signer).length>=limits.perSigner)throw bad('This address already has '+limits.perSigner+' records waiting for a block. Try again in a few minutes.',429);
   const day=now()-86400000,who=callerKey(caller);
   // The ledger's listed minters (the launchpad's inscriber) have a lane of their own for their collections and mints:
-  // like a purchase, such a record is not held back by what everyone else has waiting. The per-address limit still applies.
+  // like a purchase, such a record is not held back by what everyone else has waiting, and it does not count against
+  // everyone else's daily limits. The per-address limit still applies.
   const ownLane=(d.op===OP.mint||d.op===OP.collection)&&laneOf.has(signer);
   if(d.op!==OP.buy&&!ownLane){
    if(open.length>=limits.waiting)throw bad('The relay is busy. Try again in a few minutes.',503);
-   if([...jobs.values()].filter(j=>j.createdAt>day&&j.txid&&j.op!==OP.buy).length>=limits.perDay)throw bad('The relay reached its daily limit. Try again later, or publish the record yourself.',503);
-   if(who&&[...jobs.values()].filter(j=>j.caller===who&&j.createdAt>day).length>=limits.perCallerDay)throw bad('This connection sent many records today. Try again tomorrow, or publish the record yourself.',429);}
+   if([...jobs.values()].filter(j=>j.createdAt>day&&j.txid&&j.op!==OP.buy&&!j.lane).length>=limits.perDay)throw bad('The relay reached its daily limit. Try again later, or publish the record yourself.',503);
+   if(who&&[...jobs.values()].filter(j=>j.caller===who&&j.createdAt>day&&!j.lane).length>=limits.perCallerDay)throw bad('This connection sent many records today. Try again tomorrow, or publish the record yourself.',429);}
   if(known)drop(known);
-  const j={id,record:recordHex,op:d.op,number,signer,caller:who,state:isReady?'queued':'held',createdAt:now(),createdHeight:tip};
+  const j={id,record:recordHex,op:d.op,number,signer,caller:who,state:isReady?'queued':'held',createdAt:now(),createdHeight:tip,...(ownLane?{lane:true}:{})};
   if(price){
    // The subaddress is saved by the carrier before it is given out, so every later scan looks for payments to it.
    const index=payAddress(id,tip,j.createdAt),{address}=await carrier.address(index);
@@ -158,7 +166,11 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
      // A block that held this record can still be replaced for a while.
      if(tip-j.doneHeight<limits.settleBlocks&&!reader.entryById(j.id)){j.state='sent';j.sentAt=0;j.sentHeight=tip;j.doneHeight=null;j.endedAt=null;save(j);}
      else{if(t-j.endedAt>limits.keepMs)drop(j);continue;}}
-    if(FINAL.has(j.state)){if(j.state==='refused'&&t-j.endedAt>limits.keepMs)drop(j);continue;}
+    if(FINAL.has(j.state)){
+     // A record given up on as stuck may still reach a block.
+     const late=j.state==='stuck'?reader.entryById(j.id):null;
+     if(late){j.state='done';j.txid=late.txid;j.doneHeight=late.height;j.endedAt=t;j.note=null;save(j);}
+     else if(j.state==='refused'&&t-j.endedAt>limits.keepMs)drop(j);continue;}
     const ok=reader.entryById(j.id),mine=j.txid?reader.entryByTx(j.txid):null;
     if(ok){j.state='done';j.txid=ok.txid;j.doneHeight=ok.height;j.endedAt=t;j.note=null;save(j);continue;}
     if(mine&&!mine.ok){
@@ -200,7 +212,7 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
     if(s&&!s.inPool){split=null;try{unlinkSync(splitFile);}catch{}}
     else if(!s&&t-split.sentAt>limits.resendMs){await carrier.publish(split.blob);split.sentAt=t;write(splitFile,split);}}
    const status=await carrier.status();ready=status.ready;
-   if(!split&&status.ready<limits.minReady&&status.ready>0){
+   if(!split&&status.ready<keepReady&&status.ready>0){
     try{const s=await carrier.split(limits.splitInto);split={txid:s.txid,blob:s.blob,sentAt:t};write(splitFile,split);await carrier.publish(s.blob);log({split:s.txid});}
     catch(e){log({coins:String(e.message).slice(0,200)});}}
    return {tip,waiting:waiting().length,ready:status.ready,balance:status.balance};}
