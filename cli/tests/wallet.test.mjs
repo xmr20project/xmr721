@@ -18,6 +18,7 @@ import {MAX_RECORD} from '../../rules/lib/records.mjs';
 import {openReader} from '../../reader/lib/reader.mjs';
 import {createService} from '../../reader/service.mjs';
 import {fakeChain,fakeCarrier} from '../../reader/tests/fake.mjs';
+import {createChain} from '../../reader/lib/chain.mjs';
 import {openWallet,readerAt,typeOf,mintingClosed,keysOf,imagesOf,clean,plain,ascii,LEDGERS,FINAL,KEEP} from '../lib/wallet.mjs';
 import {openLock} from '../lib/lock.mjs';
 
@@ -28,11 +29,10 @@ const L=ed25519.CURVE.n,scalar=()=>{for(;;){const s=le(randomBytes(32))%L;if(s)r
 // one input (kind 2, amount 0, a ring of 16) with a key image of its own. What the stand-in made follows it.
 const begin=image=>'020001'+'0200'+'10'+'01'.repeat(16)+image,BEGIN=begin('00'.repeat(32)).length;
 // The carrier tool as the tests need it: its keys in carrier.keys.json (two random scalars, as the real tool writes
-// them), its state file, coins and transactions as reader/tests/fake.mjs keeps them. `lose` sets what happens when the
-// next transaction is handed to the node: 'refused' (the node answers no), 'silent' (no answer, and the node does not
-// have it), 'after' (the node has it and the answer is lost). `scans` counts the times the tool found no state file and
-// read the chain anew; `die` makes the next build fail: 'no' (the tool says no), 'silent' (no answer, the coin is used).
-// `slow` makes every question to the tool take that many milliseconds.
+// them), its state file, coins and transactions as reader/tests/fake.mjs keeps them. `scans` counts the times the tool
+// found no state file and read the chain anew; `die` makes the next build fail: 'no' (the tool says no), 'silent' (no
+// answer, the coin is used). `slow` makes every question to the tool take that many milliseconds. `lose` and `sends`
+// are about the node (see `make` below).
 function carrierIn(dir,chain,{coins=5}={}){
  const c=fakeCarrier(chain,{coins}),state=join(dir,'carrier.state.json'),real=t=>({...t,blob:begin(randomBytes(32).toString('hex'))+t.blob});
  const wait=()=>x.slow?new Promise(r=>setTimeout(r,x.slow)):null;
@@ -41,9 +41,6 @@ function carrierIn(dir,chain,{coins=5}={}){
   status:async()=>{await wait();if(!existsSync(state)){x.scans++;writeFileSync(state,'{}');}return c.status();},
   carry:async r=>{await wait();const how=x.die;x.die=false;if(how==='no')throw Error('The network fee of this transaction (9) is above the limit (5); nothing was sent');const t=await c.carry(r);if(how==='silent')throw Error('The carrier tool did not answer in time.');return real(t);},
   split:async n=>real(await c.split(n)),
-  publish:async blob=>{x.sends++;const how=x.lose;x.lose=null;
-   if(how==='refused')throw Error('transaction was rejected (double spend)');if(how==='silent')throw Error('The carrier tool did not answer in time.');
-   const done=await c.publish(blob.slice(BEGIN));if(how==='after')throw Error('The carrier tool did not answer in time.');return done;},
   init:async()=>{mkdirSync(dir,{recursive:true});const f=join(dir,'carrier.keys.json');if(!existsSync(f))writeFileSync(f,JSON.stringify({spend:scalar(),view:scalar()}));return {address:keysOf(dir,NET).address};}};
  return x;}
 
@@ -55,8 +52,16 @@ async function world({openFrom=106}={}){
  const reader=openReader({dir:temp('wallet-reader-'),chain,network:NET,domain:DOMAIN,feeAddress:fee.address,owners,start:100,mintFrom:101,minters:[launchpad.address],openFrom});
  await reader.sync();const service=createService({reader,owners}),base='http://127.0.0.1:'+await service.listen(0);
  const make=(name,o={})=>{const dir=join(temp('wallet-'),name),carrier=carrierIn(dir,chain,o),notes=[];
-  const open=(more={})=>openWallet({dir,carrier,reader:readerAt(base),chain,network:NET,domain:DOMAIN,warn:t=>notes.push(t),...more});
-  return {dir,carrier,notes,open,wallet:open()};};
+  // The node as this wallet reaches it. `carrier.lose` sets what happens when the next transaction is handed to it:
+  // 'refused' (the node answers no), 'silent' (no answer, and the node does not have it), 'after' (the node has it and
+  // the answer is lost). `carrier.sends` counts the times it was handed one.
+  const node={...chain,send:async blob=>{carrier.sends++;const how=carrier.lose;carrier.lose=null;
+   if(how==='refused')return {ok:false,reason:'double spend'};if(how==='silent')throw Error('The Monero node answered HTTP 502');
+   const t=JSON.parse(Buffer.from(blob.slice(BEGIN),'hex').toString('utf8'));
+   try{chain.publish({txid:t.txid,tx:{version:2,extra:t.extra,vout:[]}});}catch{}   // (a transaction a node has in a block already is taken, too)
+   if(how==='after')throw Error('The Monero node answered HTTP 502');return {ok:true};}};
+  const open=(more={})=>openWallet({dir,carrier,reader:readerAt(base),chain:node,network:NET,domain:DOMAIN,warn:t=>notes.push(t),...more});
+  return {dir,carrier,node,notes,open,wallet:open()};};
  const block=async()=>{chain.mine();await service.step();};
  const blocks=async n=>{for(let i=0;i<n;i++)await block();};
  const until=async h=>{while(reader.height<h)await block();};
@@ -142,6 +147,8 @@ test('collections: editions in turn, also several before a block; only the maker
   const same=await a.wallet.inscribe({content:Buffer.from('moon 2'),type:5,collection:c.id});assert.deepEqual([same.again,same.edition,same.txid],[true,2,e2.txid]);
   await assert.rejects(a.wallet.inscribe({content:Buffer.from('x'),type:5,collection:c.id,edition:2}),/this wallet's mint of it is on its way/);
   await x.block();assert.deepEqual([x.reader.ledger.nft(e1.id)?.minted.edition,x.reader.ledger.nft(e2.id)?.minted.edition],[1,2]);
+  // In a block and not final yet, the same file again still says where its edition is, and builds nothing.
+  const there=await a.wallet.inscribe({content:Buffer.from('moon 2'),type:5,collection:c.id});assert.deepEqual([there.again,there.edition,a.carrier.made.length],[true,2,3]);assert.match(there.state,/^on the ledger \(block \d+, 1 of 10 confirmations\)$/);
   await assert.rejects(a.wallet.inscribe({content:Buffer.from('again'),type:5,collection:c.id,edition:1}),/Edition 1 of this collection is minted already/);
   await assert.rejects(a.wallet.inscribe({content:Buffer.from('x'),type:5,collection:c.id,edition:4}),/An edition of this collection is 1 to 3/);
   await assert.rejects(b.wallet.inscribe({content:Buffer.from('mine?'),type:5,collection:c.id}),/only its creator mints its editions/);
@@ -165,15 +172,15 @@ test('a transaction is kept until the chain has settled it: a node that says no,
  try{
   await x.until(102);const a=x.make('a');await a.wallet.create({height:x.reader.height});const content=Buffer.from('kept');
   // The node answers no: nothing was sent. The transaction is built (its coin is used) and kept.
-  a.carrier.lose='refused';await assert.rejects(a.wallet.inscribe({content,type:5}),/^Error: The node said no to the transaction \(transaction was rejected \(double spend\)\), and nothing was sent\. The transaction is kept as entry 1: "xmr721 wallet resend" hands it to the node again, "xmr721 wallet forget 1" gives it up\.$/);
+  a.carrier.lose='refused';await assert.rejects(a.wallet.inscribe({content,type:5}),/^Error: The node said no to the transaction \(double spend\), and nothing was sent\. Its coin is being spent by another transaction, which can be one of this wallet that is on its way\. The transaction is kept as entry 1: "xmr721 wallet resend" hands it to the node again, "xmr721 wallet forget 1" gives it up\.$/);
   assert.equal(a.carrier.made.length,1);const kept=journal(a.dir).entries;
   assert.deepEqual([kept.length,kept[0].state,kept[0].txid,Boolean(kept[0].blob),kept[0].sent,(await a.wallet.balance()).kept],[1,'built',a.carrier.made[0],true,undefined,1]);
-  assert.deepEqual(await states(a.wallet),[['mint',`built and not sent (the node said no: transaction was rejected (double spend)): ${RESEND} hands it to the node, "xmr721 wallet forget N" gives it up`]]);
+  assert.deepEqual(await states(a.wallet),[['mint',`built and not sent (the node said no: double spend): ${RESEND} hands it to the node, "xmr721 wallet forget N" gives it up`]]);
   // The same command again hands that transaction to the node; nothing new is built.
   const again=await a.wallet.inscribe({content,type:5});assert.deepEqual([again.again,again.txid,a.carrier.made.length,again.state,journal(a.dir).entries[0].refusal],[true,kept[0].txid,1,'waiting for a block',undefined]);
   // The node does not answer and does not have the transaction: whether it took it is not known, so it counts as sent
   // and is never given up. It is sent again until the node has it.
-  a.carrier.lose='silent';await assert.rejects(a.wallet.inscribe({content:Buffer.from('no answer'),type:5}),/The node did not answer when the transaction was handed to it \(The carrier tool did not answer in time\.\), so it is not known whether it took it\. The transaction is kept as entry 2 and counts as sent/);
+  a.carrier.lose='silent';await assert.rejects(a.wallet.inscribe({content:Buffer.from('no answer'),type:5}),/The node did not answer when the transaction was handed to it \(The Monero node answered HTTP 502\), so it is not known whether it took it\. The transaction is kept as entry 2 and counts as sent/);
   assert.equal(journal(a.dir).entries[1].state,'sent');assert.deepEqual((await states(a.wallet))[1],['mint',`the node does not have this transaction: ${RESEND} sends it again`]);
   await assert.rejects(a.wallet.forget(2),/A sent transaction cannot be taken back/);
   assert.deepEqual((await a.wallet.resend()).map(r=>[r.sentAgain,r.failed,r.state]),[[false,undefined,'waiting for a block'],[true,undefined,'waiting for a block']]);
@@ -233,6 +240,7 @@ test('forgetting: only what was never sent is given up; a sent transaction holds
  const x=await world({openFrom:102});
  try{
   await x.until(102);const a=x.make('a',{coins:14});await a.wallet.create({height:x.reader.height});
+  const entry=id=>journal(a.dir).entries.find(e=>e.id===id||e.txid===id),stateOf=async id=>tidy((await a.wallet.inscriptions()).find(r=>r.id===id||r.txid===id).state);
   const c=await a.wallet.collection({name:'Set',max:4});await x.block();
   // Never sent (the node said no): given up, the edition is free at once and the file can be minted anew.
   a.carrier.lose='refused';await assert.rejects(a.wallet.inscribe({content:Buffer.from('one'),type:5,collection:c.id}),/kept as entry 2/);
@@ -253,48 +261,98 @@ test('forgetting: only what was never sent is given up; a sent transaction holds
   await assert.rejects(a.wallet.inscribe({content:Buffer.from('other'),type:5,collection:c.id,edition:1}),/this wallet's mint of it is on its way/);
   const made=a.carrier.made.length,same=await a.wallet.inscribe({content:Buffer.from('one'),type:5,collection:c.id});
   assert.deepEqual([same.again,same.edition,same.txid,same.state,a.carrier.made.length],[true,1,one.txid,'waiting for a block',made]);
+  // A sent transaction the node says no to stays sent, and the list says what the node said.
+  x.chain.drop(one.txid);a.carrier.lose='refused';const no=(await a.wallet.resend()).find(r=>r.txid===one.txid);
+  assert.deepEqual([no.sentAgain,no.failed,entry(one.id).state],[false,'the node said no: double spend. Its coin is being spent by another transaction, which can be one of this wallet that is on its way.','sent']);
+  assert.equal(await stateOf(one.id),`the node does not have this transaction and said no to it the last time (double spend): ${RESEND} hands it over again`);
   // With the node not answering, nobody knows where a sent transaction is: nothing is forgotten and no coin read anew.
-  x.chain.drop(one.txid);x.chain.fail='txs';await assert.rejects(a.wallet.forget(one.n),/Your Monero node cannot be asked right now/);
+  await assert.rejects(a.open({chain:{...a.node,txs:async()=>{throw Error('down');}}}).forget(one.n),/Your Monero node cannot be asked right now/);
   x.chain.fail='info';await assert.rejects(a.wallet.rescan(),/your Monero node cannot be asked where they are/);
   // In no block and not with the node: the coins may be read anew, and the owner is told what that means.
   await x.block();const scans=a.carrier.scans,anew=await a.wallet.rescan();assert.equal(a.carrier.scans,scans+1);
   assert.match(anew.notes[0],/^1 transaction\(s\) of this wallet were sent and are in no block .* Their coins count as free again from now on\. If one of them gets into a block after all, its coin is spent\.$/);
-  // Its coin is spent by another transaction in a block. The wallet notes the block it saw that at, stops sending it,
-  // and still holds its edition: the block could be replaced.
-  const image=imagesOf(journal(a.dir).entries.find(e=>e.id===one.id).blob)[0];assert.match(image,/^[0-9a-f]{64}$/);x.spent.add(image);
-  const seenAt=x.chain.tip;assert.deepEqual((await states(a.wallet)).find(r=>/coin/.test(r[1])),['mint',`the node does not have it, and its coin was spent by another transaction (seen at block N). If that is still so at block N, this one can never get into a block`]);
-  assert.equal(journal(a.dir).entries.find(e=>e.id===one.id).spentSeen,seenAt);
+  // Its coin is spent by another transaction in a block. The wallet notes the newest block at that sight, stops
+  // sending the transaction, and still holds its edition: the block could be replaced.
+  const image=imagesOf(entry(one.id).blob)[0];assert.match(image,/^[0-9a-f]{64}$/);x.spent.add(image);
+  const seenAt=x.chain.tip;assert.equal(await stateOf(one.id),'the node does not have it, and its coin was spent by another transaction (seen at block N). If that is still so at block N, this one cannot get into a block any more');
+  assert.deepEqual([entry(one.id).spentSeen,entry(one.id).spentHash],[seenAt,(await x.chain.header(seenAt)).hash]);
   const before=a.carrier.sends;assert.ok((await a.wallet.resend()).every(r=>!r.sentAgain));assert.equal(a.carrier.sends,before);
   assert.equal((await a.wallet.inscribe({content:Buffer.from('three'),type:5,collection:c.id,dryRun:true})).edition,3);
   // The spend is undone (its block was replaced): the transaction is sent again like any other.
-  x.spent.delete(image);await a.wallet.inscriptions();assert.equal(journal(a.dir).entries.find(e=>e.id===one.id).spentSeen,undefined);
-  x.spent.add(image);await a.wallet.inscriptions();await x.blocks(FINAL-1);await a.wallet.inscriptions();assert.equal(journal(a.dir).entries.find(e=>e.id===one.id).state,'sent','not ten blocks yet');
-  // Ten blocks on it is still spent: the transaction can never get into a block. It holds nothing any more, the
-  // edition goes to the next file, and the entry can be taken off the list.
-  await x.block();assert.deepEqual((await states(a.wallet)).find(r=>/coin/.test(r[1])),['mint','its coin was spent by another transaction, so this one can never get into a block; what it carried is not on the ledger']);
-  const dead=journal(a.dir).entries.find(e=>e.id===one.id);assert.deepEqual([dead.state,'blob' in dead,'spentSeen' in dead],['dead',false,false]);
+  x.spent.delete(image);await a.wallet.inscriptions();assert.deepEqual([entry(one.id).spentSeen,entry(one.id).spentHash],[undefined,undefined]);
+  // Seen spent again; then the block of that sight is replaced. Ten blocks later the spend is not known to be ten
+  // blocks deep, and the count begins anew at the block of the new sight.
+  x.spent.add(image);await a.wallet.inscriptions();const first=entry(one.id).spentSeen;
+  x.chain.pop(1,{keep:true});for(let i=0;i<FINAL+1;i++)x.chain.mine();await x.service.step();
+  assert.match(await stateOf(one.id),/^the node does not have it, and its coin was spent by another transaction/);assert.deepEqual([entry(one.id).state,entry(one.id).spentSeen],['sent',first+FINAL]);
+  await x.blocks(FINAL-1);await a.wallet.inscriptions();assert.equal(entry(one.id).state,'sent','not ten blocks yet');
+  // Ten blocks on it is still spent, under the same blocks: the transaction cannot get into a block. It holds nothing
+  // any more and the edition goes to the next file. The wallet keeps it all the same, and it stays on the list.
+  await x.block();assert.equal(await stateOf(one.id),'its coin was spent by another transaction, 10 blocks deep: this one cannot get into a block any more, and what it carried is not on the ledger');
+  const dead=entry(one.id);assert.deepEqual([dead.state,Boolean(dead.blob),dead.deadAt,'spentSeen' in dead],['dead',true,x.chain.tip,false]);
+  await assert.rejects(a.wallet.forget(one.n),new RegExp(`^Error: This transaction cannot get into a block as the chain stands\\. It can leave the list at block ${dead.deadAt+KEEP}: until then the wallet keeps it, in case the chain is replaced and it can again\\.$`));
   const three=await a.wallet.inscribe({content:Buffer.from('three'),type:5,collection:c.id});assert.equal(three.edition,1);
-  assert.match((await a.wallet.forget(one.n)).forgotten,/removed from the list; the chain has settled it/);
   // A send that was sent: another send of the NFT waits for it, whatever the node has; dead, the NFT can be sent again.
   const own=await a.wallet.inscribe({content:Buffer.from('mine'),type:5});await x.block();
   const toBob=await a.wallet.send({nft:own.id,to:x.bob.address});
   await assert.rejects(a.wallet.send({nft:own.id,to:x.launchpad.address}),/is on its way and cannot be taken back/);
   x.chain.drop(toBob.txid);await assert.rejects(a.wallet.send({nft:own.id,to:x.launchpad.address}),/is on its way and cannot be taken back/);
-  x.spent.add(imagesOf(journal(a.dir).entries.find(e=>e.txid===toBob.txid).blob)[0]);await a.wallet.inscriptions();await x.blocks(FINAL);
-  const toPad=await a.wallet.send({nft:own.id,to:x.launchpad.address});assert.equal(toPad.state,'waiting for a block');
+  const bobImage=imagesOf(entry(toBob.txid).blob)[0];x.spent.add(bobImage);await a.wallet.inscriptions();await x.blocks(FINAL);
+  const toPad=await a.wallet.send({nft:own.id,to:x.launchpad.address});assert.equal(toPad.state,'waiting for a block');assert.equal(entry(toBob.txid).state,'dead');
   await x.block();assert.equal(x.reader.ledger.nft(own.id).owner,x.launchpad.address);
-  // A record the ledger refused is final after 10 blocks and can then be made again; a final entry can be dropped from the list.
-  await x.blocks(FINAL);await a.wallet.inscriptions();
+  // A dead transaction is looked at for another 100 blocks. Its coin unspent again (the chain was replaced deeper than
+  // 10 blocks), or the node having it after all: it counts as sent again, and the list says so.
+  x.spent.delete(bobImage);assert.equal(await stateOf(toBob.txid),`the node does not have this transaction: ${RESEND} sends it again`);assert.deepEqual([entry(toBob.txid).state,'deadAt' in entry(toBob.txid)],['sent',false]);
+  x.spent.add(bobImage);await a.wallet.inscriptions();await x.blocks(FINAL);await a.wallet.inscriptions();assert.equal(entry(toBob.txid).state,'dead');
+  x.spent.delete(image);await a.node.send(entry(one.id).blob);assert.equal(await stateOf(one.id),'waiting for a block');x.chain.drop(one.txid);x.spent.add(image);
+  await a.wallet.inscriptions();await x.blocks(FINAL);await a.wallet.inscriptions();assert.equal(entry(one.id).state,'dead');
+  // A hundred blocks after it was seen dead, the wallet lets go of it, and it can be taken off the list.
+  const at=entry(one.id).deadAt;while(x.chain.tip<at+KEEP-1)await x.block();await a.wallet.inscriptions();assert.ok(entry(one.id).blob);
+  await x.block();await a.wallet.inscriptions();assert.deepEqual([entry(one.id).state,'blob' in entry(one.id)],['dead',false]);
+  assert.match((await a.wallet.forget(one.n)).forgotten,/^removed from the list; the chain has settled it for good$/);
+  // A record the ledger refused is final after 10 blocks and can then be made again. It stays on the list while it is kept.
   const liar={...readerAt(x.base),collection:async(id,n)=>({...(await readerAt(x.base).collection(id,n)),editions:[]})},j=journal(a.dir);
   j.entries=j.entries.filter(e=>e.kind!=='mint');writeFileSync(join(a.dir,'journal.json'),JSON.stringify(j));
   const wasted=await a.open({reader:liar}).inscribe({content:Buffer.from('four'),type:5,collection:c.id});assert.equal(wasted.edition,1);await x.block();
   assert.deepEqual((await states(a.wallet)).at(-1),['mint','refused by the ledger (block N, n of 10 confirmations): This edition is already minted.']);
   await x.blocks(FINAL);assert.deepEqual((await states(a.wallet)).at(-1),['mint','refused by the ledger: This edition is already minted.']);
   const retry=await a.wallet.inscribe({content:Buffer.from('four'),type:5,collection:c.id});assert.deepEqual([retry.edition,retry.again],[3,undefined]);
-  assert.match((await a.wallet.forget(wasted.n)).forgotten,/removed from the list/);
+  await assert.rejects(a.wallet.forget(wasted.n),/^Error: This transaction is final in block \d+\. It can leave the list at block \d+: until then the wallet keeps it, to send it again should its block be replaced\.$/);
+  // Forgetting looks at the node first. A final transaction whose block was replaced is sent again, not forgotten, and
+  // no second transaction is built for its record.
+  await x.blocks(FINAL);await a.wallet.inscriptions();assert.equal(entry(retry.id).state,'done');const builds=a.carrier.made.length;
+  x.chain.pop(FINAL+2,{keep:true});await x.service.step();
+  await assert.rejects(a.wallet.forget(retry.n),/it waits for a block\. A sent transaction cannot be taken back/);assert.equal(entry(retry.id).state,'sent');
+  const still=await a.wallet.inscribe({content:Buffer.from('four'),type:5,collection:c.id});assert.deepEqual([still.again,still.txid,a.carrier.made.length],[true,retry.txid,builds]);
   // A record's transaction that is in a block for good can leave the list also when no reader ever said what became of it.
-  await x.blocks(FINAL-1);const blind=a.open({reader:null});await assert.rejects(blind.forget(retry.n),/is in block \d+ and not 10 blocks deep yet/);
+  await x.blocks(KEEP-1);const blind=a.open({reader:null});await assert.rejects(blind.forget(retry.n),/^Error: This transaction is in block \d+\. It can leave the list at block \d+: until then the wallet keeps it/);
   await x.block();assert.match((await blind.forget(retry.n)).forgotten,/^removed from the list; its transaction is in block \d+ for good$/);
+ }finally{await x.close();}});
+
+test('a record that got onto the ledger in someone else\'s transaction is on the ledger, and its edition is taken',async()=>{
+ const x=await world({openFrom:102});
+ try{
+  await x.until(102);const a=x.make('a');await a.wallet.create({height:x.reader.height});
+  const c=await a.wallet.collection({name:'Set',max:3});await x.block();
+  // A signed record counts in whoever's transaction. Someone takes the wallet's mint from its waiting transaction and
+  // gets it into a block in a transaction of their own, before the wallet's.
+  const mint=await a.wallet.inscribe({content:Buffer.from('one'),type:5,collection:c.id}),theirs='fe'.repeat(32);
+  x.chain.mine([{txid:theirs,tx:(await x.chain.txs([mint.txid])).get(mint.txid).tx}],{only:[theirs]});await x.service.step();
+  assert.equal(x.reader.ledger.nft(mint.id)?.minted.edition,1);await x.block();
+  assert.deepEqual((await states(a.wallet)).at(-1),['mint','refused by the ledger (block N, n of 10 confirmations): This record is already on the ledger.']);
+  // The same file asked for again while the wallet's transaction is not final says where it is and builds nothing.
+  const made=a.carrier.made.length,asked=await a.wallet.inscribe({content:Buffer.from('one'),type:5,collection:c.id});assert.deepEqual([asked.again,asked.edition,a.carrier.made.length],[true,1,made]);
+  await x.blocks(FINAL);
+  assert.deepEqual((await states(a.wallet)).at(-1),['mint','on the ledger, carried by another transaction (this one, in block N, was refused as a duplicate)']);
+  const e=journal(a.dir).entries.at(-1);assert.deepEqual([e.state,e.other,'error' in e],['done',true,false]);
+  // The wallet counts the edition as its own: also a reader that does not show it gets the next file the next edition.
+  const blind={...readerAt(x.base),collection:async(id,n)=>({...(await readerAt(x.base).collection(id,n)),editions:[]})};
+  assert.equal((await a.open({reader:blind}).inscribe({content:Buffer.from('two'),type:5,collection:c.id,dryRun:true})).edition,2);
+  // A collection made that way is the wallet's collection.
+  const set=await a.wallet.collection({name:'Other',max:2}),copy='fd'.repeat(32);
+  x.chain.mine([{txid:copy,tx:(await x.chain.txs([set.txid])).get(set.txid).tx}],{only:[copy]});await x.service.step();await x.blocks(FINAL+1);
+  assert.deepEqual((await states(a.wallet)).at(-1),['collection','on the ledger, carried by another transaction (this one, in block N, was refused as a duplicate)']);
+  await assert.rejects(a.wallet.collection({name:'Other',max:2}),/a collection of this name and size already/);
  }finally{await x.close();}});
 
 test('one command at a time on a wallet folder; a build that was cut short leaves a note until a rescan; a damaged journal stops everything',async()=>{
@@ -304,9 +362,10 @@ test('one command at a time on a wallet folder; a build that was cut short leave
   // Two commands at once: one after the other. Two coins are used, two transactions built, and nothing is left in the lock.
   const both=await Promise.all([a.wallet.inscribe({content:Buffer.from('first'),type:5}),a.wallet.inscribe({content:Buffer.from('second'),type:5})]);
   assert.deepEqual([both.map(r=>r.state),a.carrier.made.length,locks(a.dir)],[['waiting for a block','waiting for a block'],2,[]]);
-  // A command that holds the wallet for longer than a moment: the other is told to wait.
-  a.carrier.slow=1500;const long=a.wallet.balance(),quick=a.open({lock:openLock(a.dir,{tries:2})});await new Promise(r=>setTimeout(r,100));
-  await assert.rejects(quick.balance(),new RegExp(`^Error: Another xmr721 command is working on this wallet \\(process ${process.pid}\\)\\. Wait until it is done\\. If none is running, remove the folder .*lock$`));
+  // A command that holds the wallet for longer than the other waits: the other is told who holds it.
+  a.carrier.slow=1500;const long=a.wallet.balance(),quick=a.open({lock:openLock(a.dir,{wait:300})});await new Promise(r=>setTimeout(r,100));
+  const began=Date.now();await assert.rejects(quick.balance(),new RegExp(`^Error: Another xmr721 command is working on this wallet \\(process ${process.pid}\\)\\. Try again when it is done\\. If no such command is running, remove the folder .*lock$`));
+  assert.ok(Date.now()-began>=300,'it waited its time first');
   assert.equal((await long).kept,2);a.carrier.slow=0;assert.deepEqual(locks(a.dir),[]);
   // What is left in the lock by processes that are gone is removed; what is not a lock file is left alone. A process that
   // is alive holds the wallet: a command, or the tool an ended command left running.
@@ -315,7 +374,9 @@ test('one command at a time on a wallet folder; a build that was cut short leave
   assert.equal((await a.wallet.balance()).kept,2);assert.deepEqual(locks(a.dir),['notes.txt']);
   put(`${process.ppid}-command-0123456789abcdef`);await assert.rejects(quick.balance(),new RegExp(`Another xmr721 command is working on this wallet \\(process ${process.ppid}\\)`));
   rmSync(join(a.dir,'lock',`${process.ppid}-command-0123456789abcdef`));put(`${process.ppid}-tool-0123456789abcdef`);
-  await assert.rejects(quick.balance(),new RegExp(`^Error: A step of an earlier xmr721 command is still running on this wallet \\(process ${process.ppid}\\)\\. Wait until it is done\\.$`));
+  await assert.rejects(quick.balance(),new RegExp(`^Error: The carrier tool of an xmr721 command that ended is still working on this wallet \\(process ${process.ppid}\\)\\. Try again when it is done\\. If process ${process.ppid} is something else, remove the folder .*lock$`));
+  // With a command and a tool both there, the command is named.
+  put(`${process.ppid}-command-0123456789abcdef`);await assert.rejects(quick.balance(),/^Error: Another xmr721 command is working on this wallet/);
   rmSync(join(a.dir,'lock'),{recursive:true});writeFileSync(join(a.dir,'lock'),'');await assert.rejects(a.wallet.balance(),/lock is not a folder\. If no xmr721 command is running, remove it/);rmSync(join(a.dir,'lock'));
   // The tool does not answer while it builds (it was killed): nothing is known of a transaction, and a note stays for
   // the owner through every later command, until a rescan has read the coins anew.
@@ -329,6 +390,9 @@ test('one command at a time on a wallet folder; a build that was cut short leave
   a.carrier.die='no';await assert.rejects(a.wallet.inscribe({content:Buffer.from('refused by the tool'),type:5}),/above the limit/);assert.equal(a.wallet.notes().length,1);
   // A split is kept and sent again like a record, and is final by the node alone.
   a.carrier.lose='refused';await assert.rejects(a.wallet.split(3),/kept as entry \d+/);assert.equal(journal(a.dir).entries.at(-1).kind,'split');
+  // What the tool says of the coins is checked before it is shown or used.
+  for(const odd of [{balance:'12'+String.fromCharCode(10)+'FAKE: sent'},{coins:-1},{ready:'3'},{tip:null}]){const real=a.carrier.status;a.carrier.status=async()=>({...(await real()),...odd});
+   await assert.rejects(a.wallet.balance(),/^Error: The carrier tool did not answer with the wallet's coins\.$/);await assert.rejects(a.wallet.inscribe({content:Buffer.from('never built'),type:5}),/did not answer with the wallet's coins/);a.carrier.status=real;}
   assert.equal((await a.wallet.resend()).at(-1).sentAgain,true);await x.blocks(FINAL);assert.deepEqual((await states(a.open({reader:null}))).at(-1),['split','done (block N)']);
   await a.wallet.rescan();assert.deepEqual(a.wallet.notes(),[]);
   // The block the scan starts at can be set anew while nothing waits for a block; the coins are then read anew.
@@ -336,6 +400,9 @@ test('one command at a time on a wallet folder; a build that was cut short leave
   await a.wallet.balance();assert.equal(a.carrier.scans,scans+1);
   await a.wallet.inscribe({content:Buffer.from('on its way'),type:5});await assert.rejects(a.wallet.restore(60),/wait for a block/);
   await assert.rejects(a.wallet.restore(0),/a whole number, 1 or more/);
+  // A start block above the node's newest block would find nothing: refused, when the node can be asked.
+  await x.blocks(FINAL);await assert.rejects(a.wallet.restore(x.chain.tip+1),new RegExp(`^Error: Block ${x.chain.tip+1} is above the newest block of your node \\(${x.chain.tip}\\)\\. A scan from there finds nothing\\.$`));
+  assert.equal((await a.wallet.restore(x.chain.tip)).start,x.chain.tip);
   // A journal that does not read, or that holds what this program does not know: nothing is done and nothing is overwritten.
   const good=readFileSync(join(a.dir,'journal.json'),'utf8'),odd=JSON.parse(good);odd.entries[0].state='gone';
   for(const bad of [good.slice(0,60),JSON.stringify(odd)]){writeFileSync(join(a.dir,'journal.json'),bad);
@@ -394,6 +461,8 @@ test('a reader\'s answers are checked before anything is signed or built, and on
    [u=>({body:{...info,network:'mainnet'}}),/The reader is for mainnet, the wallet for stagenet/],
    [u=>({body:{...info,height:'9'}}),/no usable height/],
    [u=>({body:{...info,minters:['not an address']}}),/no usable minter list/],
+   [u=>({body:{...info,minters:'everyone'}}),/no usable minter list/],
+   [u=>({body:{...info,minters:{}}}),/no usable minter list/],
    [u=>u==='/info'?{body:info}:{body:{collection:{id:c.id,name:'Set',max:4294967295,creator:a.wallet.address},items:[]}},/no usable number of editions/],
    [u=>u==='/info'?{body:info}:{body:{collection:{id:c.id,name:'Set',max:2,creator:a.wallet.address},items:[{edition:'1'}]}},/no usable edition/],
    [u=>u==='/info'?{body:info}:{body:{collection:{id:c.id,name:'Se'+String.fromCharCode(0x202e)+'t',max:2,creator:a.wallet.address},items:[]}},/no usable collection/],
@@ -408,6 +477,11 @@ test('a reader\'s answers are checked before anything is signed or built, and on
   try{await assert.rejects(readerAt('http://127.0.0.1:'+big.address().port,{limit:1024}).info(NET),/more than this program reads/);}finally{await shut(big);}
   await assert.rejects(readerAt('http://127.0.0.1:9').info(NET),/The reader at http:\/\/127.0.0.1:9 does not answer/);
   assert.equal(a.carrier.made.length,made,'nothing was built for any of them');
+  // A node of another network than the wallet's is not built on and is handed nothing.
+  await assert.rejects(a.open({nettype:'stagenet'}).inscribe({content:Buffer.from('never'),type:5}),/^Error: Your Monero node is a fakechain node; this wallet is for stagenet\.$/);
+  a.carrier.lose='refused';await assert.rejects(a.wallet.inscribe({content:Buffer.from('kept unsent'),type:5}),/kept as entry/);const sends=a.carrier.sends;
+  assert.match((await a.open({nettype:'stagenet'}).resend()).at(-1).failed,/^Your Monero node is a fakechain node and this wallet is for stagenet, so nothing was handed to it\. The transaction is kept as entry \d+\.$/);
+  assert.deepEqual([a.carrier.sends,journal(a.dir).entries.at(-1).state],[sends,'built']);await a.wallet.forget(journal(a.dir).entries.at(-1).n);
   // On mainnet the ledger is the one this program knows: no option and no reader makes it another.
   assert.throws(()=>openWallet({dir:a.dir,carrier:a.carrier,reader:real,chain:x.chain,network:'mainnet',domain:DOMAIN}),/another domain is another ledger/);
   assert.match(LEDGERS.mainnet.domain,/^[0-9a-f]{64}$/);
@@ -432,6 +506,28 @@ test('what the wallet does not send: no coin ready, a record too big, a name the
   assert.equal(a.carrier.made.length,0);assert.ok(!existsSync(join(a.dir,'journal.json'))||journal(a.dir).entries.length===0);
  }finally{await x.close();}});
 
+test('handing a transaction to a node has three outcomes: taken, not taken, and not known',async()=>{
+ let answer=null;const s=createServer(async(req,res)=>{for await(const _ of req);if(answer.hang)return;res.writeHead(answer.status??200,{'content-type':'application/json',...(answer.headers||{})});res.end(typeof answer.body==='string'?answer.body:JSON.stringify(answer.body??{}));});
+ await new Promise(r=>s.listen(0,'127.0.0.1',r));
+ try{
+  const node=createChain('http://127.0.0.1:'+s.address().port),send=async a=>{answer=a;try{return await node.send('00',{timeout:300});}catch(e){return 'not known: '+e.message;}};
+  // Taken: the node says so (also of a transaction it had already, and of one it holds without passing it on).
+  assert.deepEqual(await send({body:{status:'OK'}}),{ok:true});assert.deepEqual(await send({body:{status:'OK',not_relayed:true}}),{ok:true});
+  // Not taken: the node answers and says no, with what it gives as the reason; or it turns the request itself away.
+  assert.deepEqual(await send({body:{status:'Failed',reason:'',double_spend:true}}),{ok:false,reason:'double spend'});
+  assert.deepEqual(await send({body:{status:'Failed',reason:'Fee too low',fee_too_low:true,too_big:true}}),{ok:false,reason:'Fee too low, too big'});
+  assert.deepEqual(await send({body:{status:'BUSY'}}),{ok:false,reason:'BUSY'});assert.deepEqual(await send({body:{status:'Failed'}}),{ok:false,reason:'Failed'});
+  for(const status of [401,404,429])assert.deepEqual(await send({status}),{ok:false,reason:'the node answered HTTP '+status});
+  assert.deepEqual(await send({status:302,headers:{location:'http://127.0.0.1:9/'}}),{ok:false,reason:'the node answered HTTP 302'});
+  // Not known: an error further on, an answer that is no answer, or none at all.
+  assert.equal(await send({status:502}),'not known: The Monero node answered HTTP 502');
+  assert.match(await send({body:'not JSON'}),/^not known: /);assert.equal(await send({body:{}}),'not known: The Monero node gave no answer this program understands');
+  assert.match(await send({hang:true}),/^not known: /);
+  // Whether coins are spent: one answer per coin, or none.
+  answer={body:{status:'OK',spent_status:[0,1,2]}};assert.deepEqual(await node.spent(['a','b','c']),[0,1,2]);
+  for(const body of [{status:'OK',spent_status:[0,1]},{status:'OK',spent_status:[0,1,7]},{status:'Failed'}]){answer={body};await assert.rejects(node.spent(['a','b','c']),/could not say whether coins are spent/);}
+ }finally{s.closeAllConnections?.();await new Promise(r=>s.close(r));}});
+
 test('content types, the minting check, and text made safe to print',()=>{
  assert.deepEqual(['a.png','b.JPG','c.jpeg','d.webp','e.gif','f.txt','g.json','h.mp4'].map(f=>typeOf(f)),[1,2,2,3,4,5,6,7]);
  assert.deepEqual([typeOf('x.bin','art'),typeOf('x','9'),typeOf('x.png','text')],[8,9,5]);
@@ -445,8 +541,8 @@ test('content types, the minting check, and text made safe to print',()=>{
  assert.equal(clean('a'+c(27)+'[31mb'+c(7)+'c'+c(0x2028)+'d'+c(0x202e)+'e'+c(0x9b)+'f'),'a [31mb c d e f');assert.equal(clean('x'.repeat(500)).length,200);assert.equal(clean(null),'');
  // Text from elsewhere is cut down to printable ASCII: nothing unseen and nothing from another script gets through.
  assert.equal(clean('a'+c(0xad)+'b'+c(0x200d)+'c'+c(0xfe0f)+'d'+c(0xe9)+'e'+c(10)+'f'+String.fromCodePoint(0xe0041)+'g'),'a b c d e f  g');
- // The program's own messages keep the letters of a path and their line breaks, and lose what steers a terminal or hides.
- assert.equal(plain('/home/jos'+c(0xe9)+'/w'+c(10)+'x'+c(27)+'[2J'+c(0x202e)+'y'+c(0x200b)+'z'+String.fromCodePoint(0xe0041)+c(0xad)),'/home/jos'+c(0xe9)+'/w'+c(10)+'x [2J y z  ');
+ // The program's own messages keep the letters of a path, and lose what steers a terminal, hides, or begins a new line.
+ assert.equal(plain('/home/jos'+c(0xe9)+'/w'+c(10)+'x'+c(27)+'[2J'+c(0x202e)+'y'+c(0x200b)+'z'+String.fromCodePoint(0xe0041)+c(0xad)),'/home/jos'+c(0xe9)+'/w x [2J y z  ');
  // A result is printed as JSON in printable ASCII that reads back as the same value.
  const value={name:'jos'+c(0xe9),odd:c(0x202e)+'x'+String.fromCodePoint(0x1f600)},printed=ascii(JSON.stringify(value,null,1));
  assert.match(printed,/^[ -~\n]+$/);assert.deepEqual(JSON.parse(printed),value);

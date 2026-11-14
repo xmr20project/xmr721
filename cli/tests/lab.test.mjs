@@ -35,9 +35,10 @@ test('a wallet made by the command is funded, inscribes, makes a collection and 
   const base='http://127.0.0.1:'+service.port,L=()=>service.reader.ledger;
   const pass=async()=>{const r=await fetch(base+'/test/step',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});assert.equal(r.status,200);return r.json();};
   // The wallet, as the command makes it: a folder, the carrier tool on it, this reader, this node.
-  // (The tool runs as the command runs it: apart, and under the wallet folder's lock.)
+  // (The tool runs as the command runs it: apart, and under the wallet folder's lock. `change` alters the node as the
+  // wallet reaches it.)
   const wdir=join(dir,'wallet'),made=await tip(),node=createChain(chain.url);
-  const open=(folder,change=c=>c)=>{const lock=openLock(folder);return openWallet({dir:folder,carrier:change(createTool({bin:CARRIER,stateDir:folder,node:chain.url,network:'offline-fakechain',start:made,lock})),lock,reader:readerAt(base),chain:node,network:'mainnet',domain:DOMAIN,ledgers:{}});};
+  const open=(folder,change=n=>n)=>{const lock=openLock(folder);return openWallet({dir:folder,carrier:createTool({bin:CARRIER,stateDir:folder,node:chain.url,network:'offline-fakechain',start:made,lock}),lock,reader:readerAt(base),chain:change(node),network:'mainnet',nettype:'fakechain',domain:DOMAIN,ledgers:{}});};
   const wallet=open(wdir),journal=async folder=>JSON.parse(await readFile(join(folder,'journal.json'),'utf8')).entries;
   const {address}=await wallet.create({height:made});
   assert.equal((await alice.rpc('validate_address',{address})).valid,true,'the address is one a Monero wallet pays to');
@@ -81,11 +82,11 @@ test('a wallet made by the command is funded, inscribes, makes a collection and 
   // A transaction the node says no to: the tool has marked its coin as used, and the transaction is kept, unsent. Given
   // up, it is removed; a rescan from the wallet's start block then runs, and the coin is back: the balance is what it was.
   await mine(10);await pass();assert.ok((await wallet.inscriptions()).every(r=>/^on the ledger \(block \d+\)$/.test(r.state)));assert.equal((await wallet.balance()).kept,0);
-  const refusing=open(wdir,c=>({...c,publish:async()=>{throw Error('transaction was rejected (made up)');}}));
-  await assert.rejects(refusing.inscribe({content:Buffer.from('never sent'),type:5}),/The node said no to the transaction \(transaction was rejected \(made up\)\), and nothing was sent\. The transaction is kept as entry \d+/);
+  const refusing=open(wdir,n=>({...n,send:async()=>({ok:false,reason:'made up'})}));
+  await assert.rejects(refusing.inscribe({content:Buffer.from('never sent'),type:5}),/The node said no to the transaction \(made up\), and nothing was sent\. The transaction is kept as entry \d+/);
   const short=await wallet.balance();assert.ok(BigInt(Math.round(Number(short.balance)*1e12))<BigInt(Math.round(Number(after.balance)*1e12)),'the coin of the unsent transaction is marked as used');
   await assert.rejects(wallet.rescan(),/built and not sent/);
-  const entry=(await wallet.inscriptions()).at(-1);assert.match(entry.state,/^built and not sent \(the node said no: transaction was rejected \(made up\)\)/);assert.match((await wallet.forget(entry.n)).forgotten,/It was never sent/);
+  const entry=(await wallet.inscriptions()).at(-1);assert.match(entry.state,/^built and not sent \(the node said no: made up\)/);assert.match((await wallet.forget(entry.n)).forgotten,/It was never sent/);
   const again=await wallet.rescan();assert.deepEqual([again.balance,again.address],[after.balance,address]);
   // A split: several coins from one, kept and tracked like a record, final by the node alone.
   const parts=await wallet.split(2);assert.equal(parts.kind,'split');await mine(10);await pass();
@@ -93,13 +94,15 @@ test('a wallet made by the command is funded, inscribes, makes a collection and 
   // The same coin spent twice. A copy of the wallet folder (the same keys, the same coins) builds a transaction that the
   // node is never heard to take; then the wallet itself spends that very coin in a transaction that gets into a block.
   const copy=join(dir,'wallet-copy');await cp(wdir,copy,{recursive:true,filter:f=>!f.endsWith('/lock')});
-  let silent=true;const other=open(copy,c=>({...c,publish:async blob=>{if(silent){silent=false;throw Error('The carrier tool did not answer in time.');}return c.publish(blob);}}));
+  let silent=true;const other=open(copy,n=>({...n,send:async blob=>{if(silent){silent=false;throw Error('no answer');}return n.send(blob);}}));
   await assert.rejects(other.inscribe({content:Buffer.from('from the copy'),type:5}),/counts as sent/);
   const lostOne=(await journal(copy)).at(-1);assert.equal(lostOne.state,'sent');assert.equal((await node.txs([lostOne.txid])).size,0);
   const winner=await wallet.inscribe({content:Buffer.from('from the wallet'),type:5});
   assert.deepEqual(imagesOf((await journal(wdir)).at(-1).blob),imagesOf(lostOne.blob),'both spend the same coin');
-  // The copy hands its transaction to the node: the node says no, in the words the wallet goes by. It stays kept.
-  const refusal=(await other.resend()).find(r=>r.txid===lostOne.txid);assert.equal(refusal.sentAgain,false);assert.match(refusal.failed,/^the node said no: .*transaction was rejected/);
+  // The copy hands its transaction to the node: the node says no, and why. It stays kept.
+  const refusal=(await other.resend()).find(r=>r.txid===lostOne.txid);assert.equal(refusal.sentAgain,false);assert.match(refusal.failed,/^the node said no: double spend\. Its coin is being spent by another transaction/);
+  // A transaction the node has already is taken when it is handed over again.
+  assert.deepEqual(await node.send((await journal(wdir)).at(-1).blob),{ok:true});
   assert.equal((await journal(copy)).at(-1).state,'sent');await assert.rejects(other.forget(lostOne.txid),/A sent transaction cannot be taken back/);
   // The wallet's transaction gets into a block: the copy sees its coin spent by another transaction, stops sending, and
   // ten blocks later knows that its own can never get in.
@@ -107,6 +110,8 @@ test('a wallet made by the command is funded, inscribes, makes a collection and 
   assert.match((await other.inscriptions()).at(-1).state,/^the node does not have it, and its coin was spent by another transaction \(seen at block \d+\)/);
   assert.ok((await other.resend()).every(r=>!r.sentAgain&&!r.failed));
   await mine(10);await pass();
-  assert.equal((await other.inscriptions()).at(-1).state,'its coin was spent by another transaction, so this one can never get into a block; what it carried is not on the ledger');
-  assert.equal(L().nft(lostOne.id),null);assert.match((await other.forget(lostOne.txid)).forgotten,/the chain has settled it/);
+  assert.equal((await other.inscriptions()).at(-1).state,'its coin was spent by another transaction, 10 blocks deep: this one cannot get into a block any more, and what it carried is not on the ledger');
+  assert.equal(L().nft(lostOne.id),null);await assert.rejects(other.forget(lostOne.txid),/It can leave the list at block \d+/);
+  // In a block as well, the wallet's own transaction is taken when handed over once more.
+  assert.deepEqual(await node.send((await journal(wdir)).at(-1).blob),{ok:true});
  }finally{await service?.close().catch(()=>{});await stopAll([chain,...Object.values(W)]);await rm(dir,{recursive:true,force:true});}});

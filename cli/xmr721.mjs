@@ -16,8 +16,8 @@
 //   xmr721 wallet inscriptions                   what the wallet built, and where each transaction is now
 //   xmr721 wallet resend                         hands the node, as they are, the kept transactions it does not have
 //   xmr721 wallet forget <n>                     takes an entry off the list (its number in "inscriptions"): a transaction
-//                                                that was never sent, or one the chain has settled. A transaction that
-//                                                was sent cannot be taken back and stays until it is in a block
+//                                                that was never sent, or one the chain settled 100 blocks ago. A
+//                                                transaction that was sent cannot be taken back and stays on the list
 //   xmr721 wallet rescan                         reads the wallet's coins anew; frees coins of transactions that never got in
 //   xmr721 wallet restore --height <n>           the block the wallet's scan starts at (for a folder that has only its keys)
 //
@@ -106,7 +106,7 @@ else if(!has('carrier.keys.json'))stop(command==='restore'?'There are no wallet 
 if(command==='restore'&&!settings&&!options.has('network'))stop('Say which network this wallet is for: add --network mainnet or --network stagenet.');
 // The commands that make a record need a reader and the ledger's domain. The others ask a reader, when one is given,
 // what the ledger made of the wallet's records, and go by the node alone without one.
-const makes=['inscribe','collection','send'].includes(command),looks=['inscriptions','resend','rescan','restore'].includes(command);
+const makes=['inscribe','collection','send'].includes(command),looks=['inscriptions','resend','forget','rescan','restore'].includes(command);
 const readerUrl=makes||looks?text('reader')||(network==='mainnet'?'https://api.xmr20.org/xmr721':null):null;if(makes&&!readerUrl)stop('On stagenet, give --reader <url> of your own reader.');
 const domain=text('domain');if(domain&&!/^[0-9a-f]{64}$/.test(domain))stop('--domain is 64 hex characters.');
 if(network!=='mainnet'&&!domain&&makes)stop('On stagenet, give --domain <hex>: the domain of the ledger to inscribe on.');
@@ -117,7 +117,7 @@ if(opt('max-fee')!=null){const m=/^([0-9]{1,3})(?:\.([0-9]{1,12}))?$/.exec(opt('
 process.env.MORDINALS_MAX_FEE=limit.toString();delete process.env.MORDINALS_SPLIT_COIN;
 // The carrier tool sends on mainnet only when its own environment says so: running this command on mainnet is that.
 if(network==='mainnet')process.env.MORDINALS_MAINNET='1';else delete process.env.MORDINALS_MAINNET;
-const usesCarrier=['create','balance','split','resend','rescan'].includes(command)||(['inscribe','collection','send'].includes(command)&&!dry);
+const usesCarrier=['create','balance','split','rescan'].includes(command)||(makes&&!dry);
 const bin=resolve(text('carrier')||join(HERE,'..','reader','bin','mordinals-carrier'));
 if(usesCarrier&&!(existsSync(bin)&&statSync(bin).isFile()))stop(`The carrier tool is not at ${bin}. Build it with: sh reader/carrier/build.sh (needs Rust), or give --carrier <path>.`);
 // The node as the wallet needs it: on the wallet's network, and synchronized.
@@ -133,7 +133,12 @@ async function nodeTip(){
 // built by the tool, or being handed to the node. Then that one step is finished and written down first, and the
 // command stops after it; nothing further is begun. A third signal stops at once all the same: what became of the
 // transaction is then found out by the next command.
-const lock=openLock(dir),tool=createTool({bin,stateDir:dir,node,network,start:settings?.start??1,lock});
+// (An output that can no longer be written to, a closed terminal or a pipe whose reader is gone, must not end the
+// command in the middle of that step: what cannot be printed is dropped.)
+for(const out of [process.stdout,process.stderr])out.on('error',()=>{});
+// The block the scan starts at is read when the tool is run, under the wallet's lock: another command may have set it.
+const startNow=()=>{try{const v=JSON.parse(readFileSync(join(dir,'wallet.json'),'utf8')).start;if(Number.isSafeInteger(v)&&v>=1)return v;}catch{}return settings?.start??1;};
+const lock=openLock(dir),tool=createTool({bin,stateDir:dir,node,network,start:startNow,lock});
 let inHand=false,signals=0;
 for(const s of ['SIGINT','SIGTERM','SIGHUP'])process.on(s,()=>{signals++;
  if(!inHand||signals>=3){tool.stop();process.exit(130);}
@@ -141,14 +146,15 @@ for(const s of ['SIGINT','SIGTERM','SIGHUP'])process.on(s,()=>{signals++;
 const hand=on=>{inHand=on;if(!on&&signals)process.exit(130);};
 
 try{
- const wallet=openWallet({dir,carrier:tool,reader:readerUrl?readerAt(readerUrl):null,chain:createChain(node),network,domain,lock,inHand:hand,warn:t=>console.error('Note: '+plain(t,600))});
- const told=()=>{for(const n of wallet.notes())console.error('\nNote: '+plain(n,600));};
+ const wallet=openWallet({dir,carrier:tool,reader:readerUrl?readerAt(readerUrl):null,chain:createChain(node),network,nettype:network,domain,lock,inHand:hand,warn:t=>console.error('Note: '+plain(t,600))});
+ const told=()=>{for(const n of wallet.notes())console.error('Note: '+plain(n,600));};
  if(command!=='create')wallet.tighten();
  switch(command){
   case 'create':{const made=await wallet.create({height:await nodeTip()});show({...made,wallet:dir});
-   console.error(`\nThe wallet pays the network fee of each inscription from its own coins. Send it XMR in one payment (0.05 XMR is plenty to begin with).\nBack up the folder ${dir}: it holds the wallet's keys and nothing else can restore it.`);break;}
+   console.error('The wallet pays the network fee of each inscription from its own coins. Send it XMR in one payment (0.05 XMR is plenty to begin with).');
+   console.error(plain(`Back up the folder ${dir}: it holds the wallet's keys and nothing else can restore it.`));break;}
   case 'restore':show({...await wallet.restore(asked.height),wallet:dir});wallet.tighten();
-   console.error('\nThe wallet reads its coins anew from that block at the next command.');break;
+   console.error('The wallet reads its coins anew from that block at the next command.');break;
   case 'receive':show({address:wallet.address});break;
   case 'balance':console.error('Reading the blocks since the wallet was last used…');show(await wallet.balance());break;
   case 'split':show(await wallet.split(asked.n));break;

@@ -24,5 +24,17 @@ export function createChain(node,{fetch:f=fetch,timeout=30000}={}){
   // For each key image, whether it is spent: 0 no, 1 by a transaction in a block, 2 by a transaction that waits for one.
   async spent(images){if(!images.length)return [];const v=await post('/is_key_image_spent',{key_images:images});
    if(v.status!=='OK'||!Array.isArray(v.spent_status)||v.spent_status.length!==images.length||v.spent_status.some(x=>![0,1,2].includes(x)))throw Error('The Monero node could not say whether coins are spent');return v.spent_status;},
+  // Hands a transaction to the node. -> {ok: true} when the node took it (or has it already); {ok: false, reason} when
+  // the node answers and does not take it. Throws when no answer comes that says which: then it is not known whether
+  // the node took it.
+  async send(blob,{timeout:limit=120000}={}){
+   const r=await f(base+'/send_raw_transaction',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({tx_as_hex:blob,do_not_relay:false}),signal:AbortSignal.timeout(limit),redirect:'manual'});
+   // An answer that turns the request itself away took nothing; an error further on may hide a node that did.
+   if(r.status>=300&&r.status<500)return {ok:false,reason:'the node answered HTTP '+r.status};
+   if(!r.ok)throw Error('The Monero node answered HTTP '+r.status);
+   const v=await r.json();if(!v||typeof v.status!=='string')throw Error('The Monero node gave no answer this program understands');
+   if(v.status==='OK')return {ok:true};
+   const said=typeof v.reason==='string'?v.reason:'',flags=['double_spend','fee_too_low','invalid_input','invalid_output','low_mixin','overspend','too_big','too_few_outputs','sanity_check_failed','tx_extra_too_big','nonzero_unlock_time'].filter(k=>v[k]===true).map(k=>k.replaceAll('_',' '));
+   return {ok:false,reason:([said,...flags.filter(x=>!said.toLowerCase().includes(x))].filter(Boolean).join(', ')||v.status).slice(0,200)};},
   // Ids of the transactions waiting to be mined.
   async pool(){const v=await post('/get_transaction_pool_hashes',{});if(v.status!=='OK')throw Error('The Monero node could not list waiting transactions');return v.tx_hashes||[];}};}
