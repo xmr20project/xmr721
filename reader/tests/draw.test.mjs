@@ -53,6 +53,12 @@ test('an SVG document is drawn only when it names nothing outside itself',()=>{
   svg('<rect fill="&#117;rl(http://127.0.0.1/)"/>'),svg('<rect fill="&#x55;RL(a.svg#p)"/>'),svg('<image h&#114;ef="a.png"/>'),svg('<style>rect{fill:&#92;75rl(a.svg#p)}</style>'),
   svg('<style>rect{fill:ur<!-- -->l(http://127.0.0.1/)}</style>'),svg('<style><![CDATA[rect{fill:ur]]><![CDATA[l(http://127.0.0.1/)}]]></style>'),
   svg('<style>@imp<!---->ort "a.css";</style>'),svg('<rect fill="url(&quot;http://127.0.0.1/&quot;)"/>'),svg('<!-- a comment that does not end')])no(s);
+ // Each href on its own: an earlier quote cannot hide a later one; and "data" with tabs or line breaks in it, which an
+ // address parser drops.
+ const inline='image/png;base64,iVBORw0KGgo=';
+ for(const s of [svg(`<desc>q href="#</desc><image width='64' height='64' href="da&#9;ta:${inline}"/>`),svg(`<desc>q href="#</desc><image href="d&#x0A;ata:${inline}"/>`),
+  svg(`<g id='a href="#'><image href="data&#13;:${inline}"/></g>`),svg(`<desc>q href='#</desc><use href='da&#9;ta:image/svg+xml;base64,PHN2Zy8+#r'/>`),
+  svg(`<image href="&#9;data:${inline}"/>`),svg(`<desc>da	ta:</desc>`),svg(`<rect fill="url(#a)"/><rect fill='url(d&#9;ata:x)'/>`),svg('<g data-href="x"/>')])no(s);
  // In time that grows with the size at most: the service runs this check itself.
  for(const s of ['<svg>'+'<!--'.repeat(250000),'<svg '+' href="'.repeat(140000),'<svg '+'a'.repeat(SVG_MAX-8),'<svg>'+'url('.repeat(250000),'<svg>'+'&#x41;'.repeat(170000),
   '<svg '+' x:'.repeat(330000),'<svg>'+'<![CDATA['.repeat(110000),'<svg>'+'&lt;!--'.repeat(140000)]){const t=Date.now();svgSource(Buffer.from(s));assert.ok(Date.now()-t<1500,'slow: '+s.slice(0,20));}});
@@ -94,7 +100,10 @@ test('a drawing is a PNG on white, at most 1,024 pixels a side, made in a child 
  // The longer side is DRAW_SIZE, whatever the document's own size; no size of its own: the size of what it draws.
  for(const [doc,size] of [[svg('<rect width="9" height="9"/>','width="200" height="100"'),[1024,512]],[svg('<rect width="9" height="9"/>','viewBox="0 0 30 60"'),[512,1024]],
   [svg('<rect width="1" height="1"/>','width="1" height="1"'),[1024,1024]],[svg('<rect width="3000" height="1500"/>','width="3000" height="1500"'),[1024,512]],
-  [`<svg ${NS}><rect width="10" height="10"/></svg>`,[1024,1024]]]){const r=await draw(Buffer.from(doc));assert.ok(r.bytes,r.error);const m=await look(r.bytes);assert.deepEqual([m.width,m.height],size,doc);}
+  [`<svg ${NS}><rect width="10" height="10"/></svg>`,[1024,1024]],
+  // Sizes in fractions of a pixel, which the library reads rounded.
+  [svg('<rect width="9" height="9"/>','width="10.4" height="10.4"'),[1024,1024]],[svg('<rect width="9" height="9"/>','width="1.4" height="1.4"'),[1024,1024]],
+  [svg('<rect width="9" height="9"/>','width="64.3" height="32.1"'),[1024,511]],[svg('<rect width="9" height="9"/>','width="16.45" height="16.45"'),[1024,1024]]]){const r=await draw(Buffer.from(doc));assert.ok(r.bytes,r.error);const m=await look(r.bytes);assert.deepEqual([m.width,m.height],size,doc);}
  // Too large to draw at any scale, not SVG to the library, broken XML, or nothing a person may see: no picture.
  for(const doc of [svg('','width="100000" height="100000"'),svg('<rect width="9" height="9">','width="9" height="9"'),'<svg '+NS+' width="9" height="9"><rect></svg>'])
   assert.match((await draw(Buffer.from(doc))).error,/^drawing failed/,doc);
@@ -107,17 +116,20 @@ test('a drawing that takes too long or too much memory is stopped, and drawings 
  const slow=svg(`<filter id="f" x="0" y="0" width="1" height="1">${'<feMorphology operator="dilate" radius="60"/>'.repeat(20)}</filter><rect width="64" height="64" fill="#f26822" filter="url(#f)"/>`);
  assert.notEqual(svgSource(Buffer.from(slow)),null);
  const t=Date.now(),r=await createDrawer({timeout:1500})(Buffer.from(slow));
- assert.match(r.error,/took longer than 1500 ms/);assert.ok(Date.now()-t<6000,'stopped late: '+(Date.now()-t)+' ms');
+ assert.match(r.error,/took longer than 1500 ms/);assert.equal(r.retry,true);assert.ok(Date.now()-t<6000,'stopped late: '+(Date.now()-t)+' ms');
  // A thousand kept filter results: gigabytes in a fraction of a second. The child stops itself first.
  const greedy=svg(`<filter id="f" x="0" y="0" width="1" height="1">${Array.from({length:1000},(_,i)=>`<feFlood flood-color="#f26822" result="r${i}"/>`).join('')}</filter><rect width="64" height="64" filter="url(#f)"/>`);
- assert.notEqual(svgSource(Buffer.from(greedy)),null);assert.match((await createDrawer({timeout:20000})(Buffer.from(greedy))).error,/used more than 512 MiB of memory/);
+ assert.notEqual(svgSource(Buffer.from(greedy)),null);const g=await createDrawer({timeout:20000})(Buffer.from(greedy));assert.match(g.error,/used more than 256 MiB of memory/);assert.equal(g.retry,undefined);
  assert.match((await createDrawer({memory:64*1048576})(Buffer.from(DRAWING))).error,/used more than 64 MiB of memory/,'a node with sharp loaded holds more than 64 MiB');
  // One at a time: a stand-in for node notes when each run starts and ends.
  const dir=temp(),log=join(dir,'log'),fake=join(dir,'fake.sh');writeFileSync(log,'');
  writeFileSync(fake,`#!/bin/sh\nprintf s >> "${log}"\ncat > /dev/null\nsleep 0.2\nprintf e >> "${log}"\nexit 1\n`);chmodSync(fake,0o755);
  const errors=[],draw=createDrawer({node:fake,log:v=>errors.push(v.draw)}),runs=await Promise.all([1,2,3,4].map(()=>draw(Buffer.from(DRAWING))));
  assert.equal(readFileSync(log,'utf8'),'sesesese');assert.ok(runs.every(x=>/^drawing failed/.test(x.error)));assert.equal(errors.length,4);
- assert.match((await createDrawer({node:join(dir,'missing')})(Buffer.from(DRAWING))).error,/^cannot draw/);});
+ const none=await createDrawer({node:join(dir,'missing')})(Buffer.from(DRAWING));assert.match(none.error,/^cannot draw/);assert.equal(none.retry,true);
+ // A child that answers more than a PNG may be is stopped.
+ const loud=join(dir,'loud.sh');writeFileSync(loud,'#!/bin/sh\ncat > /dev/null\nprintf "\\211PNG\\r\\n\\032\\n"\nhead -c 9000000 /dev/zero\n');chmodSync(loud,0o755);
+ assert.equal((await createDrawer({node:loud})(Buffer.from(DRAWING))).error,'drawing answered too much');});
 
 test('a Mordinal whose content is an SVG document answers with the picture drawn from it, drawn once',async()=>{
  const doc=Buffer.from(DRAWING),png=Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),Buffer.from('a picture')]),text=Buffer.from('777\n'),outside=Buffer.from(svg('<image href="a.png"/>'));
@@ -135,12 +147,17 @@ test('a Mordinal whose content is an SVG document answers with the picture drawn
  // A document that names something outside itself is not drawn, nor shown as text.
  assert.deepEqual(await get(entry(outside)),{status:415,error:'This Mordinal is not a picture.'});assert.equal(calls,1);
  // A drawing that fails says so, and is not tried again.
- const other=Buffer.from(svg('<rect width="9" height="9"/>'));files.set(sha(other),{bytes:other,sensitive:true});answer={error:'drawing took longer than 5000 ms'};
+ const other=Buffer.from(svg('<rect width="9" height="9"/>'));files.set(sha(other),{bytes:other,sensitive:true});answer={error:'drawing failed: used more than 256 MiB of memory'};
  assert.deepEqual(await get(entry(other)),{status:415,error:'This drawing cannot be shown.'});assert.deepEqual(await get(entry(other)),{status:415,error:'This drawing cannot be shown.'});assert.equal(calls,2);
+ // A failure that may pass (too slow on a busy machine) answers 502, which nothing keeps, and is tried again after a while.
+ const busy=Buffer.from(svg('<rect width="7" height="7"/>'));files.set(sha(busy),{bytes:busy,sensitive:false});answer={error:'drawing took longer than 5000 ms',retry:true};
+ const soon=createContent({source:async o=>files.get(o.bodySha256)??null,draw,retry:60});
+ assert.deepEqual(await soon(entry(busy)),{status:502,error:'This picture could not be drawn now. Try again later.'});await soon(entry(busy));assert.equal(calls,3);
+ await new Promise(done=>setTimeout(done,80));answer={bytes:drawnPng};assert.equal((await soon(entry(busy))).status,200);assert.equal(calls,4);
  // Drawing turned off: an SVG document is not a picture.
  assert.deepEqual(await createContent({source:async o=>files.get(o.bodySha256),draw:null})(entry(doc)),{status:415,error:'This Mordinal is not a picture.'});
  // Content that does not match the owner list is never drawn.
- assert.equal((await createContent({source:async()=>({bytes:doc}),draw})({bodySha256:sha(Buffer.from('else')),bodySize:doc.length})).status,502);assert.equal(calls,2);});
+ assert.equal((await createContent({source:async()=>({bytes:doc}),draw})({bodySha256:sha(Buffer.from('else')),bodySize:doc.length})).status,502);assert.equal(calls,4);});
 
 test('with the real drawer, the content answer is a PNG picture',needs,async()=>{
  const doc=Buffer.from(DRAWING),get=createContent({source:async()=>({bytes:doc,sensitive:true})});

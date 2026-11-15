@@ -58,13 +58,16 @@ export function archiveContent(base='https://xmr20.org/api/mordinals',{fetch:f=f
 // -> get(ownerEntry) = {status:200, type, bytes, sensitive, drawn?} | {status:415, error, text?, bytes?, sensitive?} | {status:404|502, error}
 // A 415 carries text, bytes and sensitive when the content is plain text: still not a picture, but it can be shown as text.
 // An SVG document answers 200 with the PNG picture drawn from it and drawn:'svg' (draw: null turns drawing off; the
-// document is then not a picture). Answers are kept by the content's SHA-256: the last `keep`, and every drawing
-// apart (up to `keepDrawn`, more than the owner list's SVG documents), whether it worked or not, so that browsing
-// many pictures never makes the service draw one document twice. One content is looked up once at a time.
-export function createContent({source,maxBytes=2097152,keep=200,draw=createDrawer(),keepDrawn=1000}){
+// document is then not a picture); 415 when it cannot be drawn, and 502 when drawing failed in a way that may pass (too
+// slow on a busy machine): that is tried again after `retry` milliseconds, not before. Answers are kept by the content's
+// SHA-256: the last `keep`, and every drawing apart (up to `keepDrawn`, more than the owner list's SVG documents),
+// whether it worked or not, so that browsing many pictures never makes the service draw one document twice. One
+// content is looked up once at a time.
+export function createContent({source,maxBytes=2097152,keep=200,draw=createDrawer(),keepDrawn=1000,retry=600000}){
  const cache=new Map(),drawn=new Map(),loading=new Map();
  const look=(map,key)=>{const hit=map.get(key);if(hit){map.delete(key);map.set(key,hit);}return hit;};
  const keepIn=(map,key,value,max)=>{map.set(key,value);if(map.size>max)map.delete(map.keys().next().value);};
+ const drawing=key=>{const d=look(drawn,key);if(d&&d.until<=Date.now()){drawn.delete(key);return null;}return d?.out;};
  async function load(o){
   let found;try{found=await source(o);}catch(e){return {status:502,error:String(e.message).slice(0,200)};}
   if(!found)return {status:404,error:'No picture is known for this Mordinal.'};
@@ -73,13 +76,13 @@ export function createContent({source,maxBytes=2097152,keep=200,draw=createDrawe
   const type=pictureType(bytes);let out;
   if(type)out={status:200,type,bytes,sensitive};
   else if(draw&&svgSource(bytes)!=null){const d=await draw(bytes);
-   out=d.bytes?{status:200,type:'image/png',bytes:d.bytes,sensitive,drawn:'svg'}:{status:415,error:'This drawing cannot be shown.'};
-   keepIn(drawn,o.bodySha256,out,keepDrawn);return out;}
+   out=d.bytes?{status:200,type:'image/png',bytes:d.bytes,sensitive,drawn:'svg'}:d.retry?{status:502,error:'This picture could not be drawn now. Try again later.'}:{status:415,error:'This drawing cannot be shown.'};
+   keepIn(drawn,o.bodySha256,{out,until:d.retry?Date.now()+retry:Infinity},keepDrawn);return out;}
   else{const text=plainText(bytes);out={status:415,error:'This Mordinal is not a picture.',...(text!=null?{text,bytes,sensitive}:{})};}
   keepIn(cache,o.bodySha256,out,keep);return out;}
  return async function get(o){
   if(!o?.bodySha256||!source)return {status:404,error:'No picture is known for this Mordinal.'};
   if(o.bodySize>maxBytes)return {status:415,error:'This content is too large to show.'};
-  const hit=look(drawn,o.bodySha256)||look(cache,o.bodySha256);if(hit)return hit;
+  const hit=drawing(o.bodySha256)||look(cache,o.bodySha256);if(hit)return hit;
   let p=loading.get(o.bodySha256);if(!p){p=load(o).finally(()=>loading.delete(o.bodySha256));loading.set(o.bodySha256,p);}
   return p;};}
