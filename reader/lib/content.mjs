@@ -1,11 +1,13 @@
 // Pictures and short texts. A Mordinal's content is the bytes inscribed in its registration transaction. The owner list
 // carries the SHA-256 of those bytes, so content from any source can be checked before it is shown: this module only
 // passes on bytes whose hash and size match the owner list and whose first bytes are a plain picture format, or that
-// are a short plain text (plainText below), which pages show as text, never as markup.
-// Other content (HTML, SVG, anything else) is never served for display.
+// are a short plain text (plainText below), which pages show as text, never as markup. An SVG document that names
+// nothing outside itself is drawn by the service as a PNG picture (draw.mjs); the SVG itself is never served.
+// Other content (HTML, anything else) is never served for display.
 import {createHash} from 'node:crypto';
 import {existsSync,readFileSync} from 'node:fs';
 import {join} from 'node:path';
+import {svgSource,createDrawer} from './draw.mjs';
 
 const starts=(b,sig,at=0)=>sig.every((v,i)=>b[at+i]===v);
 // The picture type by its first bytes, or null. The stated type of a source is never trusted.
@@ -53,20 +55,31 @@ export function archiveContent(base='https://xmr20.org/api/mordinals',{fetch:f=f
   const r=await f(`${base}?route=file&id=${item.id}&sha=${o.bodySha256}`,{signal:AbortSignal.timeout(timeout)});if(!r.ok)throw Error('The archive answered HTTP '+r.status);
   return {bytes:Buffer.from(await r.arrayBuffer()),sensitive:Boolean(item.sensitive)};};}
 
-// -> get(ownerEntry) = {status:200, type, bytes, sensitive} | {status:415, error, text?, bytes?, sensitive?} | {status:404|502, error}
+// -> get(ownerEntry) = {status:200, type, bytes, sensitive, drawn?} | {status:415, error, text?, bytes?, sensitive?} | {status:404|502, error}
 // A 415 carries text, bytes and sensitive when the content is plain text: still not a picture, but it can be shown as text.
-export function createContent({source,maxBytes=2097152,keep=200}){
- const cache=new Map();
+// An SVG document answers 200 with the PNG picture drawn from it and drawn:'svg' (draw: null turns drawing off; the
+// document is then not a picture). Answers are kept by the content's SHA-256: the last `keep`, and every drawing
+// apart (up to `keepDrawn`, more than the owner list's SVG documents), whether it worked or not, so that browsing
+// many pictures never makes the service draw one document twice. One content is looked up once at a time.
+export function createContent({source,maxBytes=2097152,keep=200,draw=createDrawer(),keepDrawn=1000}){
+ const cache=new Map(),drawn=new Map(),loading=new Map();
+ const look=(map,key)=>{const hit=map.get(key);if(hit){map.delete(key);map.set(key,hit);}return hit;};
+ const keepIn=(map,key,value,max)=>{map.set(key,value);if(map.size>max)map.delete(map.keys().next().value);};
+ async function load(o){
+  let found;try{found=await source(o);}catch(e){return {status:502,error:String(e.message).slice(0,200)};}
+  if(!found)return {status:404,error:'No picture is known for this Mordinal.'};
+  const bytes=Buffer.from(found.bytes),sensitive=Boolean(found.sensitive);
+  if(bytes.length!==o.bodySize||createHash('sha256').update(bytes).digest('hex')!==o.bodySha256)return {status:502,error:'The stored content does not match the inscription.'};
+  const type=pictureType(bytes);let out;
+  if(type)out={status:200,type,bytes,sensitive};
+  else if(draw&&svgSource(bytes)!=null){const d=await draw(bytes);
+   out=d.bytes?{status:200,type:'image/png',bytes:d.bytes,sensitive,drawn:'svg'}:{status:415,error:'This drawing cannot be shown.'};
+   keepIn(drawn,o.bodySha256,out,keepDrawn);return out;}
+  else{const text=plainText(bytes);out={status:415,error:'This Mordinal is not a picture.',...(text!=null?{text,bytes,sensitive}:{})};}
+  keepIn(cache,o.bodySha256,out,keep);return out;}
  return async function get(o){
   if(!o?.bodySha256||!source)return {status:404,error:'No picture is known for this Mordinal.'};
   if(o.bodySize>maxBytes)return {status:415,error:'This content is too large to show.'};
-  const hit=cache.get(o.bodySha256);if(hit){cache.delete(o.bodySha256);cache.set(o.bodySha256,hit);return hit;}
-  let found;try{found=await source(o);}catch(e){return {status:502,error:String(e.message).slice(0,200)};}
-  if(!found)return {status:404,error:'No picture is known for this Mordinal.'};
-  const bytes=Buffer.from(found.bytes);let out;
-  if(bytes.length!==o.bodySize||createHash('sha256').update(bytes).digest('hex')!==o.bodySha256)out={status:502,error:'The stored content does not match the inscription.'};
-  else{const type=pictureType(bytes),text=type?null:plainText(bytes);
-   out=type?{status:200,type,bytes,sensitive:Boolean(found.sensitive)}
-    :{status:415,error:'This Mordinal is not a picture.',...(text!=null?{text,bytes,sensitive:Boolean(found.sensitive)}:{})};}
-  if(out.status!==502){cache.set(o.bodySha256,out);if(cache.size>keep)cache.delete(cache.keys().next().value);}
-  return out;};}
+  const hit=look(drawn,o.bodySha256)||look(cache,o.bodySha256);if(hit)return hit;
+  let p=loading.get(o.bodySha256);if(!p){p=load(o).finally(()=>loading.delete(o.bodySha256));loading.set(o.bodySha256,p);}
+  return p;};}

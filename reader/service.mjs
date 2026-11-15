@@ -24,6 +24,7 @@ import {createChain} from './lib/chain.mjs';
 import {openReader} from './lib/reader.mjs';
 import {createRelay,createCarrier} from './lib/relay.mjs';
 import {createContent,dirContent,archiveContent,pictureType} from './lib/content.mjs';
+import {createDrawer} from './lib/draw.mjs';
 import {served,readOwners} from './lib/owners.mjs';
 import {loadCollections} from '../xmr20-nfts/lib/collection.mjs';
 import {projectDeploys,TYPE_JSON} from '../xmr20-tokens/lib/token.mjs';
@@ -244,7 +245,9 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
   const o=which(text),got=content?await content(o):{status:404,error:'This service has no pictures.'};
   const head={'x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox",'cross-origin-resource-policy':'cross-origin'};
   if(got.status!==200){res.writeHead(got.status,{...head,'content-type':'application/json','cache-control':got.status===502?'no-store':'public, max-age=3600'});res.end(JSON.stringify({error:got.error}));return;}
-  res.writeHead(200,{...head,'content-type':got.type,'content-length':got.bytes.length,'cache-control':'public, max-age=31536000, immutable','x-mordinal-sensitive':got.sensitive||labelled.has(o.number)?'1':'0','x-mordinal-sha256':o.bodySha256});res.end(got.bytes);}
+  // A picture drawn from an SVG document (lib/draw.mjs) says so: its bytes are not the inscribed bytes that
+  // x-mordinal-sha256 names, and a later service may draw it better, so it is kept for a day, not for good.
+  res.writeHead(200,{...head,'content-type':got.type,'content-length':got.bytes.length,'cache-control':got.drawn?'public, max-age=86400':'public, max-age=31536000, immutable','x-mordinal-sensitive':got.sensitive||labelled.has(o.number)?'1':'0','x-mordinal-sha256':o.bodySha256,...(got.drawn?{'x-mordinal-drawn':got.drawn}:{})});res.end(got.bytes);}
  // A Mordinal whose content is a short plain text (lib/content.mjs plainText): its bytes as text/plain, for a page to
  // show as text. A picture, or content that is neither, answers 415; the rest as /content/ answers.
  async function words(res,text){
@@ -321,7 +324,7 @@ export async function startService(o){
  // A follower that cannot be opened (its folder cannot be written, say) is done without: the shipped files are then served as they are.
  let follower=null;
  if(network==='mainnet'&&o.xmr20Follow!==false&&(earlier||full.length)){try{follower=openFollower({dir:join(o.state,EARLIER_NAME),chain,reader,pick:choice.pick,name:choice.name,log:o.log});}catch(e){o.log?.({earlier:'not read on: '+String(e?.message||e).slice(0,200)});}}
- const service=createService({reader,relay,owners,transfers:o.transfers?readOwners(o.transfers):[],blockTimes:times?JSON.parse(readFileSync(times,'utf8')).times:null,groups:groupFile?JSON.parse(readFileSync(groupFile,'utf8')):null,content:source?createContent({source}):null,collections,views:o.views||(existsSync(VIEWS)?VIEWS:null),xmr20:o.xmr20Inscribers?.length?{inscribers:o.xmr20Inscribers.map(a=>canonical(a,network))}:null,
+ const service=createService({reader,relay,owners,transfers:o.transfers?readOwners(o.transfers):[],blockTimes:times?JSON.parse(readFileSync(times,'utf8')).times:null,groups:groupFile?JSON.parse(readFileSync(groupFile,'utf8')):null,content:source?createContent({source,draw:createDrawer({log:o.log})}):null,collections,views:o.views||(existsSync(VIEWS)?VIEWS:null),xmr20:o.xmr20Inscribers?.length?{inscribers:o.xmr20Inscribers.map(a=>canonical(a,network))}:null,
   earlier,follower,...(o.followLimit?{followLimit:o.followLimit}:{}),origins:o.origins||[],extensions:o.extensions?.length?o.extensions:null,behindProxy:Boolean(o.behindProxy),testHooks:Boolean(o.testHooks),...(o.rate?{rate:o.rate}:{}),log:o.log});
  // The views are made from what the follower's folder holds before anything is served; a few seconds at most are waited for it.
  await Promise.race([service.ready,new Promise(done=>{setTimeout(done,5000).unref?.();})]);const port=await service.listen(o.port==null?18951:Number(o.port));return {...service,port,chain,owners};}
