@@ -23,11 +23,11 @@ export async function loadNft(ctx,id){
  catch{throw Error('The service sent an NFT that does not fit its code.');}
  const b=d.body,what=nftLabel(id,b,c?.body.name??null);
  return {...v,id,mint:b,collectionName:c?.body.name??null,what,title:b.name||(c?`${c.body.name} #${b.edition}`:'NFT '+codeOf(id).slice(0,8))};}
-// The content: a picture, a text, or a line saying it is not shown.
+// The content: a picture, a text (JSON is shown as its text), or a line saying it is not shown.
 export function nftPicture(ctx,id,type,{size=''}={}){
  const box=el('div',{class:('pic nftpic '+size).trim(),'data-nft':id}),src=new URL(`nft/${id}/content`,ROOT).href;
  if(type>=1&&type<=4){const img=el('img',{alt:'',loading:'lazy',src});img.addEventListener('error',()=>box.replaceChildren(el('span',{text:'Picture not available'})));box.append(img);}
- else if(type===5){const text=el('span',{class:'nfttext'});box.append(text);
+ else if(type===5||type===6){const text=el('span',{class:'nfttext'});box.append(text);
   fetch(src,{signal:ctx.signal}).then(r=>r.ok?r.text():'').then(t=>{text.textContent=t.slice(0,900);}).catch(()=>{});}
  else box.append(el('span',{text:(TYPES[type]||'This content')+' is not shown'}));
  return box;}
