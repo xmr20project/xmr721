@@ -4,6 +4,7 @@ import {keccak_256} from '@noble/hashes/sha3';
 import {hex,concat,le,leBytes,Hs,encodeAddress,base58Encode,messageHash,signWithSpendKey,subaddressKeys,subaddressSecret} from '../lib/monero.mjs';
 import {viewTag,formatInProof} from '../lib/claim.mjs';
 import {makeOutProof,paymentMessage} from '../lib/payment.mjs';
+import {BURN,MAINNET_DEAD,burnAddress,claimText,transferExtra} from '../lib/burn.mjs';
 const Pt=ed25519.ExtendedPoint,L=ed25519.CURVE.n,G=Pt.BASE,enc=new TextEncoder();
 const H=Pt.fromHex('8b655970153799af2aeadc9ff1add0ea6c7251d54154cfa92c173a0dd39c1f94');
 const varint=n=>{const out=[];do{let b=n&127;n=Math.floor(n/128);if(n)b|=128;out.push(b);}while(n);return Uint8Array.from(out);};
@@ -72,3 +73,16 @@ export function entries(lines,txs,lot,o){
   for(const t of txs)t.outs.forEach((x,i)=>{if(x.to.address===line.to&&(!hit||(hit.t.outs[hit.i].amount!==BigInt(line.amount)&&x.amount===BigInt(line.amount))))hit={t,i};});
   if(!hit)break;out.push(entry(hit.t,hit.i,lot,o));}
  return out;}
+
+// Claiming by burning (lib/burn.mjs). The burn address as a payee for makeTx, and a made-up burning transfer: output 0
+// pays the burn address, tx_extra holds the text in field 0x11, and one input's ring is the dead outputs and `output`.
+// The options make transfers no wallet would make: another ring, other inputs before or after it, another fee, other
+// outputs, a tx_extra of one's own (tamper gets the finished transaction).
+const bytesOf=h=>Uint8Array.from(h.match(/../g),x=>parseInt(x,16));
+export const burnParty={label:'burn address',kind:'main',spend:bytesOf(BURN.spend),view:bytesOf(BURN.view),address:burnAddress()};
+export const offsetsOf=ring=>{const r=[...ring].sort((a,b)=>a-b);return r.map((v,i)=>i?v-r[i-1]:v);};
+export const input=(ring,amount=0)=>({key:{amount,key_offsets:offsetsOf(ring),k_image:hex(keccak_256(enc.encode('mordinals test key image '+ring.join(','))))}});
+export function makeBurn(label,{output,to,text=claimText(to?.address??to),dead=MAINNET_DEAD,ring=[...dead,output],before=[],after=[],fee=10n**9n+30000000n,outs=null,paymentId=true,tamper=null}={}){
+ return makeTx(label,outs||[{to:burnParty,amount:1n},{to:wallet(label+' change'),amount:10n**9n}],{tamper:tx=>{
+  tx.extra=[...transferExtra(Uint8Array.from(tx.extra.slice(1,33)),text,{paymentId:paymentId?keccak_256(enc.encode(label)).subarray(0,8):null})];
+  tx.vin=[...before,input(ring),...after];tx.rct_signatures.txnFee=Number(fee);if(tamper)tamper(tx);}});}
