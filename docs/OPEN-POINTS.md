@@ -251,6 +251,22 @@ Service:
 - Many visitors asking for waiting records share one look at the node's pool.
   `GET /records` is paged. Extensions can be limited to listed ids (`--allow-extension`).
 
+## Claiming by burning (15 November 2026)
+
+A draft of a ledger setting (RULES.md section 10): from a chosen block a Mordinal is claimed
+by burning it under the original rules, and claim records no longer count. Not reviewed, not
+in use. What was built, what is decided and what is open is in
+[`BURN-CLAIM-DRAFT.md`](BURN-CLAIM-DRAFT.md). The open points in short:
+
+- a holder whose owner coin was already spent by an ordinary wallet cannot claim by burning,
+  and this draft gives them no other way from the first burn block on;
+- the one Mordinal claimed before the rule (#42,875) stays claimed and its old Mordinal is
+  not burned;
+- the rule rests on nobody being able to spend one of the fifteen dead outputs; 70499745,
+  which has an ordinary key, is left out, and who holds it is unknown;
+- what an indexer of the original rules shows after a burn (the claim text as the
+  Mordinal's text) is not consulted here.
+
 ## Still open
 
 Rules:
