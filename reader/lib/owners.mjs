@@ -11,3 +11,7 @@ export const ownerLine=o=>[o.number,o.registrationTx,o.ownerTx,o.ownerOutputKey,
 export function ownersHash(owners){const h=createHash('sha256');for(const o of owners)h.update(ownerLine(o));return h.digest('hex');}
 // One file, or several separated by commas and read in that order (the original list, then added entries).
 export const readOwners=files=>String(files).split(',').flatMap(file=>readFileSync(file,'utf8').split('\n').filter(Boolean).map(l=>JSON.parse(l)));
+// The global output index of each owner output, in list order: number:ownerOutputIndex\n. A ledger that claims by
+// burning (RULES.md section 10) finds a Mordinal by this index, which the hash above does not cover, so such a ledger
+// pins it with this second hash.
+export function ownerOutputsHash(owners){const h=createHash('sha256');for(const o of owners)h.update(`${o.number}:${Number.isSafeInteger(o.ownerOutputIndex)?o.ownerOutputIndex:''}\n`);return h.digest('hex');}

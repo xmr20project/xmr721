@@ -36,7 +36,7 @@ is spent) and from then on it moves by signed records. Every record is a short b
 
 ```
 node service.mjs --owners <owners.jsonl[,added.jsonl]> --domain <hex32> --fee-address <address> --node <url> --start <height> --state <dir>
-     [--start-hash <hash>] [--mint-from <height> [--minters <address>,… [--open-from <height>]]] [--network mainnet|stagenet] [--port 18951] [--every <ms>] [--transfers <transfers.jsonl>]
+     [--start-hash <hash>] [--mint-from <height> [--minters <address>,… [--open-from <height>]]] [--burn-from <height> [--burn-dead <index>,…]] [--network mainnet|stagenet] [--port 18951] [--every <ms>] [--transfers <transfers.jsonl>]
      [--collections <dir>] [--xmr20-inscribers <address>,…] [--xmr20-earlier <dir> | --no-xmr20-earlier] [--no-xmr20-follow]
      [--carrier-bin bin/mordinals-carrier --carrier-state <dir> --carrier-network offline-fakechain|stagenet|mainnet]
      [--content-dir <dir> | --content-archive [url]] [--views views] [--allow-origin <origin>] [--allow-extension <id>]
@@ -58,6 +58,7 @@ on mainnet it also needs `MORDINALS_MAINNET=1` and an unrestricted node of its o
 
 ```
 node --test tests/reader.test.mjs    # offline, a few seconds: framing, reader, restart, reorg, relay limits, service, check tools
+node --test tests/burn.test.mjs      # offline: claiming by burning (RULES.md section 10) in the reader and the service
 node --test tests/lab.test.mjs       # local Monero test chain, real wallets, real carrier transactions (about a minute)
 node --test tests/views.test.mjs     # the pages in a browser against the demonstration service (needs Playwright's Chromium)
 ```

@@ -4,7 +4,8 @@
 //
 // Always: the owner list here hashes to the value the service states; every entry of the service's record log is
 //   judged again with the rule library, in order, and must come out the same way (accepted with the same id, or
-//   refused); every checkpoint the service shows is recomputed from that replay.
+//   refused); every checkpoint the service shows is recomputed from that replay. On a ledger that claims by burning
+//   (RULES.md section 10) the logged burning transfers are judged again the same way.
 // --node: every logged record is looked up on the Monero node: it must sit in the stated block at the stated place
 //   and its transaction must carry exactly those record bytes; the payments of every purchase are fetched again and
 //   compared; checkpoint block hashes are compared with the node.
@@ -17,7 +18,8 @@ import {join} from 'node:path';
 import {createLedger} from '../../rules/lib/ledger.mjs';
 import {OP,decodeRecord,recordId} from '../../rules/lib/records.mjs';
 import {hex,unhex} from '../../rules/lib/monero.mjs';
-import {ownersHash,readOwners} from '../lib/owners.mjs';
+import {burnParts,burnClaimId} from '../../rules/lib/burn.mjs';
+import {ownersHash,ownerOutputsHash,readOwners} from '../lib/owners.mjs';
 import {unframe} from '../lib/transport.mjs';
 import {createChain} from '../lib/chain.mjs';
 import {openReader,slim} from '../lib/reader.mjs';
@@ -30,12 +32,17 @@ const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 export async function verify({info,entries,checkpoints=[],owners,chain=null,published=[]}){
  const problems=[],bad=text=>{if(problems.length<50)problems.push(text);};
  if(ownersHash(owners)!==info.owners)return {ok:false,problems:['The owner list here is not the one this service uses (hash differs).'],accepted:0,refused:0,checkpoints:0,checkedOnNode:0};
- let ledger;try{ledger=createLedger({network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,height:info.start,mintFrom:info.mintFrom??null,minters:info.minters??null,openFrom:info.openFrom??null});}
+ // A ledger that claims by burning finds Mordinals by the index of their owner output: that hash has to fit as well.
+ const burns=info.burnFrom!=null?{burnFrom:info.burnFrom,burnDead:info.burn?.dead??null}:{};
+ if(info.burnFrom!=null&&ownerOutputsHash(owners)!==info.burn?.ownerOutputs)return {ok:false,problems:['The owner list here has other owner output indexes than the one this service uses (hash differs).'],accepted:0,refused:0,checkpoints:0,checkedOnNode:0};
+ let ledger;try{ledger=createLedger({network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,height:info.start,mintFrom:info.mintFrom??null,minters:info.minters??null,openFrom:info.openFrom??null,...burns});}
  catch(e){return {ok:false,problems:['The service states a setup the rules do not take: '+String(e?.message||e).slice(0,200)],accepted:0,refused:0,checkpoints:0,checkedOnNode:0};}
  // A checkpoint names the first mint block and the minter list of its ledger; they have to be this service's.
  const setup={mintFrom:info.mintFrom??null,minters:info.minters?[...info.minters].sort().join(','):null,openFrom:info.openFrom??null};
  for(const c of checkpoints){const minting=setup.mintFrom!==null&&c.height>=setup.mintFrom,opened=minting&&setup.openFrom!==null&&c.height>=setup.openFrom;
-  if((c.mintFrom??null)!==(minting?setup.mintFrom:null)||(c.minters??null)!==(minting?setup.minters:null)||(c.openFrom??null)!==(opened?setup.openFrom:null)){bad(`The checkpoint at block ${c.height} is for a ledger with another first mint block, minter list or opening block.`);break;}}
+  if((c.mintFrom??null)!==(minting?setup.mintFrom:null)||(c.minters??null)!==(minting?setup.minters:null)||(c.openFrom??null)!==(opened?setup.openFrom:null)){bad(`The checkpoint at block ${c.height} is for a ledger with another first mint block, minter list or opening block.`);break;}
+  const burning=info.burnFrom!=null&&c.height>=info.burnFrom;
+  if((c.burnFrom??null)!==(burning?info.burnFrom:null)||(c.burnDead??null)!==(burning?ledger.burn.dead.join(','):null)||(c.ownerOutputs??null)!==(burning?info.burn.ownerOutputs:null)){bad(`The checkpoint at block ${c.height} is for a ledger with another first burn block, other dead outputs or other owner outputs.`);break;}}
  const marks=[...checkpoints].sort((a,b)=>a.height-b.height),accepted=[];let mark=0,last=[info.start,-1],ok=0,refused=0;
  const settle=upTo=>{for(;mark<marks.length&&marks[mark].height<=upTo;mark++){const c=marks[mark];ledger.setHeight(c.height);
   const mine={records:accepted.length,listHash:sha(accepted.map(e=>`${e.height}:${e.txid}\n`).join('')),stateHash:sha(JSON.stringify(ledger.toJSON()))};
@@ -44,6 +51,13 @@ export async function verify({info,entries,checkpoints=[],owners,chain=null,publ
  for(const [i,e] of entries.entries()){
   if(!Number.isInteger(e.height)||!Number.isInteger(e.pos)||e.height<=info.start||e.height<last[0]||(e.height===last[0]&&e.pos<=last[1])){bad(`Log entry ${i} is out of chain order.`);break;}
   settle(e.height-1);last=[e.height,e.pos];ledger.setHeight(e.height);
+  // A burning transfer: judged from the parts of the transaction the log holds.
+  if(e.burn){
+   if(e.record!==undefined||e.id!==burnClaimId(info.domain,String(e.txid)))bad(`Log entry ${i} (block ${e.height}) is not a well-formed burn claim entry.`);
+   let error=null;try{ledger.checkBurnClaim(e.txid,e.burn);}catch(err){error=String(err.message);}
+   if(e.ok){if(error){bad(`Log entry ${i} (block ${e.height}) is marked accepted, but the rules refuse it: ${error}`);break;}ledger.applyBurnClaim(e.txid,e.burn);accepted.push(e);ok++;}
+   else{if(!error)bad(`Log entry ${i} (block ${e.height}) is marked refused, but the rules accept it.`);else if(error!==e.error)bad(`Log entry ${i} (block ${e.height}) is refused for another reason than stated.`);refused++;}
+   continue;}
   let bytes,d=null;try{bytes=unhex(e.record);d=decodeRecord(bytes,info.network);}catch{}
   if(!d){if(e.ok)bad(`Log entry ${i} (block ${e.height}) is marked accepted but does not decode.`);else refused++;continue;}
   if(e.id!==recordId(info.domain,d.bodyBytes))bad(`Log entry ${i} (block ${e.height}) has another record id than its bytes.`);
@@ -59,6 +73,9 @@ export async function verify({info,entries,checkpoints=[],owners,chain=null,publ
   for(const [i,e] of entries.entries()){
    if(!heights.has(e.height))heights.set(e.height,await chain.block(e.height));
    if(heights.get(e.height).txids[e.pos]!==e.txid){bad(`Log entry ${i}: transaction ${e.txid} is not at place ${e.pos} of block ${e.height}.`);continue;}
+   if(e.burn){const t=(await chain.txs([e.txid])).get(e.txid);
+    if(!t||t.inPool||t.height!==e.height||!same(burnParts(t.tx),e.burn)){bad(`Log entry ${i}: transaction ${e.txid} is not on the node as logged.`);continue;}
+    onNode++;continue;}
    const t=(await chain.txs([e.txid])).get(e.txid),record=t&&!t.inPool&&t.height===e.height?unframe(t.tx.extra):null;
    if(!record||hex(record)!==e.record){bad(`Log entry ${i}: transaction ${e.txid} does not carry this record.`);continue;}
    if(e.facts){const ids=[...new Set(e.facts.map(f=>f.txid))],got=await chain.txs(ids);
@@ -74,7 +91,7 @@ export async function verify({info,entries,checkpoints=[],owners,chain=null,publ
 
 // A reader of your own over the same blocks; the two logs must be equal. -> list of problems
 export async function scan({info,entries,owners,chain,dir,height}){
- let reader;try{reader=openReader({dir,chain,network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,start:info.start,startHash:info.startHash,mintFrom:info.mintFrom??null,minters:info.minters??null,openFrom:info.openFrom??null,checkpointEvery:0});}catch(e){return ['The service states a setup the rules do not take: '+String(e?.message||e).slice(0,200)];}
+ let reader;try{reader=openReader({dir,chain,network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,start:info.start,startHash:info.startHash,mintFrom:info.mintFrom??null,minters:info.minters??null,openFrom:info.openFrom??null,...(info.burnFrom!=null?{burnFrom:info.burnFrom,burnDead:info.burn?.dead??null}:{}),checkpointEvery:0});}catch(e){return ['The service states a setup the rules do not take: '+String(e?.message||e).slice(0,200)];}
  while(reader.height<height){const before=reader.height;await reader.sync({limit:height-reader.height});if(reader.height===before)break;}
  if(reader.height<height)return [`The node only reaches block ${reader.height}; the service is at ${height}.`];
  const mine=reader.journal.filter(e=>e.height<=height),theirs=entries.filter(e=>e.height<=height),problems=[];
