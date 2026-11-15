@@ -24,8 +24,9 @@ after(async()=>{await browser.close();await demo.close();});
 // Everything the browser asks for, and everything it complains about.
 const problems=[],blocked=[],posted=[];
 // A browser logs every answer that is not 2xx as a console error. These two are expected and say nothing about the pages:
-// an inscription that is text answers 415 to a picture request, and a search for an id asks whether it is a registration.
-const EXPECTED=[[/\/content\/\d+$/,'415'],[/\/mordinal\/[0-9a-f]{64}$/,'404']];
+// an inscription that is not a picture answers 415 to a picture request (and, when it is not a text either, to a text
+// request), and a search for an id asks whether it is a registration.
+const EXPECTED=[[/\/content\/\d+$/,'415'],[/\/text\/\d+$/,'415'],[/\/mordinal\/[0-9a-f]{64}$/,'404']];
 await context.route('**/*',route=>{
  const url=new URL(route.request().url());
  if(url.hostname==='127.0.0.1'||url.protocol==='data:'||url.protocol==='blob:')return route.continue();
@@ -133,8 +134,13 @@ test('the gallery pages through the list, filters it, and shows pictures only wh
  assert.equal(await count('.mcard'),60);assert.equal(await text('[data-where]'),'1–60 of 300');
  await page.locator('[data-number="0"] .pic[data-state=shown] img').waitFor();
  assert.ok(await page.locator('[data-number="0"] .pic img').evaluate(i=>i.complete&&i.naturalWidth>0),'picture 0 did not load');
- await page.locator('[data-number="4"] .pic[data-state=none]').waitFor();
- assert.equal(await text('[data-number="4"] .pic'),'Not a picture');
+ await page.locator('[data-number="4"] .pic[data-state=text]').waitFor();
+ assert.equal(await page.locator('[data-number="4"] .pic .mtext').evaluate(e=>e.textContent),'777');assert.equal(await page.locator('[data-number="4"] .pic .mtext').getAttribute('class'),'mtext xl');
+ await page.locator('[data-number="13"]').scrollIntoViewIfNeeded();await page.locator('[data-number="13"] .pic[data-state=none]').waitFor();assert.equal(await text('[data-number="13"] .pic'),'Not a picture');
+ await page.locator('[data-number="22"]').scrollIntoViewIfNeeded();await page.locator('[data-number="22"] .pic[data-state=hidden]').waitFor();assert.equal(await page.locator('[data-number="22"] .mtext').count(),0);
+ await page.locator('[data-number="22"] .pic button').click();await page.locator('[data-number="22"] .pic[data-state=text]').waitFor();
+ assert.match(await text('[data-number="22"] .mtext'),/^Demo text inscription 22\. A plain text/);
+ assert.ok(await page.locator('[data-number="4"] .pic .mtext').evaluate(e=>{const b=e.parentElement.getBoundingClientRect(),r=e.getBoundingClientRect();return r.width>0&&r.left>=b.left&&r.right<=b.right&&r.top>=b.top&&r.bottom<=b.bottom&&parseFloat(getComputedStyle(e).fontSize)>20;}),'the short text fills the box without spilling out');
  assert.equal(await text('[data-number="5"] .pic'),'No picture');
  assert.equal(await text('[data-number="3"] .price'),'2 XMR');
  assert.equal(await text('[data-number="3"] [data-claimed]'),'Claimed');assert.equal(await text('[data-number="7"] [data-claimed]'),'Unclaimed');
@@ -192,6 +198,10 @@ test('one Mordinal answers "is it claimed?" with its owner, picture and whole hi
  await shot('mordinal-claimed');await narrow('mordinal-360');
 
  await go('/mordinal/4');
+ await page.locator('.pic.large[data-state=text]').waitFor();assert.equal(await text('.pic.large'),'777');
+ // A short text fits its box whole: nothing to scroll (a scroll bar would show beside it where bars take room).
+ assert.deepEqual(await page.locator('.pic.large .mtext').evaluate(e=>[e.scrollHeight<=e.clientHeight,e.scrollWidth<=e.clientWidth,getComputedStyle(e).overflowY]),[true,true,'hidden']);await shot('mordinal-text');
+ await go('/mordinal/13');
  await page.locator('.pic.large[data-state=none]').waitFor();assert.equal(await text('.pic.large'),'Not a picture');
  await go('/mordinal/10');
  assert.match(await text('[data-section=listing]'),/Reserved by/);});

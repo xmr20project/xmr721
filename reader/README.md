@@ -111,6 +111,7 @@ JSON everywhere. Errors are `{"error": "plain text"}` with a 4xx/5xx status. Amo
 | `GET /checkpoint` | the same summary at the current block |
 | `GET /records?from=&limit=` | `{height, total, from, records:[hex]}`: accepted records in order, 1,000 at a time unless `limit` says otherwise (at most 5,000) |
 | `GET /content/<number>` | the inscribed bytes when they are one of the allowed picture types and match the owner list's hash; headers `x-mordinal-sensitive`, `x-mordinal-sha256`. `415` when it is not a picture, `404` when unknown. |
+| `GET /text/<number>` | the inscribed bytes as `text/plain; charset=utf-8` when they are a short plain text (at most 4,096 bytes of UTF-8 with something that shows and no control, format or hidden character but tab, line feed, carriage return and the zero-width joiners; `lib/content.mjs` `plainText`) and match the owner list's hash, for a page to show as text; the same headers as `/content/`. `415` for a picture or other content, `404` when the number is unknown or the content is not known |
 | `POST /records {record: hex}` | needs `content-type: application/json` (`415` otherwise). Hands a signed record to the relay → `{height, id, state, op, number, txid, error, note}`. `400` rule refusal, `429` limits, `503` relay cannot work now. Posting the same record again returns the same job. |
 | `GET /view/…` | the pages |
 | `POST /test/step` | only with `--test-hooks`: one reader and relay pass now |

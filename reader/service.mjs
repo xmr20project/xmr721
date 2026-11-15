@@ -245,6 +245,14 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
   const head={'x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox",'cross-origin-resource-policy':'cross-origin'};
   if(got.status!==200){res.writeHead(got.status,{...head,'content-type':'application/json','cache-control':got.status===502?'no-store':'public, max-age=3600'});res.end(JSON.stringify({error:got.error}));return;}
   res.writeHead(200,{...head,'content-type':got.type,'content-length':got.bytes.length,'cache-control':'public, max-age=31536000, immutable','x-mordinal-sensitive':got.sensitive||labelled.has(o.number)?'1':'0','x-mordinal-sha256':o.bodySha256});res.end(got.bytes);}
+ // A Mordinal whose content is a short plain text (lib/content.mjs plainText): its bytes as text/plain, for a page to
+ // show as text. A picture, or content that is neither, answers 415; the rest as /content/ answers.
+ async function words(res,text){
+  const o=which(text),got=content?await content(o):{status:404,error:'This service has no pictures.'};
+  const head={'x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox",'cross-origin-resource-policy':'cross-origin'};
+  if(got.text==null){const status=got.status===200?415:got.status,error=got.status===200?'This Mordinal is a picture, not a text.':got.status===415?'This Mordinal is not a text.':got.error;
+   res.writeHead(status,{...head,'content-type':'application/json','cache-control':status===502?'no-store':'public, max-age=3600'});res.end(JSON.stringify({error}));return;}
+  res.writeHead(200,{...head,'content-type':'text/plain; charset=utf-8','content-length':got.bytes.length,'cache-control':'public, max-age=31536000, immutable','x-mordinal-sensitive':got.sensitive||labelled.has(o.number)?'1':'0','x-mordinal-sha256':o.bodySha256});res.end(got.bytes);}
  function page(res,path){
   const rel=normalize(decodeURIComponent(path.slice(6))||'index.html'),file=join(views,rel.endsWith(sep)||rel==='.'?join(rel,'index.html'):rel);
   if(rel.startsWith('..')||!file.startsWith(views+sep)||!existsSync(file)||!statSync(file).isFile()||!TYPES[extname(file)]){res.writeHead(404,{'content-type':'text/plain'});res.end('Not found');return;}
@@ -255,7 +263,10 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
   if(req.method==='OPTIONS'){res.writeHead(204,headers);res.end();return;}
   try{
    const url=new URL(req.url,'http://127.0.0.1');
-   if(req.method==='GET'&&url.pathname.startsWith('/content/')){if(headers['access-control-allow-origin'])for(const k of ['access-control-allow-origin','access-control-expose-headers','vary'])res.setHeader(k,headers[k]);return await picture(res,url.pathname.slice(9));}
+   // Content and texts are kept by caches for a long time, and the same address is read with and without an Origin
+   // (an <img>, a page's fetch): every answer says that it depends on the Origin.
+   if(req.method==='GET'&&url.pathname.startsWith('/content/')){res.setHeader('vary','origin');if(headers['access-control-allow-origin'])for(const k of ['access-control-allow-origin','access-control-expose-headers'])res.setHeader(k,headers[k]);return await picture(res,url.pathname.slice(9));}
+   if(req.method==='GET'&&url.pathname.startsWith('/text/')){res.setHeader('vary','origin');if(headers['access-control-allow-origin'])for(const k of ['access-control-allow-origin','access-control-expose-headers'])res.setHeader(k,headers[k]);return await words(res,url.pathname.slice(6));}
    // The inscribed bytes of a minted NFT: pictures by their first bytes, plain text as text, JSON that parses as JSON;
    // nothing else is served.
    const made=/^\/nft\/([0-9a-f]{64})\/content$/.exec(url.pathname);

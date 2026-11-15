@@ -13,8 +13,9 @@ after(async()=>{await browser.close();await demo.close();});
 const problems=[];
 const page=await context.newPage();
 page.on('pageerror',e=>problems.push('page error: '+e.message));
-// A Mordinal that is text, not a picture, answers 415 when a page asks for its picture; that is expected.
-page.on('console',m=>{if(m.type()!=='error')return;const url=m.location().url||'';if(/Failed to load resource.*status of 415/.test(m.text())&&/\/content\/\d+$/.test(url))return;problems.push('console: '+m.text()+' '+url);});
+// A Mordinal that is not a picture answers 415 when a page asks for its picture (and, when it is not a text either,
+// for its text); that is expected.
+page.on('console',m=>{if(m.type()!=='error')return;const url=m.location().url||'';if(/Failed to load resource.*status of 415/.test(m.text())&&/\/(content|text)\/\d+$/.test(url))return;problems.push('console: '+m.text()+' '+url);});
 page.on('request',r=>{if(new URL(r.url()).pathname.startsWith('/test/'))problems.push('the page called a test route');});
 
 const get=async path=>(await fetch(root+path)).json();

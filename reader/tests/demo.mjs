@@ -60,9 +60,10 @@ export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=
  const pictures=new Map(),owners=[];
  for(let n=0;n<count;n++){
   const g=given.get(n),to=g||seeded.get(n)||w.other,t=makeTx('demo owner '+n,[{to,amount:1000+n}],{subaddressKey:Boolean(g?.sub)});
-  // Most are pictures; some are text (never shown), some have no known content, one is marked sensitive.
-  const body=n%13===5?null:n%9===4?Buffer.from(`Demo text inscription ${n}. Text is not shown as a picture.`):picture(n);
-  if(body)pictures.set(sha(body),{bytes:body,sensitive:n===11});
+  // Most are pictures; some are text (shown as text: number 4 a short one, the others longer), some are neither (never
+  // shown), some have no known content; picture 11 and text 22 are marked sensitive.
+  const body=n%13===5?null:n%9===4?(n%2?Buffer.from([0,1,2,3,0xff,0xfe,n]):Buffer.from(n===4?'777\n':`Demo text inscription ${n}. A plain text, shown as text in the picture's place.`)):picture(n);
+  if(body)pictures.set(sha(body),{bytes:body,sensitive:n===11||n===22});
   owners.push({...ownerEntry(n,t),registrationHeight:2850000+n*7,ownerHeight:2850000+n*7,...(body?{bodySha256:sha(body),bodySize:body.length}:{})});}
  const transfers=[{result:'updated',mordinal:3,height:2990123,tx:sha('demo old transfer 3')},{result:'updated',mordinal:8,height:3001200,tx:sha('demo old transfer 8a')},{result:'updated',mordinal:8,height:3014477,tx:sha('demo old transfer 8b')}];
  for(const t of transfers){const o=owners[t.mordinal];if(o)o.ownerHeight=t.height;}

@@ -14,7 +14,7 @@ import {frame,unframe,CHUNK,MAX_RECORD} from '../lib/transport.mjs';
 import {ownersHash,ownerLine} from '../lib/owners.mjs';
 import {openReader,slim} from '../lib/reader.mjs';
 import {createRelay} from '../lib/relay.mjs';
-import {createContent,dirContent} from '../lib/content.mjs';
+import {createContent,dirContent,plainText,TEXT_MAX} from '../lib/content.mjs';
 import {createService} from '../service.mjs';
 import {verify,scan,download} from '../tools/verify.mjs';
 import {exportCheckpoints} from '../tools/export-checkpoints.mjs';
@@ -22,7 +22,7 @@ import {fakeChain,fakeCarrier,carried} from './fake.mjs';
 
 const XMR=10n**12n,sha=b=>createHash('sha256').update(b).digest('hex');
 const dirs=[];test.after(()=>{for(const d of dirs)rmSync(d,{recursive:true,force:true});});
-const PNG=Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),Buffer.from('made-up picture bytes, not a real image')]),TEXT=Buffer.from('<script>alert(1)</script>');
+const PNG=Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),Buffer.from('made-up picture bytes, not a real image')]),TEXT=Buffer.from('<script>alert(1)</script> is text here: served as text/plain, shown as text, never run.\n');
 
 function world({every=5,coins=6,limits={}}={}){
  const w=Object.fromEntries(['alice','bob','carol','dave','fee'].map(n=>[n,wallet(n)])),by=new Map(Object.values(w).map(x=>[x.address,x]));
@@ -49,6 +49,16 @@ function world({every=5,coins=6,limits={}}={}){
  // Put records in the next block without any relay, then read it.
  const block=async(...records)=>{const txs=records.map(r=>r.txid?r:carried(r));chain.mine(txs);await reader.sync();return txs.map(t=>t.txid);};
  return {w,by,owners,dir,state,chain,open,reader,carrier,relay,make,block,tick:ms=>{clock+=ms;},get clock(){return clock;}};}
+
+test('plain text: UTF-8 with something to read, no control characters, no direction marks, not too long',()=>{
+ const t=s=>plainText(Buffer.from(s,'utf8'));const c=n=>String.fromCodePoint(n);
+ assert.equal(t('777\n'),'777\n');assert.equal(t('two\r\nlines\tand a tab'),'two\r\nlines\tand a tab');assert.equal(t('Monero '+c(0x1f512)+' é'),'Monero '+c(0x1f512)+' é');
+ assert.equal(t('a <b>tag</b> in a sentence'),'a <b>tag</b> in a sentence');assert.equal(t('<3 Monero'),'<3 Monero');assert.equal(plainText(Buffer.from([0xef,0xbb,0xbf,0x41])),'A');
+ assert.equal(t('family '+c(0x1f469)+c(0x200d)+c(0x1f467)+' '+c(0x2764)+c(0xfe0f)),'family '+c(0x1f469)+c(0x200d)+c(0x1f467)+' '+c(0x2764)+c(0xfe0f));assert.equal(t('漢字 한국어'),'漢字 한국어');
+ for(const bad of ['','   \n\t',c(0)+'a','a'+c(7),'a'+c(0x1b)+'[31m','a'+c(0x7f),'a'+c(0x85),'a'+c(0x202e)+'b','a'+c(0x2067)+'b','a'+c(0x200f),'a'+c(0xfeff)+'b','x'.repeat(TEXT_MAX+1),
+  c(0x61c)+'1 2 3','a'+c(0xad)+'b','a'+c(0x2028)+'b','a'+c(0xe0041),'a'+c(0xe000),'a'+c(0xfdd0),c(0x200b),c(0x3164)+c(0x3164),c(0x2800)+' '+c(0x115f),c(0x301)+c(0x302),c(0x200d)+' '+c(0x3000),'<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>\n',' <!DOCTYPE html><p>x</p> ','<?xml version="1.0"?><a/>','X5O!P%@AP[4\\PZX54(P^)7CC)7}$'+'EICAR-STANDARD-'+'ANTIVIRUS-TEST-FILE!$H+H*'])assert.equal(t(bad),null,JSON.stringify(bad));
+ assert.equal(t('x'.repeat(TEXT_MAX)),'x'.repeat(TEXT_MAX));
+ for(const bytes of [[0xff],[0xc3],[0xed,0xa0,0x80],[0x89,0x50,0x4e,0x47]])assert.equal(plainText(Buffer.from(bytes)),null,String(bytes));});
 
 test('a record rides in tx_extra in one canonical way',()=>{
  const pub=randomBytes(32);
@@ -382,6 +392,11 @@ test('the service answers wallets and pages, and the check tools agree with it',
   assert.deepEqual(['content-type','x-content-type-options','content-security-policy','x-mordinal-sensitive','x-mordinal-sha256'].map(h=>pic.headers.get(h)),['image/png','nosniff',"default-src 'none'; sandbox",'0',sha(PNG)]);
   assert.equal((await get('/content/1')).status,415);assert.equal((await get('/content/2')).status,404);assert.equal((await get('/content/99')).status,404);
   assert.equal((await get('/content/'+owners[0].registrationTx)).status,200);
+  // Texts: plain text is served as text/plain from /text/ (a page shows it as text, never as markup); a picture is not a text.
+  const words=await get('/text/1');assert.equal(words.status,200);assert.deepEqual(words.body,TEXT);
+  assert.deepEqual(['content-type','x-content-type-options','content-security-policy','x-mordinal-sensitive','x-mordinal-sha256'].map(h=>words.headers.get(h)),['text/plain; charset=utf-8','nosniff',"default-src 'none'; sandbox",'0',sha(TEXT)]);
+  assert.equal((await get('/text/0')).status,415);assert.equal((await get('/text/2')).status,404);assert.equal((await get('/text/99')).status,404);assert.equal((await get('/text/x')).status,404);
+  assert.equal((await get('/text/'+owners[1].registrationTx)).status,200);
   // Pages are static files of one folder.
   const index=await get('/view/');assert.equal(index.status,200);assert.match(index.headers.get('content-security-policy'),/script-src 'self'/);assert.equal((await get('/')).status,302);
   for(const p of ['/view/notes.txt','/view/..%2fsecret.html','/view/%2e%2e/secret.html','/view/sub/','/view/missing.html'])assert.equal((await get(p)).status,404,p);

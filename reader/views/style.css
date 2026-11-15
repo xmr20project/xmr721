@@ -131,6 +131,15 @@ table.rows{width:100%;border-collapse:collapse}
 .pic.large{border-radius:20px;border:1px solid var(--ux-line);max-width:420px;width:100%}
 .pic.thumb{width:44px;height:44px;aspect-ratio:auto;border-radius:10px;padding:0;font-size:0;flex:none}
 .pic.thumb .btn{display:none}
+/* A Mordinal that is a short text: the text in the picture's place, sized by its length (cqi = the box's width). */
+.pic[data-state=text]{container-type:inline-size;color:var(--ux-strong)}
+.pic .mtext{max-width:100%;max-height:100%;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--ux-mono);line-height:1.25}
+.pic .mtext.xl{font-size:28px;font-size:24cqi;font-weight:700;line-height:1.25;letter-spacing:-.02em}
+.pic .mtext.l{font-size:18px;font-size:9.5cqi;font-weight:700;line-height:1.25}
+.pic .mtext.m{font-size:14px;font-size:6cqi;line-height:1.35}
+.pic .mtext.s{align-self:stretch;flex:1;text-align:left;font-size:12px;font-size:clamp(6px,calc(100cqi / (var(--cols,44) * .62)),14px);line-height:1.45;color:var(--ux-copy)}
+.pic.large .mtext.m,.pic.large .mtext.s{overflow:auto}
+.pic.thumb .mtext:not(.xl),.mosaic .pic .mtext:not(.xl){display:none}
 .with-thumb{display:flex;align-items:center;gap:12px}
 
 /* One Mordinal */

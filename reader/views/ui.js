@@ -136,7 +136,8 @@ export function waitingList(jobs){
   {label:'Code',cell:j=>code(j.id)},
   {label:'Transaction',cell:j=>j.txid?txid(j.txid):''}],jobs);}
 
-// Pictures. Content is only ever shown through <img>; a picture marked sensitive stays hidden until asked for.
+// Pictures. Content is only ever shown through <img>, or, when it is a short plain text the service serves from /text/,
+// as a text node; a picture or text marked sensitive stays hidden until asked for.
 // Tiles load when they come into view, so a long gallery page does not fetch every picture at once.
 export function pictures(ctx){
  const urls=[],start=new WeakMap();
@@ -148,19 +149,38 @@ export function pictures(ctx){
   let res;
   try{res=await fetch(new URL('content/'+n,ROOT),{signal:ctx.signal});}
   catch{if(!ctx.signal.aborted)say(box,'failed','Picture not available');return;}
-  if(res.status===415)return say(box,'none','Not a picture');
+  if(res.status===415){res.body?.cancel().catch(()=>{});return words(box,n,shown);}
   if(res.status===404)return say(box,'none','No picture');
   if(!res.ok||!/^image\/(png|jpeg|gif|webp)$/.test(res.headers.get('content-type')||''))return say(box,'failed','Picture not available');
-  if(res.headers.get('x-mordinal-sensitive')==='1'&&!shown){
-   res.body?.cancel().catch(()=>{});box.dataset.state='hidden';
-   box.replaceChildren(el('span',{text:'Hidden: marked sensitive'}),
-    el('button',{type:'button',class:'btn small',text:'Show',onclick:()=>{say(box,'loading','');load(box,n,true);}}));
-   return;}
+  if(res.headers.get('x-mordinal-sensitive')==='1'&&!shown){res.body?.cancel().catch(()=>{});return hide(box,n);}
   let url;try{url=URL.createObjectURL(await res.blob());}catch{if(!ctx.signal.aborted)say(box,'failed','Picture not available');return;}
   urls.push(url);
   const img=el('img',{alt:'Mordinal #'+n,src:url});
   img.addEventListener('error',()=>say(box,'failed','Picture not available'));
   box.dataset.state='shown';box.replaceChildren(img);}
+ function hide(box,n){
+  box.dataset.state='hidden';
+  box.replaceChildren(el('span',{text:'Hidden: marked sensitive'}),
+   el('button',{type:'button',class:'btn small',text:'Show',onclick:()=>{say(box,'loading','');load(box,n,true);}}));}
+ // Not a picture: perhaps a short text. The service answers /text/ only for plain text (an older service not at all,
+ // which reads as "Not a picture" too). Trailing blank lines are left out; the size follows the length.
+ async function words(box,n,shown){
+  let res;
+  try{res=await fetch(new URL('text/'+n,ROOT),{signal:ctx.signal});}
+  catch{if(!ctx.signal.aborted)say(box,'none','Not a picture');return;}
+  if(!res.ok||!/^text\/plain\b/.test(res.headers.get('content-type')||'')){res.body?.cancel().catch(()=>{});return say(box,'none','Not a picture');}
+  if(res.headers.get('x-mordinal-sensitive')==='1'&&!shown){res.body?.cancel().catch(()=>{});return hide(box,n);}
+  let t;try{t=(await res.text()).replace(/\r\n?/g,'\n').replace(/\s+$/,'');}catch{if(!ctx.signal.aborted)say(box,'none','Not a picture');return;}
+  if(!t)return say(box,'none','Not a picture');
+  // Wide characters (CJK, emoji) take about two places.
+  const wide=s=>[...s].reduce((w,ch)=>w+(/[\p{Script=Han}\p{Script=Hangul}\p{Script=Hiragana}\p{Script=Katakana}\p{Extended_Pictographic}]/u.test(ch)?2:1),0);
+  const rows=t.split('\n'),width=wide(t),lines=rows.length;
+  const fit=lines===1&&width<=4?'xl':lines<=2&&width<=16?'l':width<=140&&lines<=6?'m':'s';
+  const span=el('span',{class:'mtext '+fit,text:t});
+  // A long text is sized by its longest line, so text art keeps its lines; lines longer than 72 places are prose,
+  // which wraps at about 44 places. (A custom property set through the style object, which the pages' policy allows.)
+  if(fit==='s'){const most=Math.max(...rows.map(wide));span.style.setProperty('--cols',String(most>72?44:Math.max(most,20)));}
+  box.dataset.state='text';box.replaceChildren(span);}
  return (n,{size='',hasContent=true}={})=>{
   const box=el('div',{class:('pic '+size).trim(),'data-picture':String(n)});
   if(!hasContent){say(box,'none','No picture');return box;}
