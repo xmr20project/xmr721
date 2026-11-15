@@ -1,5 +1,5 @@
 {
- "note": "Test data for claiming by burning (RULES.md section 10). hashToEc: the first 32 hash_to_ec cases of Monero's tests/crypto/tests.txt (input, point). mainnet: one real pair of transactions, as a Monero node returns them with get_transactions decode_as_json (pruned): a registration in the original Mordinals format in block 3,806,656 and the transfer of its owner output to the burn address in block 3,806,759. That inscription is not on the ledger's owner list; tests put it on a list of their own.",
+ "note": "Test data for claiming by burning (RULES.md section 10). hashToEc: the first 32 hash_to_ec cases of Monero's tests/crypto/tests.txt (input, point). mainnet: one real pair of transactions, as a Monero node returns them with get_transactions decode_as_json (pruned): a registration in the original Mordinals format in block 3,806,656 and the transfer of its owner output to the burn address in block 3,806,759. That inscription is not on the ledger's owner list; tests put it on a list of their own. texts: what a transfer's text may be, with {address} standing for a main address or subaddress of the ledger's network; the same cases are run against the tool that builds burning transfers.",
  "burnAddress": {
   "mainnet": "4B1DGeU3FMvAP6pv3JPYkJ2hCSZPzj7VGAYUk4LT73BGNYXHuc1X6kcQSiPn9ydpMFNd8t4H6J1pcR9qs7Tb6DLSLs5y93o",
   "stagenet": "5BDFMVNzty2AP6pv3JPYkJ2hCSZPzj7VGAYUk4LT73BGNYXHuc1X6kcQSiPn9ydpMFNd8t4H6J1pcR9qs7Tb6DLSLvphcAv",
@@ -147,5 +147,35 @@
    }
   },
   "claimedBy": "43svwfktK9iEsgwuk3Z3D5WLH1uhw9CDD2YUYknM23oDBijmpkMMazmPePU6DMVtvp3GgzQAhWZ6C5fx3usDtSmE45N814P"
+ },
+ "texts": {
+  "accepted": [
+   "xmr721 claim to {address}",
+   "xmr721 claim to {address}\n",
+   "xmr721 claim to {address}\r\n"
+  ],
+  "refused": [
+   "",
+   "{address}",
+   "xmr721 claim to",
+   "xmr721 claim to ",
+   "xmr721 claim to {address}\n\n",
+   "xmr721 claim to {address}\r\n\r\n",
+   "xmr721 claim to {address}\n\r",
+   "xmr721 claim to {address}\r",
+   "xmr721 claim to {address} ",
+   "xmr721 claim to {address} \n",
+   "xmr721 claim to {address}\t",
+   " xmr721 claim to {address}",
+   "\nxmr721 claim to {address}",
+   "XMR721 claim to {address}",
+   "xmr721 claim to  {address}",
+   "xmr721 claim to\n{address}",
+   "xmr721 claim to {address} and more",
+   "xmr721 claim to {address}{address}",
+   "xmr721 claim to {address}\u0000",
+   "claim to {address}",
+   "xmr721 claim to {address}\n\u00a0"
+  ]
  }
 }

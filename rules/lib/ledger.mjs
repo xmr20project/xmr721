@@ -8,13 +8,14 @@ import {sha256} from '@noble/hashes/sha256';
 import {hex,unhex} from './monero.mjs';
 import {claimKeyHash,verifyOutputKeySignature,parseInProof,verifyInProof,ownsOutput} from './claim.mjs';
 import {checkPaymentProof,paymentMessage} from './payment.mjs';
-import {deadOutputs,burnAddress,burnClaimId,readTransfer,claimTo,recordCost,movedOutput,paysBurnAddress} from './burn.mjs';
+import {RECORDS_OVERLAP,deadOutputs,burnAddress,burnClaimId,readTransfer,claimTo,recordCost,movedOutput,paysBurnAddress} from './burn.mjs';
 
 // mintFrom: the first block at which collection, mint and burn records count (a setting of the ledger, like the start
 // block). Without it those records are refused, and the ledger is one of Mordinals only.
-// burnFrom: the first block from which a Mordinal is claimed by burning it and in no other way (section 10; also a
-// setting of the ledger). burnDead: the fifteen dead outputs, for a chain that is not mainnet.
-export function createLedger({network='mainnet',domain,feeAddress,owners,height=0,mintFrom=null,minters=null,openFrom=null,burnFrom=null,burnDead=null}){
+// burnFrom: the first block from which a Mordinal is claimed by burning it (section 10; also a setting of the ledger).
+// Claim records still count for RECORDS_OVERLAP blocks from there, then no longer. burnDead: the fifteen dead outputs,
+// for a chain that is not mainnet; testChain says the chain is the offline test chain, whose addresses read as mainnet's.
+export function createLedger({network='mainnet',domain,feeAddress,owners,height=0,mintFrom=null,minters=null,openFrom=null,burnFrom=null,burnDead=null,testChain=false}){
  if(!/^[0-9a-f]{64}$/.test(domain||''))throw Error('Ledger domain required');
  if(mintFrom!==null&&!(Number.isInteger(mintFrom)&&mintFrom>=1))throw Error('Bad first mint block');
  // Who may make collections and mint: anyone (null), or the addresses the ledger's setup lists. Like the first mint
@@ -25,7 +26,7 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
  if(openFrom!==null&&!(Number.isInteger(openFrom)&&mayMint&&mintFrom!==null&&openFrom>mintFrom))throw Error('Bad opening block: it needs a minter list and comes after the first mint block');
  if(burnFrom!==null&&!(Number.isInteger(burnFrom)&&burnFrom>=1))throw Error('Bad first burn block');
  if(burnFrom===null&&burnDead!==null)throw Error('Dead outputs are named only with a first burn block');
- const dead=burnFrom===null?null:deadOutputs(burnDead,network),byOutput=new Map();
+ const dead=burnFrom===null?null:deadOutputs(burnDead,network,{testChain}),byOutput=new Map(),recordsEnd=burnFrom===null?null:burnFrom+RECORDS_OVERLAP;
  // The fee address is checked like every address in a record: both keys must be keys a wallet can use.
  {const a=decodeAddress(feeAddress,network);if(!usableSpendKey(a.spend)||!usableSpendKey(a.view))throw Error('The fee address has a key no wallet can use.');}
  const fee=canonical(feeAddress,network),mordinals=new Map(),byNumber=new Map(),lots=new Map(),open=new Set(),applied=new Set(),payments=new Set(),paidOutputs=new Set(),collections=new Map();let tip=height;
@@ -33,8 +34,9 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
   if(o.ownerTxPubKeys?.length!==1||o.ownerAdditionalPubKeys?.length)throw Error(`Owner list entry ${o.number} must have exactly one transaction public key`);
   const m={number:o.number,reg:o.registrationTx,ownerTx:o.ownerTx,outputKey:o.ownerOutputKey,txPub:o.ownerTxPubKeys[0],claimed:false,owner:null,seq:0,lot:null,history:[]};
   if(mordinals.has(m.reg)||byNumber.has(m.number))throw Error('Owner list repeats an entry');mordinals.set(m.reg,m);byNumber.set(m.number,m);
-  // A burn claim names a Mordinal by the global index of its owner output.
-  if(dead&&Number.isSafeInteger(o.ownerOutputIndex)){if(byOutput.has(o.ownerOutputIndex))throw Error('Owner list repeats an owner output');byOutput.set(o.ownerOutputIndex,m);}}
+  // A burn claim names a Mordinal by the global index of its owner output, so every entry has to state it.
+  if(dead){if(!Number.isSafeInteger(o.ownerOutputIndex)||o.ownerOutputIndex<0)throw Error(`Owner list entry ${o.number} does not state the global index of its owner output, which a ledger that claims by burning needs`);
+   if(byOutput.has(o.ownerOutputIndex))throw Error('Owner list repeats an owner output');byOutput.set(o.ownerOutputIndex,m);}}
  const find=x=>{const m=typeof x==='number'?byNumber.get(x):mordinals.get(x);if(!m)throw Error('This is not a Mordinal on the owner list.');return m;};
  const lotOf=id=>{const l=lots.get(id);if(!l)throw Error('This listing does not exist.');return l;};
  const latest=l=>l.reservations.at(-1)||null,running=l=>{const r=latest(l);return r&&heldUntil(r)>=tip?r:null;};
@@ -86,7 +88,8 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
   textOf,
   check(record,facts){return validate(record,facts);},
   // Claiming by burning (section 10). null on a ledger without it.
-  burn:dead?{from:burnFrom,dead:[...dead],address:burnAddress(network)}:null,
+  // recordsEnd: the first block at which a claim record no longer counts.
+  burn:dead?{from:burnFrom,recordsEnd,dead:[...dead],address:burnAddress(network)}:null,
   // A burn claim is a transaction, not a record: `parts` is what burnParts() takes from it (burn.mjs).
   checkBurnClaim(txid,parts){const v=burnClaim(txid,parts);return {id:v.id,number:v.mordinal.number,owner:v.to};},
   applyBurnClaim(txid,parts){const v=burnClaim(txid,parts),m=v.mordinal;
@@ -134,7 +137,7 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
    if(b.seq!==m.seq)throw Error('This record was signed for an earlier state of the Mordinal; prepare and sign it again.');
    if(m.lot)throw Error('This Mordinal is listed for sale; cancel the listing first.');signedBy(b.owner);return {...out,mordinal:m};}
   if(op===OP.claim){
-   if(burnFrom!==null&&tip>=burnFrom)throw Error(`From block ${burnFrom} a Mordinal is claimed by burning it; a claim record no longer counts.`);
+   if(recordsEnd!==null&&tip>=recordsEnd)throw Error(`From block ${recordsEnd} a Mordinal is claimed only by burning it; a claim record no longer counts.`);
    const m=find(b.reg);
    if(m.claimed)throw Error('This Mordinal is already claimed.');if(b.ownerTx!==m.ownerTx)throw Error('This is not the owner transaction of this Mordinal.');
    if(b.proof===PROOF.outputKey){if(!verifyOutputKeySignature(claimKeyHash(domain,bodyBytes),m.outputKey,proof.c,proof.r))throw Error('The signature was not made with the key of the owner coin.');}

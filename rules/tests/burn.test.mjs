@@ -8,11 +8,11 @@ import {createLedger} from '../lib/ledger.mjs';
 import {OP,encodeBody} from '../lib/records.mjs';
 import {hex,unhex,concat,encodeAddress,base58Encode,decodeAddress} from '../lib/monero.mjs';
 import {outputSecret,signWithOutputKey} from '../lib/claim.mjs';
-import {BURN,BURN_SPEND_TEXT,BURN_VIEW_TEXT,MAINNET_DEAD,burnAddress,hashToPoint,deadOutputs,recordCost,claimText,burnClaimId,readTransfer,transferExtra,claimTo,burnParts,movedOutput,paysBurnAddress} from '../lib/burn.mjs';
+import {BURN,BURN_SPEND_TEXT,BURN_VIEW_TEXT,MAINNET_DEAD,RECORDS_OVERLAP,EXTRA_LIMIT,isMainnetDead,burnAddress,hashToPoint,deadOutputs,recordCost,claimText,burnClaimId,readTransfer,transferExtra,claimTo,burnParts,movedOutput,paysBurnAddress} from '../lib/burn.mjs';
 import {wallet,makeTx,ownerEntry,makeInProof,makeBurn,burnParty,input,scalar,DOMAIN} from './helpers.mjs';
 import {transferOf,parseExtra,recordCost as originalCost} from './original-rules.mjs';
 const FIX=JSON.parse(readFileSync(new URL('./fixtures-burn.json',import.meta.url),'utf8')),enc=new TextEncoder();
-const XMR=10n**12n,FROM=110,ORIGINAL={deadAbove:70499730,deadBelow:70499747};
+const XMR=10n**12n,FROM=110,END=FROM+RECORDS_OVERLAP,ORIGINAL={deadAbove:70499730,deadBelow:70499747};
 // What the original rules make of a made-up transaction.
 const original=(t,o=ORIGINAL)=>transferOf({extra:t.tx.extra,inputs:t.tx.vin.map(i=>i.key.key_offsets),fee:t.tx.rct_signatures.txnFee},o);
 
@@ -41,16 +41,27 @@ test('the original fee rule, the dead outputs and the text',()=>{
  for(const [size,cost] of [[0,0n],[1,10n**9n],[111,10n**9n],[250,10n**9n],[251,2n*10n**9n],[500,2n*10n**9n],[501,3n*10n**9n]]){assert.equal(recordCost(size),cost);assert.equal(originalCost(size),cost);}
  assert.deepEqual(deadOutputs(null),[70499731,70499732,70499733,70499734,70499735,70499736,70499737,70499738,70499739,70499740,70499741,70499742,70499743,70499744,70499746]);
  assert.ok(!MAINNET_DEAD.includes(70499745));assert.equal(MAINNET_DEAD.length,15);
- assert.deepEqual(deadOutputs([20,5,6,7,8,9,10,11,12,13,14,15,16,17,18]),[5,6,7,8,9,10,11,12,13,14,15,16,17,18,20]);
- assert.throws(()=>deadOutputs(null,'stagenet'),/has to name its fifteen dead outputs/);
- for(const bad of [[],[1,2,3],[...MAINNET_DEAD,70499745],[...MAINNET_DEAD.slice(1),70499732],[...MAINNET_DEAD.slice(1),-1],[...MAINNET_DEAD.slice(1),1.5]])assert.throws(()=>deadOutputs(bad),/fifteen different global output indexes/);
+ assert.throws(()=>deadOutputs(null,'stagenet'),/has to name its fifteen dead outputs/);assert.throws(()=>deadOutputs(null,'mainnet',{testChain:true}),/has to name its fifteen dead outputs/);
+ // On mainnet the list is mainnet's: named or not, and nothing else. Only a test chain, or another network, names its own.
+ assert.deepEqual(deadOutputs([...MAINNET_DEAD].reverse()),[...MAINNET_DEAD]);assert.equal(isMainnetDead(deadOutputs(null)),true);assert.equal(isMainnetDead([5,6,7,8,9,10,11,12,13,14,15,16,17,18,20]),false);
+ assert.throws(()=>deadOutputs([5,6,7,8,9,10,11,12,13,14,15,16,17,18,20]),/On mainnet the dead outputs are fixed/);assert.throws(()=>deadOutputs([...MAINNET_DEAD.slice(0,14),70499745]),/On mainnet the dead outputs are fixed/);
+ assert.deepEqual(deadOutputs([20,5,6,7,8,9,10,11,12,13,14,15,16,17,18],'mainnet',{testChain:true}),[5,6,7,8,9,10,11,12,13,14,15,16,17,18,20]);assert.deepEqual(deadOutputs([20,5,6,7,8,9,10,11,12,13,14,15,16,17,18],'stagenet'),[5,6,7,8,9,10,11,12,13,14,15,16,17,18,20]);
+ assert.equal(RECORDS_OVERLAP,720);assert.equal(EXTRA_LIMIT,1060);
+ for(const bad of [[],[1,2,3],[...MAINNET_DEAD,70499745],[...MAINNET_DEAD.slice(1),70499732],[...MAINNET_DEAD.slice(1),-1],[...MAINNET_DEAD.slice(1),1.5]])assert.throws(()=>deadOutputs(bad,'mainnet',{testChain:true}),/fifteen different global output indexes/);
  const a=wallet('alice'),sub=a.sub(2),text=t=>claimTo(enc.encode(t));
  assert.equal(text(claimText(a.address)),a.address);assert.equal(text('xmr721 claim to '+sub.address),sub.address);
+ // One line end after the address is taken, as a text file often has one; the saved cases say what else is and is not.
+ for(const who of [a,sub]){for(const ok of FIX.texts.accepted)assert.equal(text(ok.replaceAll('{address}',who.address)),who.address,JSON.stringify(ok));
+  for(const bad of FIX.texts.refused)assert.throws(()=>text(bad.replaceAll('{address}',who.address)),/nothing else/,JSON.stringify(bad));}
+ assert.equal(text('xmr721 claim to '+a.address+'\n'),a.address);assert.equal(text('xmr721 claim to '+a.address+'\r\n'),a.address);assert.deepEqual(FIX.texts.accepted.map(x=>x.slice(25)),['','\n','\r\n']);
+ for(const end of ['\n\n',' ','\r','\n\r','\r\n\n',' \n','\n '])assert.throws(()=>text('xmr721 claim to '+a.address+end),/nothing else/,JSON.stringify(end));
+ // A long text is refused before it is read, whatever it holds.
+ assert.throws(()=>claimTo(new Uint8Array(200000).fill(65)),/nothing else/);assert.throws(()=>text('xmr721 claim to '+'1'.repeat(109)),/nothing else/);
  const integrated=(()=>{const body=concat(Uint8Array.of(19),a.spend,a.view,new Uint8Array(8).fill(7));return base58Encode(concat(body,keccak_256(body).subarray(0,4)));})();assert.equal(integrated.length,106);
  const stagenet=wallet('alice','stagenet').address,flipped=a.address.slice(0,-1)+(a.address.endsWith('1')?'2':'1');
  const small=encodeAddress({spend:Uint8Array.of(1,...new Uint8Array(31)),view:a.view}),smallView=encodeAddress({spend:a.spend,view:Uint8Array.of(1,...new Uint8Array(31))});
- for(const [bad,why] of [['',/nothing else/],[a.address,/nothing else/],['xmr721 claim to',/nothing else/],['xmr721 claim to ',/nothing else/],['xmr721 claim to '+a.address+' ',/nothing else/],['xmr721 claim to '+a.address+'\n',/nothing else/],
-  [' xmr721 claim to '+a.address,/nothing else/],['XMR721 claim to '+a.address,/nothing else/],['xmr721 claim to  '+a.address,/nothing else/],['xmr721 claim to '+a.address+' and more',/nothing else/],['xmr721 claim to '+a.address+a.address,/95 characters/],
+ for(const [bad,why] of [['',/nothing else/],[a.address,/nothing else/],['xmr721 claim to',/nothing else/],['xmr721 claim to ',/nothing else/],['xmr721 claim to '+a.address+' ',/nothing else/],['xmr721 claim to '+a.address+'\n\n',/nothing else/],
+  [' xmr721 claim to '+a.address,/nothing else/],['XMR721 claim to '+a.address,/nothing else/],['xmr721 claim to  '+a.address,/nothing else/],['xmr721 claim to '+a.address+' and more',/nothing else/],['xmr721 claim to '+a.address+a.address,/nothing else/],['xmr721 claim to '+a.address+'1',/95 characters/],['xmr721 claim to '+integrated+'\n',/not an integrated address/],
   ['xmr721 claim to '+a.address.slice(0,94),/95 characters/],['xmr721 claim to '+integrated,/not an integrated address/],['xmr721 claim to '+stagenet,/stagenet address/],['xmr721 claim to '+flipped,/cannot be used/],
   ['xmr721 claim to '+small,/key no wallet can use/],['xmr721 claim to '+smallView,/key no wallet can use/],['xmr721 claim to '+a.address.replace(/.$/,'é'),/nothing else/]])assert.throws(()=>text(bad),why,JSON.stringify(bad));
  assert.equal(claimTo(enc.encode('xmr721 claim to '+stagenet),'stagenet'),stagenet);});
@@ -63,6 +74,10 @@ test('a transfer is read from tx_extra more strictly than the original parser re
  const keys=[4,2,...pub,...pub],long=enc.encode('x'.repeat(300));
  same([1,...pub,...keys,0x11,text.length,...text]);same([0x11,text.length,...text,1,...pub]);same([1,...pub,1,...keccak_256(pub),0x11,text.length,...text]);same([1,...pub,2,0,0x11,0]);
  assert.equal(same([...transferExtra(pub,long)]).text.length,300);assert.equal(same([1,...pub,0x11,0]).text.length,0);
+ // At most 1,060 bytes, like a record's tx_extra: one byte more is no transfer, whatever it holds, and a list or a byte string alike.
+ {const nonces=n=>{const out=[];while(n>0){const k=Math.min(n,129);out.push(2,k-2,...new Uint8Array(k-2));n-=k;}return out;},fill=n=>[1,...pub,...nonces(n-35-text.length),0x11,text.length,...text],at=fill(1060),over=fill(1061);
+  assert.equal(at.length,1060);assert.equal(over.length,1061);assert.equal(hex(same(at).text),hex(text));assert.equal(readTransfer(over),null);assert.equal(readTransfer(Uint8Array.from(over)),null);assert.equal(parseExtra(over).ok,true);   // (the original parser has no such limit; a node relays no such transaction)
+  assert.equal(readTransfer([1,...pub,0x11,0xa0,0x9c,1,...new Uint8Array(20000).fill(66)]),null);assert.equal(readTransfer(new Uint8Array(5_000_000)),null);}
  // Not a transfer here: no public key, no text, two texts, a registration, padding, any other field, a length written long, bytes left over.
  for(const bad of [[],[1,...pub],[0x11,text.length,...text],[...plain,0x11,1,65],[...plain,0x10,1,65,1,66],[0x10,1,65,1,66,...plain],[...plain,0],[...plain,0,0],[...plain,3,1,0],[...plain,0xde,1,0],[...plain,0x12],[...plain,0x13],[...plain,5],
   [1,...pub,0x11,0x80|text.length,0,...text],[1,...pub,0x11,text.length+1,...text],[1,...pub,0x11,text.length-1,...text],[1,...pub.subarray(1),0x11,0],[1,...pub,2,0x80,2,...new Uint8Array(256),0x11,0],[1,...pub,4,1,0x11,0],[...plain,2,5,1],
@@ -70,7 +85,7 @@ test('a transfer is read from tx_extra more strictly than the original parser re
 
 test('a burn claim: the Mordinal belongs to the address in the text, as after a claim record',()=>{
  const {w,l,owners,claim0,burn,apply,refused}=world();
- assert.deepEqual(l.burn,{from:FROM,dead:[...MAINNET_DEAD],address:burnAddress()});
+ assert.deepEqual(l.burn,{from:FROM,recordsEnd:END,dead:[...MAINNET_DEAD],address:burnAddress()});
  l.setHeight(FROM);
  const t=burn('first',2,w.carol),out=apply(t);
  assert.deepEqual(out,{id:burnClaimId(DOMAIN,t.txid),number:2,owner:w.carol.address});
@@ -98,7 +113,9 @@ test('a burn claim is refused: text, fee, ring, owner output, burn address',()=>
  const {w,l,burn,refused,apply}=world();l.setHeight(FROM+5);
  const good=burn('good',1,w.carol);assert.equal(l.checkBurnClaim(good.txid,burnParts(good.tx)).number,1);
  // The text.
- refused(burn('t1',1,w.carol,{text:'xmr721 claim to '+w.carol.address+'\n'}),/nothing else/);
+ refused(burn('t1',1,w.carol,{text:'xmr721 claim to '+w.carol.address+'\n\n'}),/nothing else/);refused(burn('t1b',1,w.carol,{text:'xmr721 claim to '+w.carol.address+' '}),/nothing else/);
+ // One line end is part of an accepted text; the fee rule then counts it (113 bytes are still 0.001 XMR), and the original rules agree.
+ for(const end of ['\n','\r\n']){const t=burn('t1 '+JSON.stringify(end),1,w.carol,{text:'xmr721 claim to '+w.carol.address+end});assert.equal(l.checkBurnClaim(t.txid,burnParts(t.tx)).owner,w.carol.address);assert.equal(original(t).moved,1001);}
  refused(burn('t2',1,w.carol,{text:'claim to '+w.carol.address}),/nothing else/);
  refused(burn('t3',1,w.carol,{text:''}),/nothing else/);
  refused(burn('t4',1,w.carol,{text:'xmr721 claim to '+wallet('carol','stagenet').address}),/stagenet address/);
@@ -141,43 +158,56 @@ test('a burn claim is refused: text, fee, ring, owner output, burn address',()=>
  // None of the refusals changed anything.
  assert.deepEqual(l.toJSON().claimed,[]);assert.equal(apply(good).number,1);});
 
-test('before the first burn block claims are records; from it on they are burns, and earlier claims stay',()=>{
+test('burns count from the first burn block; claim records count for 720 blocks more, and the first valid claim wins',()=>{
  const {w,l,claim0,claim1,burn,apply,refused}=world();
  l.setHeight(FROM-1);
  refused(burn('early',2,w.carol),/Claiming by burning starts at block 110/);
- l.apply(claim0(0,w.alice));l.apply(claim1(4,w.carol));assert.equal(l.mordinal(0).owner,w.alice.address);
- const late0=claim0(1,w.alice),late1=claim1(5,w.carol);assert.equal(l.check(late0).op,OP.claim);assert.equal(l.check(late1).op,OP.claim);
+ l.apply(claim0(0,w.alice));assert.equal(l.mordinal(0).owner,w.alice.address);
+ // In the overlap both count. A holder whose burn was mined a block early, where it claimed nothing, claims by record
+ // with the one-time key: that needs the keys, not the coin.
  l.setHeight(FROM);
- assert.throws(()=>l.check(late0),/From block 110 a Mordinal is claimed by burning it; a claim record no longer counts/);assert.throws(()=>l.apply(late1),/claimed by burning it/);
- // The refusal comes before the checks of the claim itself (here: a Mordinal that is claimed already).
- assert.throws(()=>l.check(claim0(0,w.alice,w.dave)),/claimed by burning it/);
- // Claimed before: it stays claimed, moves on as before, and cannot be claimed again by burning its coin.
- assert.equal(l.mordinal(0).claimed,true);refused(burn('late',0,w.dave),/already claimed/);
+ l.apply(claim1(4,w.carol));assert.equal(l.mordinal(4).owner,w.carol.address);
+ l.apply(claim0(2,w.bob,w.carol));assert.equal(l.mordinal(2).owner,w.carol.address);refused(burn('early again',2,w.dave),/already claimed/);
+ // The first valid claim wins, whichever kind it is.
+ const b3=burn('three',3,w.dave);apply(b3);assert.throws(()=>l.check(claim0(3,w.bob)),/This Mordinal is already claimed/);assert.equal(l.mordinal(3).owner,w.dave.address);
+ // Claimed before the first burn block: it stays claimed, moves on as before, and cannot be claimed again by burning its coin.
+ refused(burn('late',0,w.dave),/already claimed/);
  const mv=l.prepareMove({mordinal:0,from:w.alice.address,to:w.bob.address});l.apply(l.sign(mv.bodyBytes,w.alice.sign(mv.text)));assert.equal(l.mordinal(0).owner,w.bob.address);
- // Two burn claims of one Mordinal: the first counts.
- const one=burn('one',2,w.carol),two=burn('two',2,w.dave);assert.equal(l.checkBurnClaim(two.txid,burnParts(two.tx)).owner,w.dave.address);
- apply(one);refused(two,/already claimed/);assert.throws(()=>apply(two),/already claimed/);assert.equal(l.mordinal(2).owner,w.carol.address);
+ // The last block of the overlap, and the first block after it.
+ const late0=claim0(1,w.alice),late1=claim1(5,w.carol);
+ l.setHeight(END-1);assert.equal(l.check(late0).op,OP.claim);assert.equal(l.check(late1).op,OP.claim);
+ l.setHeight(END);assert.equal(END,830);
+ assert.throws(()=>l.check(late0),/From block 830 a Mordinal is claimed only by burning it; a claim record no longer counts/);assert.throws(()=>l.apply(late1),/claimed only by burning it/);
+ // The refusal comes before the checks of the claim itself (here: a Mordinal that is claimed already).
+ assert.throws(()=>l.check(claim0(0,w.alice,w.dave)),/claimed only by burning it/);
+ // Burns go on, and two burn claims of one Mordinal are one claim: the first.
+ const one=burn('one',1,w.carol),two=burn('two',1,w.dave);assert.equal(l.checkBurnClaim(two.txid,burnParts(two.tx)).owner,w.dave.address);
+ apply(one);refused(two,/already claimed/);assert.throws(()=>apply(two),/already claimed/);assert.equal(l.mordinal(1).owner,w.carol.address);
  // A ledger without the setting: claim records count at any height, and no burn does.
- const plain=world({burnFrom:null});plain.l.setHeight(FROM+100);assert.equal(plain.l.burn,null);
+ const plain=world({burnFrom:null});plain.l.setHeight(END+100);assert.equal(plain.l.burn,null);
  plain.refused(plain.burn('none',2,w.carol),/Claiming by burning is not part of this ledger/);plain.l.apply(plain.claim0(2,w.bob));assert.equal(plain.l.mordinal(2).owner,w.bob.address);});
 
 test('the setting: a first burn block, dead outputs for a chain that is not mainnet, owner outputs named once',()=>{
  const w=wallet('alice'),fee=wallet('fee'),owners=[0,1].map(i=>ownerEntry(i,makeTx('setting '+i,[{to:w,amount:10n**9n}]))),base={domain:DOMAIN,feeAddress:fee.address,owners,height:10};
  for(const bad of [0,-1,1.5,'7'])assert.throws(()=>createLedger({...base,burnFrom:bad}),/Bad first burn block/);
  assert.throws(()=>createLedger({...base,burnDead:[...MAINNET_DEAD]}),/only with a first burn block/);
- assert.throws(()=>createLedger({...base,burnFrom:20,burnDead:[1,2,3]}),/fifteen different/);
+ assert.throws(()=>createLedger({...base,burnFrom:20,burnDead:[1,2,3],testChain:true}),/fifteen different/);
  assert.throws(()=>createLedger({...base,burnFrom:20,owners:[owners[0],{...owners[1],ownerOutputIndex:owners[0].ownerOutputIndex}]}),/repeats an owner output/);
  // Without the setting the same list is taken as before: the index is not looked at.
  createLedger({...base,owners:[owners[0],{...owners[1],ownerOutputIndex:owners[0].ownerOutputIndex}]});
  // A test chain names its own dead outputs: here 5 to 20 without 19, the shape of mainnet's.
- const dead=[5,6,7,8,9,10,11,12,13,14,15,16,17,18,20],l=createLedger({...base,burnFrom:20,burnDead:dead});l.setHeight(20);assert.deepEqual(l.burn.dead,dead);
+ // On mainnet itself no other list is taken: a ledger says that it stands on a test chain.
+ const dead=[5,6,7,8,9,10,11,12,13,14,15,16,17,18,20];assert.throws(()=>createLedger({...base,burnFrom:20,burnDead:dead}),/On mainnet the dead outputs are fixed/);
+ assert.throws(()=>createLedger({...base,burnFrom:20,testChain:true}),/has to name its fifteen dead outputs/);assert.deepEqual(createLedger({...base,burnFrom:20,burnDead:[...MAINNET_DEAD]}).burn.dead,[...MAINNET_DEAD]);
+ const l=createLedger({...base,burnFrom:20,burnDead:dead,testChain:true});l.setHeight(20);assert.deepEqual(l.burn.dead,dead);
  const ok=makeBurn('chain 1',{output:1001,to:w,dead}),with19=makeBurn('chain 2',{output:1001,to:w,ring:[...dead.slice(1),19,1001]}),mainnet=makeBurn('chain 3',{output:1001,to:w});
  assert.throws(()=>l.checkBurnClaim(with19.txid,burnParts(with19.tx)),/holds output 19, which is not one of the dead outputs/);
  assert.throws(()=>l.checkBurnClaim(mainnet.txid,burnParts(mainnet.tx)),/No input/);
  assert.equal(l.applyBurnClaim(ok.txid,burnParts(ok.tx)).number,1);assert.equal(original(ok,{deadAbove:4,deadBelow:21}).moved,1001);
- // An entry without an index cannot be claimed by burning.
- const {ownerOutputIndex,...bare}=owners[0],l2=createLedger({...base,owners:[bare,owners[1]],burnFrom:20});l2.setHeight(20);
- const lost=makeBurn('chain 4',{output:1000,to:w});assert.throws(()=>l2.checkBurnClaim(lost.txid,burnParts(lost.tx)),/not the owner output of a Mordinal on the owner list/);
+ // Every entry has to state its owner output's index: a ledger that claims by burning does not open without it.
+ const {ownerOutputIndex,...bare}=owners[0];
+ for(const entry of [bare,{...bare,ownerOutputIndex:null},{...bare,ownerOutputIndex:'1000'},{...bare,ownerOutputIndex:-1},{...bare,ownerOutputIndex:1.5}])assert.throws(()=>createLedger({...base,owners:[entry,owners[1]],burnFrom:20}),/Owner list entry 0 does not state the global index of its owner output/);
+ createLedger({...base,owners:[bare,owners[1]]});
  // On stagenet the list has to be named, and the text takes stagenet addresses.
  const sw=wallet('alice','stagenet'),sfee=wallet('fee','stagenet');assert.throws(()=>createLedger({...base,network:'stagenet',feeAddress:sfee.address,burnFrom:20}),/has to name its fifteen dead outputs/);
  const s=createLedger({...base,network:'stagenet',feeAddress:sfee.address,burnFrom:20,burnDead:dead});s.setHeight(20);assert.equal(s.burn.address,burnAddress('stagenet'));

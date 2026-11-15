@@ -6,6 +6,7 @@
 // burn address, which nobody can spend from, and the text names the address that owns the Mordinal from then on.
 //
 //   text        "xmr721 claim to <address>"      a main address or a subaddress of the ledger's network, nothing else
+//                                                (one line end after it is allowed: wallets read the text from a file)
 //   ring        the fifteen dead outputs and one other output: the owner output, by its global output index
 //   output 0    P = Hs(8·a·R ‖ varint 0)·G + B   R = the first transaction public key in tx_extra,
 //                                                a, B = the burn address's view secret key (public) and spend key
@@ -49,17 +50,26 @@ const viewSecret=Hs(enc.encode(BURN_VIEW_TEXT)),spendPoint=hashToPoint(keccak_25
 export const BURN={spend:hex(spendPoint.toRawBytes()),view:hex(G.multiply(viewSecret).toRawBytes()),viewSecret:hex(leBytes(viewSecret))};
 export const burnAddress=(network='mainnet')=>encodeAddress({spend:unhex(BURN.spend),view:unhex(BURN.view),kind:'main',network});
 
-// The dead outputs of mainnet, by global output index: the fifteen the 2023 wallet put into every transfer ring. Their
-// keys are bytes no secret key is known for. The original rule counts every index from 70499731 to 70499746 as dead;
-// 70499745 is left out here because its key is an ordinary one that somebody may hold.
+// The dead outputs of mainnet, by global output index: the fifteen the 2023 wallet put into every transfer ring. All
+// fifteen carry one key, the `dead_key` constant of the original source (deadbeef…dead000f): a pattern of bytes, not a
+// key made from a secret. The original rule counts every index from 70499731 to 70499746 as dead; 70499745 is the
+// ordinary sixteenth output of the transaction that made them and is left out here, because somebody may hold its key.
 export const MAINNET_DEAD=Object.freeze([70499731,70499732,70499733,70499734,70499735,70499736,70499737,70499738,70499739,70499740,70499741,70499742,70499743,70499744,70499746]);
-// The list a ledger uses: mainnet's own, or the one its setup names (a test chain has other outputs). Fifteen
+// The list a ledger uses. On mainnet it is mainnet's own and nothing else. A ledger on another network names its
+// fifteen, and so does one on the offline test chain, whose addresses are written like mainnet's (testChain): fifteen
 // different indexes, in rising order.
-export function deadOutputs(list,network='mainnet'){
- if(list==null){if(network!=='mainnet')throw Error('A ledger on this network has to name its fifteen dead outputs.');return [...MAINNET_DEAD];}
+export function deadOutputs(list,network='mainnet',{testChain=false}={}){
+ if(list==null){if(network!=='mainnet'||testChain)throw Error('A ledger on this network has to name its fifteen dead outputs.');return [...MAINNET_DEAD];}
  const d=[...list].map(Number).sort((a,b)=>a-b);
  if(d.length!==15||d.some((v,i)=>!Number.isSafeInteger(v)||v<0||(i&&v===d[i-1])))throw Error('The dead outputs are fifteen different global output indexes.');
+ if(network==='mainnet'&&!testChain&&d.some((v,i)=>v!==MAINNET_DEAD[i]))throw Error('On mainnet the dead outputs are fixed; other ones can be named only on a test chain.');
  return d;}
+export const isMainnetDead=list=>list.length===15&&list.every((v,i)=>v===MAINNET_DEAD[i]);
+// Claim records still count for this many blocks (about a day) from the first burn block on. A holder whose burn got
+// into a block just before the first burn block, where it claims nothing, can then still claim by record.
+export const RECORDS_OVERLAP=720;
+// A transfer's tx_extra is at most this long, like a record's (the most a node relays).
+export const EXTRA_LIMIT=1060;
 
 // The fee the original rules ask for a record of `size` bytes (get_inscription_record_cost).
 export const recordCost=size=>(BigInt(size)*4000000n+999999999n)/1000000000n*1000000000n;
@@ -70,9 +80,11 @@ export const burnClaimId=(domain,txid)=>hex(sha256(concat(enc.encode('XMR721-BUR
 // The transfer a tx_extra carries, or null. Read more strictly than the original parser reads: only a transaction
 // public key (01), a nonce (02), additional public keys (04) and one transfer field (11), each whole, every length
 // written the shortest way, nothing left over. Whatever passes here the original parser reads to the end and finds the
-// same field in; a tx_extra with a registration (10), padding or anything else is not a burn claim.
+// same field in; a tx_extra with a registration (10), padding or anything else is not a burn claim, and neither is one
+// longer than 1,060 bytes.
 export function readTransfer(extra){
- const b=extra instanceof Uint8Array?extra:Array.isArray(extra)&&extra.every(v=>Number.isInteger(v)&&v>=0&&v<=255)?Uint8Array.from(extra):null;if(!b)return null;
+ if(!(extra instanceof Uint8Array||Array.isArray(extra))||extra.length>EXTRA_LIMIT)return null;
+ const b=extra instanceof Uint8Array?extra:extra.every(v=>Number.isInteger(v)&&v>=0&&v<=255)?Uint8Array.from(extra):null;if(!b)return null;
  let at=0,txPub=null,text=null;
  const count=()=>{let n=0,scale=1;for(let i=0;i<4;i++){if(at>=b.length)return -1;const v=b[at++];if(i&&!v)return -1;n+=(v&127)*scale;scale*=128;if(!(v&128))return n;}return -1;};
  while(at<b.length){const tag=b[at++];
@@ -87,10 +99,14 @@ export function transferExtra(txPub,text,{paymentId=null}={}){
  const t=typeof text==='string'?enc.encode(text):text,n=t.length;if(n>=16384)throw Error('Text too long');
  return Uint8Array.from([1,...(typeof txPub==='string'?unhex(txPub):txPub),...(paymentId?[2,9,1,...paymentId]:[]),0x11,...(n<128?[n]:[(n&127)|128,n>>7]),...t]);}
 
-// The address a transfer's text claims for: exactly "xmr721 claim to " and one main address or subaddress.
+// The address a transfer's text claims for: exactly "xmr721 claim to " and one main address or subaddress, then
+// nothing, or one line end ("\n" or "\r\n": the wallets read the text from a file, and many files end that way).
+const NOT_A_CLAIM='The text of this transfer is not "xmr721 claim to <address>" and nothing else.',LONGEST=CLAIM_PREFIX.length+106+2;
 export function claimTo(text,network='mainnet'){
- const s=String.fromCharCode(...text),m=/^xmr721 claim to ([1-9A-HJ-NP-Za-km-z]+)$/.exec(s);
- if(!m)throw Error('The text of this transfer is not "xmr721 claim to <address>" and nothing else.');
+ if(text.length>LONGEST)throw Error(NOT_A_CLAIM);
+ let s='';for(let i=0;i<text.length;i++)s+=String.fromCharCode(text[i]);
+ const m=/^xmr721 claim to ([1-9A-HJ-NP-Za-km-z]+)(?:\r?\n)?$/.exec(s);
+ if(!m)throw Error(NOT_A_CLAIM);
  let a;try{a=decodeAddress(m[1],network);}catch(e){throw Error('The address in the text cannot be used: '+e.message);}
  if(!usableSpendKey(a.spend)||!usableSpendKey(a.view))throw Error('The address in the text has a key no wallet can use.');
  return encodeAddress(a);}
