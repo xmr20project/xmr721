@@ -3,8 +3,8 @@
 // format, built by a separate tool and accepted by a real node; the reader finds the transfer in a real block, as the
 // node returns it, and gives the Mordinal to the address in its text.
 // The tool is not part of this repository: MORDINAL_OLD names its binary (a wallet that builds original-format
-// registrations and transfers to the burn address: `init`, `mint-old`, `transfer-old`, `publish`). Without it the test
-// is skipped.
+// registrations and transfers to the burn address: `init`, `mint-old`, `transfer-old`, `publish`; it takes the owner
+// list and the first burn block, and builds no burn before that block). Without it the test is skipped.
 //   MONERO_BIN=<folder with monerod> MORDINAL_OLD=<path to the tool> node --test reader/tests/lab-burn.test.mjs   (about a minute)
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,6 +15,7 @@ import {randomBytes} from 'node:crypto';
 import {hex} from '../../rules/lib/monero.mjs';
 import {burnAddress,burnClaimId,burnParts,readTransfer} from '../../rules/lib/burn.mjs';
 import {call,startChain,stopAll} from '../../rules/tests/lab-harness.mjs';
+import {wallet} from '../../rules/tests/helpers.mjs';
 import {transferOf} from '../../rules/tests/original-rules.mjs';
 import {startService} from '../service.mjs';
 import {verify,download} from '../tools/verify.mjs';
@@ -51,29 +52,36 @@ test('a real burning transfer on a test chain is found by the reader and claims 
   const info=await get('/info');assert.equal(info.burnFrom,start+2);assert.deepEqual(info.burn.dead,DEAD);assert.equal(info.burn.address,burnAddress());
   assert.equal((await get('/mordinal/0')).mordinal.ownerOutput,owners[0].ownerOutputIndex);
 
-  // The burn of Mordinal 0, naming the receiver; and a transfer of Mordinal 1 to the burn address with another text.
-  await writeFile(join(dir,'claim.txt'),'xmr721 claim to '+receiver);await writeFile(join(dir,'other.txt'),'a transfer with another text');
-  const burn=await tool('holder','transfer-old',owners[0].registrationTx,join(dir,'claim.txt'),'--dead','5-18,20');
-  const other=await tool('holder','transfer-old',owners[1].registrationTx,join(dir,'other.txt'),'--dead','5-18,20');
-  await mine(1);await pass();                                 // block start+1: before the first burn block
-  await tool('holder','publish',burn.blob);await tool('holder','publish',other.blob);await mine(1);await pass();   // block start+2
-  const t=await node(burn.txid);assert.equal(t.height,start+2);
+  assert.equal(info.burn.recordsEnd,start+2+720);
+  // The tool builds no burn before the first burn block: such a transfer would claim nothing and could not be made again.
+  const burnArgs=['--dead','5-18,20','--owners',join(dir,'owners.jsonl'),'--burn-from',String(start+2),'--margin','0'],other=wallet('lab burn receiver').sub(3).address;
+  await writeFile(join(dir,'claim.txt'),'xmr721 claim to '+receiver+'\n');await writeFile(join(dir,'other.txt'),'  xmr721 claim to '+other+'\r\n');await writeFile(join(dir,'bad.txt'),'a transfer with another text');
+  await assert.rejects(tool('holder','transfer-old',owners[0].registrationTx,join(dir,'claim.txt'),...burnArgs),/Too early: the ledger counts burns from block/);
+  await mine(2);await pass();assert.equal(await tip(),start+2);
+  await assert.rejects(tool('holder','transfer-old',owners[1].registrationTx,join(dir,'bad.txt'),...burnArgs),/has to be exactly "xmr721 claim to <address>"/);
+  // The burn of Mordinal 0, naming the receiver, and of Mordinal 1, naming a subaddress of another wallet. The tool
+  // trims the text files: the transfers carry the text and nothing else.
+  const burn=await tool('holder','transfer-old',owners[0].registrationTx,join(dir,'claim.txt'),...burnArgs);
+  const second=await tool('holder','transfer-old',owners[1].registrationTx,join(dir,'other.txt'),...burnArgs);
+  assert.equal(burn.text,'xmr721 claim to '+receiver);assert.equal(second.text,'xmr721 claim to '+other);
+  await tool('holder','publish',burn.blob);await tool('holder','publish',second.blob);await mine(1);await pass();   // block start+3
+  const t=await node(burn.txid);assert.equal(t.height,start+3);
   // What the node returned is what the rule read: the text, the ring of the fifteen and the owner output, the fee.
   assert.equal(Buffer.from(readTransfer(t.tx.extra).text).toString(),'xmr721 claim to '+receiver);
   const ring=(()=>{let at=0;return t.tx.vin[0].key.key_offsets.map(o=>at+=o);})();assert.deepEqual(ring,[...DEAD,owners[0].ownerOutputIndex].sort((a,b)=>a-b));
   assert.ok(BigInt(t.tx.rct_signatures.txnFee)>=10n**9n);
-  // The reader: Mordinal 0 belongs to the receiver, claimed by burning; Mordinal 1's transfer is refused for its text.
+  // The reader: both Mordinals belong to the addresses in the texts, claimed by burning.
   const m=await get('/mordinal/0'),id=burnClaimId(DOMAIN,burn.txid);
   assert.equal(m.mordinal.claimed,true);assert.equal(m.mordinal.owner,receiver);assert.equal(m.mordinal.seq,0);
   assert.deepEqual(m.history.map(h=>[h.kind,h.proof??null,h.txid]),[['inscribed',null,owners[0].registrationTx],['claim','burn',burn.txid]]);
-  const entry=(await get('/entry/'+burn.txid)).entry;assert.deepEqual({...entry,pos:0},{txid:burn.txid,height:start+2,pos:0,id,op:null,kind:'burn claim',number:0,to:receiver,ok:true});
-  const refused=(await get('/entry/'+other.txid)).entry;assert.equal(refused.ok,false);assert.match(refused.error,/is not "xmr721 claim to <address>" and nothing else/);
-  assert.equal((await get('/mordinal/1')).mordinal.claimed,false);
-  assert.deepEqual(service.reader.journal.find(e=>e.txid===burn.txid).burn,burnParts(t.tx));
+  const entry=(await get('/entry/'+burn.txid)).entry;assert.deepEqual({...entry,pos:0},{txid:burn.txid,height:start+3,pos:0,id,op:null,kind:'burn claim',number:0,to:receiver,ok:true});
+  assert.equal((await get('/mordinal/1')).mordinal.owner,other);
+  const burns=(await get('/burns')).burns;assert.deepEqual(burns.map(x=>x.txid).sort(),[burn.txid,second.txid].sort());assert.deepEqual(burns.find(x=>x.txid===burn.txid).burn,burnParts(t.tx));
   // The original rules read the same transaction as a transfer of the same output.
   assert.deepEqual(transferOf({extra:t.tx.extra,inputs:t.tx.vin.map(i=>i.key.key_offsets),fee:t.tx.rct_signatures.txnFee},{deadAbove:4,deadBelow:21}),{moved:owners[0].ownerOutputIndex,text:'xmr721 claim to '+receiver});
-  // The check tool replays the log and finds each entry on the node as logged.
+  // The check tool replays the log and finds each entry on the node as logged (the node is the offline test chain,
+  // which is what lets this ledger name dead outputs of its own).
   await mine(2);await pass();
-  const checked=await verify({...await download(base),owners,chain:createChain(chain.url)});assert.deepEqual(checked,{ok:true,problems:[],accepted:1,refused:1,checkpoints:checked.checkpoints,checkedOnNode:2});
+  const checked=await verify({...await download(base),owners,chain:createChain(chain.url)});assert.deepEqual(checked,{ok:true,problems:[],accepted:2,refused:0,checkpoints:checked.checkpoints,checkedOnNode:2});
   assert.ok(checked.checkpoints>=1);assert.equal((await get('/checkpoint')).burnFrom,start+2);
  }finally{if(service)await service.close();await stopAll([chain]);await rm(dir,{recursive:true,force:true});}});
