@@ -96,9 +96,9 @@ what the ledger applies.
 The first valid claim for a Mordinal wins. `ownerTx` must be the owner transaction on the
 owner list. The Mordinal then belongs to `to`. Claims have no deadline.
 
-On a ledger with a first burn block, claim records count only in the blocks before it; from
-that block on a Mordinal is claimed as section 10 says. What follows describes the claim
-record.
+On a ledger with a first burn block, claim records count up to 720 blocks past it and no
+longer after that; from the first burn block on a Mordinal is claimed as section 10 says.
+What follows describes the claim record.
 
 The owner coin is output 0 of the owner transaction, with one-time key `P` and transaction
 public key `R`.
@@ -283,8 +283,9 @@ therefore carries proofs and no key.
 6. The owner coin and claiming. A claim record (section 3) does not spend the owner coin:
    after such a claim it is an ordinary coin. A burn claim (section 10) is the opposite: it
    **is** a spend of the owner coin, in a transaction whose ring is chosen so that everyone
-   sees which coin is spent. On a ledger with a first burn block every claim from that block
-   on is of this kind, and rules 1 and 2 do not hold for it: the transaction shows the
+   sees which coin is spent. On a ledger with a first burn block every claim is of this kind
+   once claim records have stopped (720 blocks after that block), and rules 1 and 2 do not
+   hold for it: the transaction shows the
    coin's key image, and its ring is fifteen fixed outputs and the owner coin. Nothing after
    the claim (move, list, cancel, reserve, buy, burn record) spends or names a coin.
 
@@ -339,8 +340,9 @@ kept for that.
 | Claim deadline | none | — | decided |
 | Old-style transfers after the start block | not honoured, except the burning transfer of section 10 on a ledger that has it | owner list | decided |
 | First burn block | not set | ledger setup | draft |
+| Claim records after the first burn block | 720 more blocks (about a day) | `RECORDS_OVERLAP` | draft |
 | Burn address | section 10 | `rules/lib/burn.mjs` | draft |
-| Dead outputs (mainnet) | 70499731–70499744 and 70499746 | `MAINNET_DEAD` | draft |
+| Dead outputs (mainnet) | 70499731–70499744 and 70499746, fixed | `MAINNET_DEAD` | draft |
 | Payment-proof claim (proof 1) | kept; wallets warn what it shows | section 3 | decided |
 | Buy record size | 296 or 425 bytes | record format | decided |
 | Domain, fee address, start block | test values only | ledger setup | open |
@@ -445,15 +447,24 @@ A ledger's setup may name a **first burn block**. Like the first mint block it i
 the ledger and shared by every reader of it; a checkpoint names it from that block on.
 From that block on:
 
-1. **Claim records no longer count.** A claim record (op 1, either proof) in a block at or
-   after the first burn block is refused. Claims accepted in earlier blocks stay as they
-   are: those Mordinals are claimed, their owner coins were not burned, and they cannot be
-   claimed again.
-2. **A Mordinal is claimed by burning it**: by a transfer in the original 2023 Mordinals
+1. **A Mordinal is claimed by burning it**: by a transfer in the original 2023 Mordinals
    format that moves it to an address nobody can spend from and names, in its text, the
    address that owns it from then on. Such a transaction is called a burn claim. It is not
    an MD1 record and needs no signature of its own: only the holder of the owner coin can
-   spend it.
+   spend it. A burning transfer in a block **before** the first burn block claims nothing,
+   and its coin is spent.
+2. **Claim records stop 720 blocks later.** A claim record (op 1, either proof) still counts
+   in the 720 blocks from the first burn block on (about one day; one fixed number, not a
+   setting) and is refused in every block after them. In those 720 blocks both ways count
+   and the first valid claim of a Mordinal wins. The overlap is for a holder whose burn got
+   into a block just before the first burn block, by sending early or because blocks were
+   replaced: the burn claimed nothing, but a claim record signed with the coin's one-time
+   key (proof 0) needs the keys and not the coin, and still claims the Mordinal. After the
+   overlap there is no such way. Claims accepted earlier stay as they are: those Mordinals
+   are claimed, their owner coins were not burned, and they cannot be claimed again.
+
+Every entry of the owner list has to state the global index of its owner output; a ledger
+with a first burn block does not open over a list that lacks one.
 
 ### The burn claim
 
@@ -461,8 +472,8 @@ A transaction in a block at or after the first burn block is a burn claim when a
 holds. The checks are made in this order, and the first that fails is the reason a reader
 writes down.
 
-**(a) The text.** `tx_extra` holds a transfer field of the original format, tag `0x11`: a
-length and that many bytes of text.
+**(a) The text.** `tx_extra` is at most 1,060 bytes (the limit of section 8) and holds a
+transfer field of the original format, tag `0x11`: a length and that many bytes of text.
 
 ```
 tx_extra = fields, in any order, each whole, nothing left over:
@@ -475,8 +486,9 @@ lengths and counts are varints written the shortest way
 
 This is narrower than the original parser on purpose. Whatever passes here the original
 parser reads to the end and finds the same `0x11` field in, with no registration (`0x10`)
-before it; a `tx_extra` with any other field, with padding, with two transfer fields or
-with a registration is not a burn claim, whatever the original rules make of it. A
+before it; a `tx_extra` with any other field, with padding, with two transfer fields, with
+a registration or of more than 1,060 bytes is not a burn claim, whatever the original rules
+make of it. A
 transaction whose `tx_extra` does not read this way is not looked at; one that does is
 judged and, when refused, kept in a reader's journal with the reason.
 
@@ -487,8 +499,12 @@ xmr721 claim to <address>
 ```
 
 in ASCII: these sixteen characters, then one main address or subaddress of the ledger's
-network, and nothing before, between or after (no line end). An integrated address is
-refused, and so is an address with a key no wallet could use (section 2).
+network, with nothing before or between. After the address the text ends, or has **one**
+line end: a line feed (`0x0a`), or a carriage return and a line feed (`0x0d 0x0a`). Wallets
+read the text from a file, and a file often ends that way (of 100 transfers of 2023
+that were looked at, 20 carry a text and 13 of those end in a line break). Anything else after the address (a space, a second line end, a lone
+carriage return) is refused. An integrated address is refused, and so is an address with a
+key no wallet could use (section 2). A line end is part of the text for the fee rule.
 
 **(b) The fee.** The transaction's fee is at least what the original rules ask for a text of
 that length: 4,000,000 piconero for each byte, rounded up to a multiple of 0.001 XMR (0.001
@@ -528,15 +544,24 @@ wins. When blocks are replaced, burn claims in them are undone like records.
 ### Dead outputs
 
 On mainnet the dead outputs are the global output indexes **70499731 to 70499744 and
-70499746**: the fifteen the 2023 wallet put into every transfer ring. Their keys are bytes
-that begin `deadbeef…`, for which nobody has shown a secret key. The original rule counts
-every index from 70499731 to 70499746 as dead. **70499745 is left out here**: its key is an
-ordinary one that somebody may hold, and whoever holds it could sign a ring of "dead"
-outputs and any Mordinal's owner output without owning that Mordinal. A ring with 70499745
-in it claims nothing here (the original rules still read it as a transfer).
+70499746**: the fifteen the 2023 wallet put into every transfer ring. All fifteen carry the
+**same key**, `deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdead000f`, the
+`dead_key` constant of the original source: a pattern of bytes written into the outputs,
+not a key made from a secret. The bytes do decode to a point of the main group, so a secret
+key for it exists as a number; finding it is the discrete logarithm problem for a point
+nobody chose.
 
-A ledger on another network, or a test chain, names its own fifteen in its setup; they are
-then part of what a checkpoint states.
+The original rule counts every index from 70499731 to 70499746 as dead. **70499745 is left
+out here**: it is the ordinary sixteenth output of the transaction that made the fifteen
+(its change), with an ordinary key that whoever made that transaction may hold. Whoever
+holds it could sign a ring of "dead" outputs and any Mordinal's owner output without owning
+that Mordinal. A ring with 70499745 in it claims nothing here (the original rules still
+read it as a transfer).
+
+On mainnet this list is fixed: a mainnet ledger with other dead outputs is refused. A
+ledger on another network names its own fifteen in its setup, and so does one on the
+offline test chain (a reader with a list of its own reads only from a node of that chain);
+they are then part of what a checkpoint states.
 
 ### The burn address
 
@@ -558,17 +583,23 @@ for it. The keys are the same on every network; only the written address differs
 
 ### What it rests on, and what it does not do
 
-- Only the holder of the owner coin can make a ring that spends it, **as long as nobody can
-  spend one of the fifteen dead outputs**. Somebody who could spend one could sign a ring of
-  the fifteen and any unclaimed Mordinal's owner output, once per dead output, and claim that
-  Mordinal. This is the same trust the original rules always asked, minus 70499745.
+- Only the holder of the owner coin can make a ring that spends it, **as long as nobody
+  finds a secret key for the dead key**. The fifteen dead outputs share one key and so one
+  key image: whoever had its secret key could spend one of them, once, in a ring with any
+  unclaimed Mordinal's owner output, and claim that Mordinal. A break would therefore allow
+  **one theft in total**, not fifteen. This is the trust the original rules always asked,
+  minus 70499745.
 - The original rules, run by anyone who still keeps the 2023 index, read a burn claim as a
   transfer to output 0: for them the Mordinal now sits on an output nobody can spend, with
   the claim text as its latest text. This is what "burned" means; the rules here do not
   check any original index.
 - A Mordinal whose owner coin was already spent by an ordinary transaction cannot be claimed
-  by burning: the coin cannot be spent again. This draft has no other way for it
-  (`docs/OPEN-POINTS.md`).
+  by burning: the coin cannot be spent again. Its holder can claim by record until claim
+  records stop; after that this draft has no way for it (`docs/OPEN-POINTS.md`).
+- A burn that is refused (another text, a ring this rule does not take, a fee too low, a
+  block before the first burn block) has spent the coin all the same and cannot be made
+  again. Until claim records stop, the holder can still claim by record with the one-time
+  key.
 - The owner list is the one of the start block. An original-format transfer after the start
   block that is not a burn claim moves nothing here; a burn claim must spend the owner
   output the list names.

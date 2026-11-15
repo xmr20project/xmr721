@@ -54,6 +54,30 @@ Without `--carrier-bin` the service only reads. The carrier tool runs on the off
 on mainnet it also needs `MORDINALS_MAINNET=1` and an unrestricted node of its own. Build it with `sh carrier/build.sh`
 (Rust toolchain).
 
+## Claiming by burning (draft)
+
+With `--burn-from <height>` the ledger claims Mordinals by burning from that block on (RULES.md section 10) and
+refuses claim records 720 blocks later. On mainnet the dead outputs are fixed; `--burn-dead` is for the offline test
+chain and other networks. Every owner list entry then has to state `ownerOutputIndex`. The height can be corrected, or
+the option dropped, on a restart while the state folder has read neither block; a new height has to be at least 10
+blocks above the newest block the folder has read.
+
+What a burning ledger answers besides the usual:
+
+| Route | What |
+|---|---|
+| `GET /info` | `burnFrom`, and `burn`: `recordsEnd` (the first block at which claim records are refused), `address`, `viewKey` (the burn address's public view secret), `text`, `dead`, `ownerOutputs` (the hash over every `number:ownerOutputIndex` line) |
+| `GET /owners` | each entry also has `ownerOutputIndex`, so both owner-list hashes can be recomputed |
+| `GET /burns?from=&limit=` | the accepted burn claims in ledger order: `{height, pos, txid, id, before, burn}` |
+| `GET /entry/<txid>` | for a burning transfer: `kind: "burn claim"`, accepted (with `number` and `to`) or refused with the reason |
+| `GET /log` | every judged entry, records and burning transfers, in chain order with block and place |
+
+`GET /records` holds MD1 records only, as before. A burn claim is not a record: it is the transaction itself, and
+`burn` in `/burns` holds the parts of it the rule reads. To replay the ledger from the two lists, walk `/burns` in
+order: `before` is the number of entries of `/records` that come before that burn claim, so apply
+`records[0 … before)`, then the burn claim, and after the last one the rest of the records. `height` and `pos` (the
+transaction's place in its block) give the same order.
+
 ## Tests
 
 ```

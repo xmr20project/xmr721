@@ -7,8 +7,9 @@
 //        [--start-hash <hash>] [--network mainnet|stagenet] [--port 18951] [--every <ms>] [--transfers <transfers.jsonl>] [--block-times <file>] [--groups <collections.json>]
 //        [--mint-from <height> [--minters <address>,… [--open-from <height>]]]   the ledger's first mint block, and who may mint (everyone when no list is
 //                                                   given; with --open-from everyone from that block on); part of the ledger's setup
-//        [--burn-from <height> [--burn-dead <index>,… (fifteen)]]   from that block a Mordinal is claimed by burning it (RULES.md section 10); the dead
-//                                                   outputs are mainnet's unless named (a test chain names its own); part of the ledger's setup
+//        [--burn-from <height> [--burn-dead <index>,… (fifteen)]]   from that block a Mordinal is claimed by burning it (RULES.md section 10) and 720
+//                                                   blocks later claim records stop; the dead outputs are mainnet's, and can be named only on the
+//                                                   offline test chain or another network; part of the ledger's setup
 //        [--carrier-bin <path> --carrier-state <dir> --carrier-network offline-fakechain|stagenet|mainnet [--carrier-start <height>] [--relay-limits name=n,…]]   relay on (mainnet also needs MORDINALS_MAINNET=1)
 //        [--mint-fee <atomic units> --collection-fee <atomic units>]   what this relay charges to carry a mint or a collection record
 //        [--content-dir <dir> | --content-archive [url]] [--collections <dir>] [--views <dir>] [--allow-origin <origin>] [--allow-extension <id>] [--behind-proxy] [--test-hooks]
