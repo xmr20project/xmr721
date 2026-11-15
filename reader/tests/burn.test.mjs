@@ -245,6 +245,31 @@ test('the service: the setting in /info, burn claims in /burns, in the history, 
   assert.match((await verify({...got,owners:owners.map((o,i)=>i===5?{...o,ownerOutputIndex:5}:o),chain})).problems[0],/other owner output indexes/);
  }finally{await service.close();}});
 
+test('a burning ledger on stagenet names its own dead outputs, and the check tools replay it',async()=>{
+ const w=Object.fromEntries(['alice','bob','carol','fee'].map(n=>[n,wallet(n,'stagenet')])),holders=[w.alice,w.bob,w.alice];
+ const owners=holders.map((h,i)=>({...ownerEntry(i,makeTx('burn stagenet '+i,[{to:h,amount:10n**9n}])),registrationHeight:50+i,ownerHeight:50+i}));
+ const dir=mkdtempSync(join(tmpdir(),'mordinals-burn-stagenet-'));dirs.push(dir);
+ const chain=fakeChain({start:100}),setup={chain,network:'stagenet',domain:DOMAIN,feeAddress:w.fee.address,owners,start:100,checkpointEvery:2,burnFrom:FROM};
+ // Off mainnet there is no list to fall back on: the setup has to name the fifteen.
+ assert.throws(()=>openReader({...setup,dir:join(dir,'none')}),/has to name its fifteen dead outputs/);
+ const reader=openReader({...setup,dir:join(dir,'state'),burnDead:TEST_DEAD});assert.equal(reader.meta.burnDead,TEST_DEAD.join(','));assert.equal(reader.ledger.burn.address,burnAddress('stagenet'));
+ const service=createService({reader,owners,testHooks:true}),port=await service.listen(0),base='http://127.0.0.1:'+port,get=async path=>(await (await fetch(base+path)).json());
+ const burn=(label,n,to,more)=>{const t=makeBurn(label,{output:1000+n,to,dead:TEST_DEAD,...more});return {txid:t.txid,tx:t.tx};};
+ try{
+  const info=await get('/info');assert.equal(info.network,'stagenet');assert.deepEqual(info.burn.dead,TEST_DEAD);assert.equal(info.burn.address,burnAddress('stagenet'));
+  chain.mine();chain.mine();
+  const good=burn('stagenet good',1,w.carol),mainnetRing=burn('stagenet other ring',2,w.carol,{dead:MAINNET_DEAD}),mainnetText=burn('stagenet other text',2,wallet('carol'));
+  chain.mine([good,mainnetRing,mainnetText]);chain.mine();await reader.sync();                                      // 103, 104
+  assert.equal(reader.ledger.mordinal(1).owner,w.carol.address);assert.equal(reader.ledger.mordinal(2).claimed,false);
+  assert.match((await get('/entry/'+mainnetRing.txid)).entry.error,/No input/);assert.match((await get('/entry/'+mainnetText.txid)).entry.error,/mainnet address/);
+  // The check tool replays the log with the dead outputs the service names, finds it on the node, and a reader of one's own agrees.
+  const got=await download(base);assert.deepEqual(await verify({...got,owners,chain}),{ok:true,problems:[],accepted:1,refused:2,checkpoints:2,checkedOnNode:3});
+  assert.equal((await verify({...got,owners})).ok,true);
+  assert.deepEqual(await scan({...got,owners,chain,dir:join(dir,'scan')}),[]);
+  // Another list than the service's own does not replay.
+  const other=JSON.parse(JSON.stringify(got));other.info.burn.dead=[...MAINNET_DEAD];assert.equal((await verify({...other,owners,chain})).ok,false);
+ }finally{await service.close();}});
+
 test('the service without the setting answers as before',async()=>{
  const {w,owners,chain,open,burn}=world(),reader=open({burnFrom:null});
  const service=createService({reader,owners,testHooks:true}),port=await service.listen(0),base='http://127.0.0.1:'+port,get=async path=>(await (await fetch(base+path)).json());
