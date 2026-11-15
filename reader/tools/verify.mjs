@@ -38,7 +38,8 @@ export async function verify({info,entries,checkpoints=[],owners,chain=null,publ
  const own=info.burnFrom!=null&&info.network==='mainnet'&&!(Array.isArray(info.burn?.dead)&&isMainnetDead([...info.burn.dead].sort((a,b)=>a-b)));
  if(own){let nettype=null;try{nettype=chain?(await chain.info()).nettype:null;}catch{}
   if(nettype!=='fakechain')return {ok:false,problems:['The service names dead outputs that are not mainnet\'s. Only a ledger on the offline test chain may, and no node of that chain was given.'],accepted:0,refused:0,checkpoints:0,checkedOnNode:0};}
- const burns=info.burnFrom!=null?{burnFrom:info.burnFrom,burnDead:own?info.burn.dead:null,testChain:own}:{};
+ // Off mainnet (stagenet, testnet) a ledger names its own dead outputs, and the service's list is the one to replay with.
+ const burns=info.burnFrom!=null?{burnFrom:info.burnFrom,burnDead:own||info.network!=='mainnet'?info.burn?.dead??null:null,testChain:own}:{};
  if(info.burnFrom!=null&&ownerOutputsHash(owners)!==info.burn?.ownerOutputs)return {ok:false,problems:['The owner list here has other owner output indexes than the one this service uses (hash differs).'],accepted:0,refused:0,checkpoints:0,checkedOnNode:0};
  let ledger;try{ledger=createLedger({network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,height:info.start,mintFrom:info.mintFrom??null,minters:info.minters??null,openFrom:info.openFrom??null,...burns});}
  catch(e){return {ok:false,problems:['The service states a setup the rules do not take: '+String(e?.message||e).slice(0,200)],accepted:0,refused:0,checkpoints:0,checkedOnNode:0};}
