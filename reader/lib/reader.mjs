@@ -18,7 +18,7 @@ import {join} from 'node:path';
 import {createLedger} from '../../rules/lib/ledger.mjs';
 import {OP,PROOF,RULES,decodeRecord,recordId,canonical} from '../../rules/lib/records.mjs';
 import {hex,unhex} from '../../rules/lib/monero.mjs';
-import {deadOutputs,readTransfer,burnParts,burnClaimId} from '../../rules/lib/burn.mjs';
+import {deadOutputs,isMainnetDead,readTransfer,burnParts,burnClaimId} from '../../rules/lib/burn.mjs';
 import {unframe} from './transport.mjs';
 import {ownersHash,ownerOutputsHash} from './owners.mjs';
 
@@ -28,6 +28,10 @@ import {ownersHash,ownerOutputsHash} from './owners.mjs';
 // instead of judging the blocks after it by the list alone.
 // A folder of a ledger that claims by burning adds "-burn" to its name, for the same reason.
 export const SCHEMA='mordinals-reader-v3',SCHEMA_MINTERS='mordinals-reader-v3-minters',SCHEMA_OPEN='mordinals-reader-v3-open',SCHEMA_BURN='-burn';
+// A folder takes a first burn block in, or another one, only when that block is at least this far above the newest
+// block it has read: a block that close may be read, or replaced, before every reader of the ledger has the setting.
+export const BURN_MARGIN=10;
+const BURN_KEYS=['burnFrom','burnDead','ownerOutputs'];
 const sha=text=>createHash('sha256').update(text).digest('hex');
 // Only the parts of a payment transaction the rules read. A transaction of another kind is kept as it is not: the
 // rule library then refuses it by its own check.
@@ -52,7 +56,11 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
  // owner outputs' indexes are part of what the folder is for.
  if(burnFrom!==null&&!(Number.isInteger(burnFrom)&&burnFrom>start))throw Error('Bad first burn block: it comes after the start block');
  if(burnFrom===null&&burnDead!==null)throw Error('Dead outputs are named only with a first burn block');
- const burning=burnFrom===null?null:{burnFrom,burnDead:deadOutputs(burnDead,network).join(','),ownerOutputs:ownerOutputsHash(owners)},tail=burning?SCHEMA_BURN:'';
+ // On mainnet the dead outputs are mainnet's. Other ones are for the offline test chain, whose addresses read as
+ // mainnet's: a folder that names its own reads no block from a node that is not that chain (pass()).
+ const deadList=burnFrom===null?null:deadOutputs(burnDead,network,{testChain:burnDead!==null}),testChain=burnFrom!==null&&network==='mainnet'&&!isMainnetDead(deadList);
+ if(burnFrom!==null)for(const o of owners)if(!Number.isSafeInteger(o.ownerOutputIndex)||o.ownerOutputIndex<0)throw Error(`Owner list entry ${o.number} does not state the global index of its owner output, which a ledger that claims by burning needs`);
+ const burning=burnFrom===null?null:{burnFrom,burnDead:deadList.join(','),ownerOutputs:ownerOutputsHash(owners)},tail=burning?SCHEMA_BURN:'';
  const want={schema:(openFrom!==null?SCHEMA_OPEN:minterList?SCHEMA_MINTERS:SCHEMA)+tail,network,domain,feeAddress:canonical(feeAddress,network),start,owners:ownersHash(owners),...(mintFrom!==null?{mintFrom}:{}),...(minterList?{minters:minterList.join(',')}:{}),...(openFrom!==null?{openFrom}:{}),...(burning||{})};
  let meta=existsSync(files.meta)?JSON.parse(readFileSync(files.meta,'utf8')):null,opened=null,lit=null;
  // A folder of the same listed ledger that has not read the opening block yet takes the opening in: up to that block
@@ -60,11 +68,15 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
  if(meta&&openFrom!==null&&meta.openFrom==null&&meta.schema===SCHEMA_MINTERS+tail&&[...Object.keys(want)].every(k=>k==='schema'||k==='openFrom'||(meta[k]??null)===(want[k]??null))){
   const read=lines(files.blocks).rows.at(-1)?.height??start;
   if(read<openFrom){meta={...meta,schema:SCHEMA_OPEN+tail,openFrom};opened=read;}}
- // The same for a folder of the same ledger from before the first burn block: up to that block nothing is judged
- // differently, so the folder takes the burn setting in.
- if(meta&&burning&&meta.burnFrom==null&&meta.schema+tail===want.schema&&[...Object.keys(want)].every(k=>k==='schema'||k in burning||(meta[k]??null)===(want[k]??null))){
-  const read=lines(files.blocks).rows.at(-1)?.height??start;
-  if(read<burnFrom){meta={...meta,schema:want.schema,...burning};lit=read;}}
+ // The burn setting of a folder can be taken in, changed or taken out while the folder has read neither the block it
+ // had nor the block it gets: up to there nothing was judged by it. A new first burn block has to lie BURN_MARGIN
+ // blocks above what was read.
+ if(meta&&BURN_KEYS.some(k=>(meta[k]??null)!==(want[k]??null))&&meta.schema.replace(SCHEMA_BURN,'')===want.schema.replace(SCHEMA_BURN,'')
+  &&[...new Set([...Object.keys(want),...Object.keys(meta)])].every(k=>k==='schema'||k==='startHash'||BURN_KEYS.includes(k)||(meta[k]??null)===(want[k]??null))){
+  const read=lines(files.blocks).rows.at(-1)?.height??start,had=meta.burnFrom??null;
+  if((had===null||read<had)&&(burnFrom===null||read<burnFrom)){
+   if(burnFrom!==null&&burnFrom<read+BURN_MARGIN)throw Error(`The first burn block has to be at least ${BURN_MARGIN} blocks above the newest block this folder has read (${read}).`);
+   const {burnFrom:x,burnDead:y,ownerOutputs:z,...rest}=meta;meta={...rest,schema:want.schema,...(burning||{})};lit=read;}}
  if(meta){for(const k of [...Object.keys(want),'mintFrom','minters','openFrom','burnFrom','burnDead','ownerOutputs'])if((meta[k]??null)!==(want[k]??null))throw Error(`This state folder was made for another ledger (${k} differs).`);
   if(startHash&&meta.startHash&&meta.startHash!==startHash)throw Error('This state folder was made for another start block hash.');}
  else{meta={...want,startHash:startHash||null};writeMeta(meta);}
@@ -93,7 +105,7 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
  const index=e=>{if(e.id&&e.ok)byId.set(e.id,e);if(!byTx.has(e.txid))byTx.set(e.txid,e);};
  // The ledger from the owner list and the journal alone. No node is asked.
  function rebuild(){
-  ledger=createLedger({network,domain,feeAddress,owners,height:start,mintFrom,minters:minterList,openFrom,burnFrom,burnDead});events=[];lots=[];bodies=new Map();byId=new Map();byTx=new Map();
+  ledger=createLedger({network,domain,feeAddress,owners,height:start,mintFrom,minters:minterList,openFrom,burnFrom,burnDead,testChain});events=[];lots=[];bodies=new Map();byId=new Map();byTx=new Map();
   for(const e of journal){ledger.setHeight(e.height);index(e);if(!e.ok)continue;
    if(e.burn){const out=ledger.applyBurnClaim(e.txid,e.burn);if(out.id!==e.id)throw Error('The journal does not match the rules at block '+e.height);noteBurn(e,out);continue;}
    const bytes=unhex(e.record),d=decodeRecord(bytes,network),out=ledger.apply(bytes,e.facts);
@@ -169,6 +181,7 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
  let busy=null;
  async function pass({limit=Infinity}={}){
   const info=await chain.info();let reorg=0,added=0;
+  if(testChain&&info.nettype!=='fakechain')throw Error('This reader names dead outputs of its own, which only the offline test chain has; the Monero node is not on that chain.');
   if(info.height<start)throw Error('The Monero node has not reached the start block yet.');
   const first=await chain.header(start);
   if(!meta.startHash){meta.startHash=first.hash;writeMeta(meta);}

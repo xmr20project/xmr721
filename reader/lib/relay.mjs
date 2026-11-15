@@ -116,8 +116,8 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   const late=ids&&facts.length<ids.length?await reader.lookup(ids.filter(id=>!facts.some(f=>f.txid===id))):null;
   try{
    // A claim record handed over now reaches the next block at the earliest. On a ledger that claims by burning it
-   // would be refused there from the first burn block on, so it is not carried.
-   const burn=reader.ledger.burn;if(d.op===OP.claim&&burn&&reader.height+1>=burn.from)throw bad(`From block ${burn.from} a Mordinal is claimed by burning it; a claim record no longer counts.`);
+   // would be refused there once claim records no longer count, so it is not carried.
+   const burn=reader.ledger.burn;if(d.op===OP.claim&&burn&&reader.height+1>=burn.recordsEnd)throw bad(`From block ${burn.recordsEnd} a Mordinal is claimed only by burning it; a claim record no longer counts.`);
    if(late){holdable(d);
     if(late.length+facts.length<ids.length){if(fresh)throw bad('A payment of this purchase is not known to the Monero node yet. Wait a moment and send it again.');return {ready:false};}
     reader.ledger.check(bytes,[...facts,...late.map(f=>({...f,height:reader.height}))]);return {ready:false};}

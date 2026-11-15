@@ -22,7 +22,7 @@ import {createServer} from 'node:http';
 import {existsSync,readFileSync,statSync} from 'node:fs';
 import {join,normalize,extname,sep} from 'node:path';
 import {RULES,NO_COLLECTION,heldUntil,canonical,decodeRecord} from '../rules/lib/records.mjs';
-import {BURN,CLAIM_PREFIX} from '../rules/lib/burn.mjs';
+import {BURN,CLAIM_PREFIX,isMainnetDead} from '../rules/lib/burn.mjs';
 import {createChain} from './lib/chain.mjs';
 import {openReader} from './lib/reader.mjs';
 import {createRelay,createCarrier} from './lib/relay.mjs';
@@ -44,7 +44,8 @@ const isJson=bytes=>{try{JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode
 const int=(v,fallback,min,max)=>{const n=v==null||v===''?NaN:Number(v);return Number.isInteger(n)?Math.min(max,Math.max(min,n)):fallback;};
 
 export function createService({reader,relay=null,owners,transfers=[],blockTimes=null,groups=null,content=null,collections=new Map(),views=null,origins=[],extensions=null,behindProxy=false,testHooks=false,extra=null,xmr20=null,earlier=null,follower=null,followLimit=25,followBudget=1000,chunk=4000,rate={perSecond:2,burst:60},log=()=>{}}){
- const m=reader.meta,list=owners.map(served),numbers=owners.map(o=>o.number),entry=new Map(owners.map(o=>[o.number,o])),byReg=new Map(owners.map(o=>[o.registrationTx,o]));
+ // On a ledger that claims by burning the list also gives each owner output's global index, so the hash over them can be recomputed.
+ const m=reader.meta,list=owners.map(m0=>reader.meta.burnFrom!=null?{...served(m0),ownerOutputIndex:m0.ownerOutputIndex}:served(m0)),numbers=owners.map(o=>o.number),entry=new Map(owners.map(o=>[o.number,o])),byReg=new Map(owners.map(o=>[o.registrationTx,o]));
  // When the blocks of the original history were made: exact for the blocks in the list, and between two listed blocks
  // from the blocks on either side. Outside the list there is no date.
  const known=blockTimes?Object.entries(blockTimes).map(([h,t])=>[Number(h),Number(t)]).filter(([h,t])=>Number.isInteger(h)&&Number.isFinite(t)).sort((a,b)=>a[0]-b[0]):[];
@@ -127,8 +128,9 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
   const path=url.pathname,q=url.searchParams,height=reader.height;
   if(method==='GET'){
    if(path==='/info')return {network:m.network,domain:m.domain,feeAddress:m.feeAddress,height,count:list.length,chunk,test:Boolean(testHooks),owners:m.owners,start:m.start,startHash:m.startHash,mintFrom:m.mintFrom??null,...(m.minters?{minters:m.minters.split(',')}:{}),...(m.openFrom!=null?{openFrom:m.openFrom}:{}),
-    // Claiming by burning: the first block, where the burned Mordinal goes, the text that names the new owner, the dead outputs of the ring.
-    ...(m.burnFrom!=null?{burnFrom:m.burnFrom,burn:{address:L().burn.address,viewKey:BURN.viewSecret,text:CLAIM_PREFIX+'<address>',dead:L().burn.dead,ownerOutputs:m.ownerOutputs}}:{}),...(xmr20||E?{xmr20:{...(xmr20?{inscribers:xmr20.inscribers}:{}),...(E?{earlier:earlierInfo()}:{})}}:{}),
+    // Claiming by burning: the first block, the first block at which claim records no longer count, where the burned
+    // Mordinal goes, the text that names the new owner, the dead outputs of the ring.
+    ...(m.burnFrom!=null?{burnFrom:m.burnFrom,burn:{recordsEnd:L().burn.recordsEnd,address:L().burn.address,viewKey:BURN.viewSecret,text:CLAIM_PREFIX+'<address>',dead:L().burn.dead,ownerOutputs:m.ownerOutputs}}:{}),...(xmr20||E?{xmr20:{...(xmr20?{inscribers:xmr20.inscribers}:{}),...(E?{earlier:earlierInfo()}:{})}}:{}),
     relay:relay?{networkFee:'relay',perAddress:relay.limits.perSigner,fees:relay.fees,payBlocks:relay.limits.payBlocks}:null,rules:{feeBps:RULES.feeBps,marketFeeCapBps:RULES.marketFeeCapBps,minPrice:RULES.minPrice.toString(),maxReserve:RULES.maxReserve,settle:RULES.settle}};
    if(path==='/owners'){const from=int(q.get('from'),0,0,list.length),limit=int(q.get('limit'),chunk,1,chunk);return {from,total:list.length,entries:list.slice(from,from+limit)};}
    if(path==='/claimed')return {height,numbers:claimed()};
@@ -141,6 +143,11 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
    if(path.startsWith('/lot/')){const id=path.slice(5);if(!/^[0-9a-f]{64}$/.test(id)||!L().lot(id))throw fail('This listing does not exist.',404);return {height,lot:lotView(id),waiting:waitingFor({number:L().lot(id).number??L().lot(id).reg})};}
    if(path==='/records'){const all=reader.journal.filter(e=>e.ok&&!e.burn),from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),1000,1,5000);
     return {height,total:all.length,from,records:all.slice(from,from+limit).map(e=>e.record)};}
+   // The accepted burn claims in ledger order. /records holds MD1 records only; `before` says how many of those come
+   // before each burn claim, so a client that replays the ledger applies records[0..before), then the burn claim.
+   if(m.burnFrom!=null&&path==='/burns'){
+    const all=once('burns',()=>{const out=[];let before=0;for(const e of reader.journal){if(!e.ok)continue;if(e.burn)out.push({height:e.height,pos:e.pos,txid:e.txid,id:e.id,before,burn:e.burn});else before++;}return out;});
+    const from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),1000,1,5000);return {height,total:all.length,from,burns:all.slice(from,from+limit)};}
    if(path.startsWith('/status/')){const id=path.slice(8);if(!/^[0-9a-f]{64}$/.test(id))throw fail('A record code is 64 hexadecimal characters.');
     if(relay)return {height,...relay.status(id)};const e=reader.entryById(id);
     return e?{height,id,state:'done',txid:e.txid,confirmations:height-e.height+1,error:null}:{height,id,state:'unknown',txid:null,confirmations:0,error:null};}
@@ -316,6 +323,9 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
 // Everything from command-line style options: used by the command below and by tests.
 export async function startService(o){
  const owners=readOwners(o.owners),chain=createChain(o.node),network=o.network||'mainnet';
+ // Dead outputs of one's own are for the offline test chain. On mainnet they are refused here, before anything is
+ // opened (the reader refuses them again whenever it reads).
+ if(o.burnDead!=null&&network==='mainnet'&&!isMainnetDead([...o.burnDead].map(Number).sort((x,y)=>x-y))&&(await chain.info()).nettype!=='fakechain')throw Error('--burn-dead: on mainnet the dead outputs are fixed; other ones can be named only on the offline test chain.');
  const reader=openReader({dir:o.state,chain,network,domain:o.domain,feeAddress:o.feeAddress,owners,start:Number(o.start),startHash:o.startHash||null,mintFrom:o.mintFrom==null?null:Number(o.mintFrom),minters:o.minters??null,openFrom:o.openFrom==null?null:Number(o.openFrom),burnFrom:o.burnFrom==null?null:Number(o.burnFrom),burnDead:o.burnDead??null,checkpointEvery:o.checkpointEvery??720,log:o.log});
  let relay=null;
  if(o.carrierBin){const carrier=createCarrier({bin:o.carrierBin,stateDir:o.carrierState,node:o.node,network:o.carrierNetwork||'offline-fakechain',start:Number(o.carrierStart||o.start)});

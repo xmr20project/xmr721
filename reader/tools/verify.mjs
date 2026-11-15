@@ -18,7 +18,7 @@ import {join} from 'node:path';
 import {createLedger} from '../../rules/lib/ledger.mjs';
 import {OP,decodeRecord,recordId} from '../../rules/lib/records.mjs';
 import {hex,unhex} from '../../rules/lib/monero.mjs';
-import {burnParts,burnClaimId} from '../../rules/lib/burn.mjs';
+import {burnParts,burnClaimId,isMainnetDead} from '../../rules/lib/burn.mjs';
 import {ownersHash,ownerOutputsHash,readOwners} from '../lib/owners.mjs';
 import {unframe} from '../lib/transport.mjs';
 import {createChain} from '../lib/chain.mjs';
@@ -33,7 +33,12 @@ export async function verify({info,entries,checkpoints=[],owners,chain=null,publ
  const problems=[],bad=text=>{if(problems.length<50)problems.push(text);};
  if(ownersHash(owners)!==info.owners)return {ok:false,problems:['The owner list here is not the one this service uses (hash differs).'],accepted:0,refused:0,checkpoints:0,checkedOnNode:0};
  // A ledger that claims by burning finds Mordinals by the index of their owner output: that hash has to fit as well.
- const burns=info.burnFrom!=null?{burnFrom:info.burnFrom,burnDead:info.burn?.dead??null}:{};
+ // On mainnet the dead outputs are mainnet's. A service that names other ones is believed only on the offline test
+ // chain, which a node has to show.
+ const own=info.burnFrom!=null&&info.network==='mainnet'&&!(Array.isArray(info.burn?.dead)&&isMainnetDead([...info.burn.dead].sort((a,b)=>a-b)));
+ if(own){let nettype=null;try{nettype=chain?(await chain.info()).nettype:null;}catch{}
+  if(nettype!=='fakechain')return {ok:false,problems:['The service names dead outputs that are not mainnet\'s. Only a ledger on the offline test chain may, and no node of that chain was given.'],accepted:0,refused:0,checkpoints:0,checkedOnNode:0};}
+ const burns=info.burnFrom!=null?{burnFrom:info.burnFrom,burnDead:own?info.burn.dead:null,testChain:own}:{};
  if(info.burnFrom!=null&&ownerOutputsHash(owners)!==info.burn?.ownerOutputs)return {ok:false,problems:['The owner list here has other owner output indexes than the one this service uses (hash differs).'],accepted:0,refused:0,checkpoints:0,checkedOnNode:0};
  let ledger;try{ledger=createLedger({network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,height:info.start,mintFrom:info.mintFrom??null,minters:info.minters??null,openFrom:info.openFrom??null,...burns});}
  catch(e){return {ok:false,problems:['The service states a setup the rules do not take: '+String(e?.message||e).slice(0,200)],accepted:0,refused:0,checkpoints:0,checkedOnNode:0};}
@@ -91,7 +96,7 @@ export async function verify({info,entries,checkpoints=[],owners,chain=null,publ
 
 // A reader of your own over the same blocks; the two logs must be equal. -> list of problems
 export async function scan({info,entries,owners,chain,dir,height}){
- let reader;try{reader=openReader({dir,chain,network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,start:info.start,startHash:info.startHash,mintFrom:info.mintFrom??null,minters:info.minters??null,openFrom:info.openFrom??null,...(info.burnFrom!=null?{burnFrom:info.burnFrom,burnDead:info.burn?.dead??null}:{}),checkpointEvery:0});}catch(e){return ['The service states a setup the rules do not take: '+String(e?.message||e).slice(0,200)];}
+ let reader;try{reader=openReader({dir,chain,network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,start:info.start,startHash:info.startHash,mintFrom:info.mintFrom??null,minters:info.minters??null,openFrom:info.openFrom??null,...(info.burnFrom!=null?{burnFrom:info.burnFrom,burnDead:info.network==='mainnet'&&Array.isArray(info.burn?.dead)&&isMainnetDead([...info.burn.dead].sort((a,b)=>a-b))?null:info.burn?.dead??null}:{}),checkpointEvery:0});}catch(e){return ['The service states a setup the rules do not take: '+String(e?.message||e).slice(0,200)];}
  while(reader.height<height){const before=reader.height;await reader.sync({limit:height-reader.height});if(reader.height===before)break;}
  if(reader.height<height)return [`The node only reaches block ${reader.height}; the service is at ${height}.`];
  const mine=reader.journal.filter(e=>e.height<=height),theirs=entries.filter(e=>e.height<=height),problems=[];
