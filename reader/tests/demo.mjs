@@ -18,6 +18,8 @@
 //   POST /test/sign {as, text}          a message signature by one of the demo wallets (alice, bob, carol, dave, erin)
 //   POST /test/coins {ready}            how many coins the made-up relay wallet has
 //   GET  /test/wallets                  the demo wallets' addresses
+//   POST /test/burn {number, to}        a made-up burning transfer of that Mordinal to the burn address, naming `to`
+//                                       (counts on a demo started with burnFrom)
 import {createHash} from 'node:crypto';
 import {deflateSync,crc32} from 'node:zlib';
 import {mkdtempSync,rmSync,readFileSync} from 'node:fs';
@@ -26,7 +28,7 @@ import {join} from 'node:path';
 import {decodeAddress} from '../../rules/lib/monero.mjs';
 import {outputSecret,signWithOutputKey} from '../../rules/lib/claim.mjs';
 import {provePayments} from '../../rules/lib/payment.mjs';
-import {wallet,makeTx,ownerEntry,makeInProof,DOMAIN} from '../../rules/tests/helpers.mjs';
+import {wallet,makeTx,makeBurn,ownerEntry,makeInProof,DOMAIN} from '../../rules/tests/helpers.mjs';
 import {openReader} from '../lib/reader.mjs';
 import {loadCollections} from '../../xmr20-nfts/lib/collection.mjs';
 import {createRelay} from '../lib/relay.mjs';
@@ -56,7 +58,7 @@ const DRAWING='<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" vi
 // seed: false leaves the ledger as on its first day (no claims, listings or sales; the 2023 history only).
 // bodies: a Map of number -> inscribed bytes that replace the demo content of those numbers.
 // fees: {mint, collection} in atomic units: the relay charges them, to subaddresses of a made-up relay wallet.
-export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=[],network='mainnet',views=undefined,mints=false,fees=null,seed=true,bodies=null,log=()=>{}}={}){
+export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=[],network='mainnet',views=undefined,mints=false,fees=null,seed=true,bodies=null,burnFrom=null,log=()=>{}}={}){
  const names=['alice','bob','carol','dave','erin'],w=Object.fromEntries([...names,'fee','other'].map(n=>[n,wallet('demo '+n,network)])),by=new Map(Object.values(w).map(x=>[x.address,x]));
  const given=new Map();for(const g of give){const a=decodeAddress(g.address,network);for(const n of g.numbers)given.set(n,{spend:a.spend,view:a.view,sub:a.kind==='sub'});}
  // Who holds what at the start: the demo wallets hold the low numbers, everything else sits with a wallet nobody uses.
@@ -75,7 +77,7 @@ export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=
 
  const dir=mkdtempSync(join(tmpdir(),'mordinals-demo-')),start=100,story=14;
  const chain=fakeChain({start,time:Math.floor(Date.now()/1000)-story*120});
- const reader=openReader({dir:join(dir,'state'),chain,network,domain:DOMAIN,feeAddress:w.fee.address,owners,start,checkpointEvery:5,...(mints?{mintFrom:start+1}:{}),log});
+ const reader=openReader({dir:join(dir,'state'),chain,network,domain:DOMAIN,feeAddress:w.fee.address,owners,start,checkpointEvery:5,...(mints?{mintFrom:start+1}:{}),...(burnFrom!=null?{burnFrom}:{}),log});
  const relayWallet=wallet('demo relay',network),feeAddresses=new Map();
  const carrier=fakeCarrier(chain,{coins:40,subaddress:n=>{const a=relayWallet.sub(n).address;feeAddresses.set(a,n);return a;}});
  const relay=createRelay({dir:join(dir,'relay'),reader,chain,carrier,network,domain:DOMAIN,limits:{resendMs:60000,settleBlocks:3,holdBlocks:60},...(fees?{fees}:{}),log});
@@ -123,6 +125,8 @@ export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=
    return busy=busy.catch(()=>{}).then(async()=>{await step();for(let i=0;i<n;i++)chain.mine();await step();await step();return {height:reader.height};});}
   if(path==='/test/payment'){if(!Array.isArray(body.pay)||!body.pay.length||body.pay.length>8)throw Error('pay: a list of {to, amount}');
    const t=payment(body.pay);chain.publish({txid:t.txid,tx:t.tx});return {txid:t.txid,keys:t.keys};}
+  // A made-up burning transfer of a numbered demo Mordinal, naming the address that receives it (RULES.md section 10).
+  if(path==='/test/burn'){const t=makeBurn('demo burn '+paid++ +' '+Date.now(),{output:owners[Number(body.number)]?.ownerOutputIndex,to:String(body.to)});chain.publish({txid:t.txid,tx:t.tx});return {txid:t.txid};}
   if(path==='/test/payment/hold'){if(!Array.isArray(body.pay)||!body.pay.length||body.pay.length>3)throw Error('pay: a list of {to, amount}');
    const t=payment(body.pay);held.set(t.txid,t);return {txid:t.txid,keys:t.keys,fee:'30720000',chainHeight:chain.tip+ahead};}
   if(path==='/test/payment/publish'){const t=held.get(body.txid);if(!t)throw Error('This payment is not held.');const mode=failNext;failNext=null;

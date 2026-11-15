@@ -104,7 +104,7 @@ export function eventText(e){
  switch(e.kind){
   case 'inscribed':return ['Inscribed on Monero'];
   case 'transfer':return ['Moved by spending its coin, under the 2023 rules'];
-  case 'claim':return ['Claimed by ',addr(e.to)];
+  case 'claim':return e.proof==='burn'?['Claimed by burning the old Mordinal, by ',addr(e.to)]:['Claimed by ',addr(e.to)];
   case 'move':return ['Sent by ',addr(e.from),' to ',addr(e.to)];
   case 'list':return ['Put up for sale by ',addr(e.seller),' for ',strong(xmr(e.price)+' XMR'),', until block '+count(e.until)];
   case 'cancel':return ['Sale stopped by ',addr(e.seller)];

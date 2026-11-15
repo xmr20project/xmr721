@@ -2,6 +2,7 @@
 import {OP,RULES,encodeBody,renderText,canonical,parseXmr,splitOf,formatXmr} from './rules.js';
 import {el,add,api,service,count,xmr,addr,txid,exact,notice,pill,strong,table,eventColumns,waitingList,pictures,terms,running,field,textInput,draft} from './ui.js';
 import {signPanel} from './sign.js';
+import {burning,burnFacts,burnCommand,burnAhead} from './burn.js';
 
 // How long a new listing runs: 720 blocks, about one day.
 const LISTING_BLOCKS=720;
@@ -10,7 +11,7 @@ export async function mordinal(ctx,number,action){
  const info=service.info,n=Number(number);
  const v=await api('/mordinal/'+n,{signal:ctx.signal}),m=v.mordinal,height=v.height;
  ctx.title('Mordinal #'+count(n));ctx.tip(height);
- const pic=pictures(ctx),home='#/mordinal/'+n;
+ const pic=pictures(ctx),home='#/mordinal/'+n,burn=burning();
  let t=null,unfit=null;
  if(m.lot){try{t=terms(m.lot);}catch(e){unfit=e.message;}}
  const held=t?running(t,height):null,ended=Boolean(t&&t.until<height);
@@ -23,9 +24,16 @@ export async function mordinal(ctx,number,action){
   ?el('div',{class:'card answer stack','data-answer':'claimed'},el('p',{class:'label',text:'Is it claimed?'}),
     el('p',{class:'big',text:'Claimed'}),el('p',{class:'muted',text:'owned by'}),exact(m.owner,{what:'owner address'}),
     el('p',{},el('a',{href:'#/address/'+m.owner,text:'Everything this address owns'})))
+  :burn?.active
+  ?el('div',{class:'card answer stack','data-answer':'unclaimed'},el('p',{class:'label',text:'Is it claimed?'}),
+    el('p',{class:'big no',text:'Not claimed yet'}),
+    el('p',{class:'muted',text:'Nobody has claimed this Mordinal. Whoever holds the Monero coin it was inscribed on claims it by burning the old Mordinal: in the XMR20 wallet with “Burn and claim”, or with the original Mordinals wallet by transferring it to the burn address with a text that names the receiving address. It needs that wallet’s own keys, so it is not done on this page.'}),
+    burnCommand(burn),burnFacts(burn),
+    m.ownerOutput!=null?el('p',{class:'dim','data-burn':'output',text:'Its coin is output '+count(m.ownerOutput)+' of the chain; the transfer’s ring names it.'}):null)
   :el('div',{class:'card answer stack','data-answer':'unclaimed'},el('p',{class:'label',text:'Is it claimed?'}),
     el('p',{class:'big no',text:'Not claimed yet'}),
-    el('p',{class:'muted',text:'Nobody has claimed this Mordinal. Whoever holds the Monero coin it was inscribed on can claim it in the XMR20 wallet or with the command-line tool. Claiming needs that wallet’s own keys, so it is not done on this page.'}));
+    el('p',{class:'muted',text:'Nobody has claimed this Mordinal. Whoever holds the Monero coin it was inscribed on can claim it in the XMR20 wallet or with the command-line tool. Claiming needs that wallet’s own keys, so it is not done on this page.'}),
+    burn?el('p',{class:'dim','data-burn':'ahead',text:burnAhead(burn)}):null);
 
  const fact=(label,value)=>el('div',{},el('dt',{text:label}),el('dd',{},value));
  const facts=el('dl',{class:'kv'},

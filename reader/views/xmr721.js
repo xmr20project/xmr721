@@ -1,6 +1,7 @@
 // What XMR721 is, how a Mordinal becomes an XMR721 NFT, and the short tutorial shown on a first visit to the market.
 import {el,add,service,count,notice} from './ui.js';
 import {walletLink} from './wallet.js';
+import {burning,burnFacts,burnCommand,burnAhead} from './burn.js';
 
 const SEEN='xmr721-tutorial-seen';
 const seen=()=>{try{return localStorage.getItem(SEEN)==='1';}catch{return false;}};
@@ -10,14 +11,20 @@ const remember=()=>{try{localStorage.setItem(SEEN,'1');}catch{}};
 const STEPS=[
  {key:'what',title:'Mordinals are back, as XMR721',
   body:()=>[el('p',{text:'XMR721 is an NFT standard for Monero. An NFT belongs to an ordinary Monero address and is sent or sold by signing a message in your wallet.'}),
-   el('p',{text:'In 2023, moving a Mordinal meant spending its coin in public. With XMR721 the coin is never spent, so nothing about your Monero spending is shown to anyone.'})]},
+   burning()?.active
+    ?el('p',{text:'In 2023, every move of a Mordinal spent its coin in public. With XMR721 that happens once: the claim burns the old Mordinal. After it, nothing is spent and nothing about your Monero spending is shown to anyone.'})
+    :el('p',{text:'In 2023, moving a Mordinal meant spending its coin in public. With XMR721 the coin is never spent, so nothing about your Monero spending is shown to anyone.'})]},
  {key:'wallet',title:'Open the wallet that holds your Mordinals',
   body:()=>[el('p',{text:'Use the wallet you inscribed with or received them in. In the XMR20 wallet, restore it with that wallet’s recovery phrase. The phrase stays on your device.'}),
-   el('p',{class:'dim',text:'Feather and Cake Wallet holders can claim too; it takes one more step, described under How it works.'}),
+   burning()?.active
+    ?el('p',{class:'dim',text:'The original Mordinals wallet can claim too, with one command, described under How it works.'})
+    :el('p',{class:'dim',text:'Feather and Cake Wallet holders can claim too; it takes one more step, described under How it works.'}),
    connectRow()]},
  {key:'claim',title:'Find and claim them',
   body:()=>[el('p',{text:'Choose “Find my Mordinals”. The wallet checks the public list of all Mordinals on your device and shows the ones your keys hold.'}),
-   el('p',{text:'Press Claim. Each one becomes an XMR721 NFT at your Monero address. It keeps its number, its picture and its history. Nothing is spent and no XMR moves.'})]},
+   burning()?.active
+    ?el('p',{text:'Press “Burn and claim”. The wallet sends the old Mordinal to the burn address and names your Monero address; it then is an XMR721 NFT at that address, with its number, its picture and its history. This is one Monero transaction: it spends the inscribed coin in public and costs about 0.001 XMR.'})
+    :el('p',{text:'Press Claim. Each one becomes an XMR721 NFT at your Monero address. It keeps its number, its picture and its history. Nothing is spent and no XMR moves.'})]},
  {key:'trade',title:'Sell or send by signing a message',
   body:()=>[el('p',{text:'Once claimed, a Mordinal can be listed here for XMR or sent to another address. Each step is a message you sign in your wallet.'}),
    el('p',{text:'A buyer pays you directly in XMR. Of each sale 95% goes to the seller and 5% to the protocol fee address.'})]}];
@@ -34,10 +41,12 @@ const steps=()=>el('ol',{class:'guide'},STEPS.slice(1).map((s,i)=>el('li',{'data
  el('span',{class:'guide-n','aria-hidden':'true',text:String(i+1)}),el('h3',{text:s.title}),el('div',{class:'guide-text'},s.body()))));
 
 export async function xmr721(ctx){
- ctx.title('XMR721');const info=service.info;
+ ctx.title('XMR721');const info=service.info,burn=burning(),now=burn?.active?burn:null;
  add(ctx.main,
   el('div',{class:'head'},el('h1',{text:'XMR721'}),
-   el('p',{class:'lede',text:'An NFT standard for Monero. NFTs belong to Monero addresses and move by wallet signature. No coin is spent, so nothing about anyone’s spending is made public.'})),
+   el('p',{class:'lede',text:now?'An NFT standard for Monero. NFTs belong to Monero addresses and move by wallet signature. A Mordinal is claimed once, by burning the old one; after that no coin is spent.'
+    :'An NFT standard for Monero. NFTs belong to Monero addresses and move by wallet signature. No coin is spent, so nothing about anyone’s spending is made public.'}),
+   burn&&!now?notice('note',burnAhead(burn)):null),
   el('section',{class:'section about-grid','data-section':'what'},
    el('div',{class:'card catalog stack'},el('h2',{text:'Why a new standard'}),
     el('ul',{class:'dots'},
@@ -47,15 +56,23 @@ export async function xmr721(ctx){
    el('div',{class:'card catalog stack'},el('h2',{text:'How XMR721 works'}),
     el('ul',{class:'dots'},
      el('li',{text:'Ownership is a signed record in an ordinary Monero transaction. Anyone can rebuild the whole ledger from the chain.'}),
-     el('li',{text:'Claiming proves you hold the inscribed coin with a signature. The coin is not spent and stays an ordinary coin.'}),
+     now?el('li',{text:'Claiming burns the old Mordinal: a transfer under the 2023 rules to an address nobody can spend from, with the receiving address written in it. The transfer is public, like every 2023 transfer.'})
+      :el('li',{text:'Claiming proves you hold the inscribed coin with a signature. The coin is not spent and stays an ordinary coin.'}),
      el('li',{text:'Sending and selling are messages signed with “Sign message” in a Monero wallet.'}),
      el('li',{text:'A sale is paid in XMR from buyer to seller. No one holds the money or the NFT in between.'})))),
   el('section',{class:'section card catalog','data-section':'steps'},
-   el('div',{class:'cat-head'},el('div',{},el('h2',{text:'Turn your Mordinals into XMR721 NFTs'}),el('p',{class:'card-sub',text:'Three steps in your wallet. Nothing is spent and no XMR moves.'}))),
+   el('div',{class:'cat-head'},el('div',{},el('h2',{text:'Turn your Mordinals into XMR721 NFTs'}),el('p',{class:'card-sub',text:now?'Three steps in your wallet. The claim is one Monero transaction; after it nothing is spent.':'Three steps in your wallet. Nothing is spent and no XMR moves.'}))),
    steps(),
    el('div',{class:'guide-foot'},el('a',{class:'btn primary',href:'#/market',text:'Go to the market'}),el('a',{class:'btn',href:'#/gallery',text:'See all Mordinals'}))),
   el('section',{class:'section about-grid','data-section':'more'},
-   el('div',{class:'card catalog stack'},el('h2',{text:'Feather and Cake Wallet'}),
+   now?el('div',{class:'card catalog stack','data-burn':'how'},el('h2',{text:'Claiming burns the old Mordinal'}),
+    el('p',{class:'muted',text:'The claim is a transfer of the Mordinal under the 2023 rules to the burn address, with a text that names the address that will own it. Only the wallet that holds the inscribed coin can make it.'}),
+    el('ul',{class:'dots'},
+     el('li',{text:'XMR20 wallet: “Burn and claim” builds and sends the transfer.'}),
+     el('li',{},'Original Mordinals wallet: write the text to a file and run ',burnCommand(now))),
+    burnFacts(now),
+    notice('note','The transfer shows in public which coin held the Mordinal and which address receives it. It needs a fee of at least 0.001 XMR. Feather and Cake Wallet cannot make it; they send and sell a claimed Mordinal as before.'))
+   :el('div',{class:'card catalog stack'},el('h2',{text:'Feather and Cake Wallet'}),
     el('p',{class:'muted',text:'These wallets can sign messages, so sending and selling work as they are. Claiming needs proof that your address holds the inscribed coin:'}),
     el('ul',{class:'dots'},
      el('li',{text:'Feather: make a view-only copy of the wallet, create the payment proof for the inscription there, then sign the claim in your full wallet.'}),

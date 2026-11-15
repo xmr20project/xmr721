@@ -1,8 +1,9 @@
 // What a reader has to trust, the newest checkpoint, and how to recompute it.
 import {el,add,api,service,count,exact,addr,ROOT} from './ui.js';
+import {burning,burnFacts,burnAhead} from './burn.js';
 
 export async function about(ctx){
- ctx.title('About');const info=service.info;
+ ctx.title('About');const info=service.info,burn=burning();
  const c=await api('/checkpoint',{signal:ctx.signal});ctx.tip(c.height);
  const fact=(label,value)=>el('div',{},el('dt',{text:label}),el('dd',{},value));
  const origin=ROOT.href.replace(/\/$/,'');
@@ -20,7 +21,10 @@ export async function about(ctx){
     el('li',{text:info.relay?'The relay pays the Monero network fee of each record and charges nothing in this version.':'This service only reads: records cannot be sent from here.'}),
     el('li',{text:'A buyer pays the price in two payments: to the seller, and the 5% protocol fee to the fee address. The buyer’s own wallet adds its normal network fee for those payments.'}),
     el('li',{text:'A record counts only once it is in a Monero block. Until then it is shown as waiting, never as done.'}),
-    el('li',{text:'Claiming a Mordinal needs the keys of the wallet that holds it, so it is done in the XMR20 wallet or with the command-line tool, not on these pages.'})))),
+    burn?.active
+     ?el('li',{'data-burn':'about'},'Claiming a Mordinal burns the old one: a Monero transaction made by the wallet that holds it (“Burn and claim” in the XMR20 wallet, or a transfer with the original Mordinals wallet), not on these pages. It spends the inscribed coin in public, names the receiving address and needs a fee of at least 0.001 XMR.',burnFacts(burn))
+     :el('li',{text:'Claiming a Mordinal needs the keys of the wallet that holds it, so it is done in the XMR20 wallet or with the command-line tool, not on these pages.'}),
+    burn&&!burn.active?el('li',{'data-burn':'ahead',text:burnAhead(burn)}):null))),
   el('section',{class:'section card stack','data-section':'checkpoint'},el('div',{class:'section-head'},el('h2',{text:'Newest checkpoint'}),el('span',{class:'dim',text:'Block '+count(c.height)})),
    el('p',{class:'muted',text:'A checkpoint sums up the ledger at one block: the accepted records so far and the owners they lead to. Two readers that saw the same chain get the same hashes.'}),
    el('dl',{class:'kv one'},
