@@ -2,13 +2,16 @@
 // Create page. Everything that is signed is built here from the records themselves; the service's plain fields are
 // only used for reading.
 import {OP,RULES,MAX_RECORD,NO_COLLECTION,MAX_NAME,MAX_EDITIONS,encodeBody,decodeRecord,recordId,codeOf,renderText,nftLabel,splitOf,formatXmr,parseXmr,canonical,unhex} from './rules.js';
-import {el,add,api,service,count,xmr,relayFee,addr,txid,code,notice,pill,strong,table,field,textInput,eventColumns,waitingList,terms,running,draft,ROOT} from './ui.js';
+import {el,add,api,service,count,xmr,relayFee,addr,txid,code,notice,pill,strong,table,field,textInput,eventColumns,waitingList,terms,running,draft,ROOT,pills} from './ui.js';
 import {signPanel,signingWallet} from './sign.js';
 import {walletLink,watchWallet} from './wallet.js';
 // An origin as RULES.md describes it: kind 1 with 36 bytes is a Bitcoin inscription id, txid then the index (u32 little-endian).
 const originText=o=>o.kind===1&&/^[0-9a-f]{72}$/.test(o.ref)?`Bitcoin inscription ${o.ref.slice(0,64)}i${parseInt(o.ref.slice(64).match(/../g).reverse().join(''),16)}`:`${o.kind===1?'Bitcoin inscription':'kind '+o.kind} ${o.ref}`;
 
-const TYPES={1:'PNG picture',2:'JPEG picture',3:'WebP picture',4:'GIF picture',5:'Text',6:'JSON',7:'MP4 video',8:'Text art'},LISTING_BLOCKS=720,SIGNATURE=65;
+const TYPES={1:'PNG picture',2:'JPEG picture',3:'WebP picture',4:'GIF picture',5:'Text',6:'JSON',7:'MP4 video',8:'Text art'},SIGNATURE=65;
+// How long a new listing runs: the seller picks 1, 7 or 30 days, at 720 blocks a day. The rules allow at most 21,600
+// blocks after the listing's block; 30 days here stays 60 blocks under that.
+const LISTING_DAYS=[[1,'1 day'],[7,'7 days'],[30,'30 days']],listingBlocks=days=>Math.min(days*720,RULES.maxListing-60);
 const fact=(label,value)=>el('div',{},el('dt',{text:label}),el('dd',{},value));
 const readOnly=()=>notice('note','Records cannot be sent from here: this service only reads.');
 // Whether this ledger takes mints now, and a line to show when it does not.
@@ -99,18 +102,21 @@ export async function nft(ctx,id,action){
     sign(OP.move,{reg:id,seq:x.seq,from:x.owner,to:dest},'Send '+n.title,[el('p',{class:'muted'},'To ',addr(dest),'. This cannot be undone.')],'Sent.',()=>sendForm(to.value));};
    panel.replaceChildren(el('h3',{text:'Send '+n.title}),field('Monero address that receives it',to,'A main address or a subaddress. Check it carefully: a sent NFT cannot be taken back.'),problem,
     el('div',{class:'row'},el('button',{type:'button',class:'btn primary',text:'Continue','data-action':'next',onclick:next}),el('button',{type:'button',class:'btn',text:'Cancel',onclick:leave})));}
-  function sellForm(typed=''){
-   const price=textInput({value:typed,placeholder:'0',inputmode:'decimal','data-field':'price'}),problem=el('div',{}),split=el('span',{'data-split':''});
+  function sellForm(typed='',days){
+   const lengthKey=`sell-length:${id}:${x.seq}`;if(days===undefined)days=draft.get(lengthKey)?.days;
+   if(!LISTING_DAYS.some(([d])=>d===days))days=30;draft.set(lengthKey,{days});
+   const L=listingBlocks(days),price=textInput({value:typed,placeholder:'0',inputmode:'decimal','data-field':'price'}),problem=el('div',{}),split=el('span',{'data-split':''});
    const read=()=>{const p=parseXmr(price.value);if(p<RULES.minPrice)throw Error('The lowest price is '+formatXmr(RULES.minPrice)+' XMR.');return p;};
    const hint=()=>{problem.replaceChildren();try{const s=splitOf(read());split.textContent=`You receive ${formatXmr(s.seller)} XMR · protocol fee ${formatXmr(s.fee)} XMR`;}catch{split.textContent='';}};
    price.addEventListener('input',hint);hint();
    const next=()=>{let p;try{p=read();}catch(e){problem.replaceChildren(notice('error',e.message));return;}
-    const key=`sell:${id}:${x.seq}:${p}`,kept=draft.get(key),until=kept&&Number.isInteger(kept.until)&&kept.until>=n.height+LISTING_BLOCKS-120&&kept.until<=n.height+LISTING_BLOCKS?kept.until:n.height+LISTING_BLOCKS;
+    const key=`sell:${id}:${x.seq}:${p}:${days}`,kept=draft.get(key),until=kept&&Number.isInteger(kept.until)&&kept.until>=n.height+L-120&&kept.until<=n.height+L?kept.until:n.height+L;
     draft.set(key,{until});const s=splitOf(p);
     sign(OP.list,{reg:id,seq:x.seq,until,price:p,seller:x.owner},'Sell '+n.title,
-     [el('p',{class:'muted'},'For ',strong(formatXmr(p)+' XMR'),`: you receive ${formatXmr(s.seller)} XMR and ${formatXmr(s.fee)} XMR is the protocol fee. The sale ends at block ${count(until)}.`)],'It is for sale.',()=>sellForm(price.value));};
+     [el('p',{class:'muted'},'For ',strong(formatXmr(p)+' XMR'),`: you receive ${formatXmr(s.seller)} XMR and ${formatXmr(s.fee)} XMR is the protocol fee. The sale ends at block ${count(until)}.`)],'It is for sale.',()=>sellForm(price.value,days));};
    panel.replaceChildren(el('h3',{text:'Sell '+n.title}),field('Price in XMR',price,split),problem,
-    el('p',{class:'muted',text:`The buyer pays you directly. 5% of the price goes to the protocol fee address. The sale ends at block ${count(n.height+LISTING_BLOCKS)}, about one day from now; you can stop it earlier.`}),
+    el('div',{class:'field'},el('span',{class:'label',text:'Sale length'}),pills(LISTING_DAYS,days,d=>sellForm(price.value,d),'Sale length')),
+    el('p',{class:'muted',text:`The buyer pays you directly. 5% of the price goes to the protocol fee address. The sale ends at block ${count(n.height+L)}, about ${days===1?'one day':days+' days'} from now; you can stop it earlier.`}),
     el('div',{class:'row'},el('button',{type:'button',class:'btn primary',text:'Continue','data-action':'next',onclick:next}),el('button',{type:'button',class:'btn',text:'Cancel',onclick:leave})));}
   box.append(open,panel);
   const free=!n.waiting.length&&!unfit;

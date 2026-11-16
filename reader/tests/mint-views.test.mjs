@@ -100,7 +100,13 @@ test('the owner sends it, and another owner burns one',async()=>{
  await go('/nft/'+note.id);assert.match(await text('.split'),/Burned/);assert.equal(await count('[data-action=own]'),0);assert.equal((await get('/nft/'+note.id)).nft.owner,null);});
 
 test('a minted NFT is listed, reserved, paid and bought through the same pages as a Mordinal',async()=>{
- await go('/nft/'+newId+'/sell');await page.locator('[data-field=price]').fill('0.4');await page.locator('[data-action=next]').click();
+ await go('/nft/'+newId+'/sell');await page.locator('[data-field=price]').fill('0.4');
+ await page.locator('.pills button',{hasText:'7 days'}).click();assert.equal(await page.locator('.pills button[aria-pressed=true]').innerText(),'7 days');
+ assert.equal(await page.locator('[data-field=price]').inputValue(),'0.4');
+ // The chosen length survives a reload of the tab.
+ await page.reload();await page.locator('.pills button[aria-pressed=true]').waitFor();
+ assert.equal(await page.locator('.pills button[aria-pressed=true]').innerText(),'7 days');
+ await page.locator('[data-field=price]').fill('0.4');await page.locator('[data-action=next]').click();
  assert.match(await signSendMine('alice'),/^Mordinals list: sell "Page Made" #1 \(NFT [0-9a-f]{32}\) for 0\.4 XMR \(0\.38 XMR to /);
  await go('/market');const row=page.locator('[data-section=listings] .lotcard',{hasText:'NFT '+newId.slice(0,8)});assert.match(await row.textContent(),/0\.4 XMR/);
  await row.locator('a',{hasText:'Buy now'}).click();await page.locator('[data-section=buy]').waitFor();

@@ -1,10 +1,11 @@
 // One Mordinal: is it claimed, who owns it, its picture and whole history, and what its owner can do with it.
 import {OP,RULES,encodeBody,renderText,canonical,parseXmr,splitOf,formatXmr} from './rules.js';
-import {el,add,api,service,count,xmr,addr,txid,exact,notice,pill,strong,table,eventColumns,waitingList,pictures,terms,running,field,textInput,draft} from './ui.js';
+import {el,add,api,service,count,xmr,addr,txid,exact,notice,pill,strong,table,eventColumns,waitingList,pictures,terms,running,field,textInput,draft,pills} from './ui.js';
 import {signPanel} from './sign.js';
 
-// How long a new listing runs: 720 blocks, about one day.
-const LISTING_BLOCKS=720;
+// How long a new listing runs: the seller picks 1, 7 or 30 days, at 720 blocks a day. The rules allow at most 21,600
+// blocks after the listing's block; 30 days here stays 60 blocks under that.
+const LISTING_DAYS=[[1,'1 day'],[7,'7 days'],[30,'30 days']],listingBlocks=days=>Math.min(days*720,RULES.maxListing-60);
 
 export async function mordinal(ctx,number,action){
  const info=service.info,n=Number(number);
@@ -94,22 +95,25 @@ export async function mordinal(ctx,number,action){
     field('Monero address that receives it',to,'A main address or a subaddress. Check it carefully: a sent Mordinal cannot be taken back.'),problem,
     el('div',{class:'row'},el('button',{type:'button',class:'btn primary',text:'Continue','data-action':'next',onclick:next}),el('button',{type:'button',class:'btn',text:'Cancel',onclick:leave})));}
 
-  function sellForm(typed=''){
-   const price=textInput({value:typed,placeholder:'0',inputmode:'decimal','data-field':'price'}),problem=el('div',{}),split=el('span',{'data-split':''});
+  function sellForm(typed='',days){
+   const lengthKey=`sell-length:${m.reg}:${m.seq}`;if(days===undefined)days=draft.get(lengthKey)?.days;
+   if(!LISTING_DAYS.some(([d])=>d===days))days=30;draft.set(lengthKey,{days});
+   const L=listingBlocks(days),price=textInput({value:typed,placeholder:'0',inputmode:'decimal','data-field':'price'}),problem=el('div',{}),split=el('span',{'data-split':''});
    const read=()=>{const p=parseXmr(price.value);if(p<RULES.minPrice)throw Error('The lowest price is '+formatXmr(RULES.minPrice)+' XMR.');return p;};
    const hint=()=>{problem.replaceChildren();try{const s=splitOf(read());split.textContent=`You receive ${formatXmr(s.seller)} XMR · protocol fee ${formatXmr(s.fee)} XMR`;}catch{split.textContent='';}};
    price.addEventListener('input',hint);hint();
    const next=()=>{let p;try{p=read();}catch(e){problem.replaceChildren(notice('error',e.message));return;}
-    // The end block is part of the signed text, so the same price keeps the same end when the page is loaded again.
-    const key=`sell:${m.reg}:${m.seq}:${p}`,kept=draft.get(key),until=kept&&Number.isInteger(kept.until)&&kept.until>=height+LISTING_BLOCKS-120&&kept.until<=height+LISTING_BLOCKS?kept.until:height+LISTING_BLOCKS;
+    // The end block is part of the signed text, so the same price and length keep the same end when the page is loaded again.
+    const key=`sell:${m.reg}:${m.seq}:${p}:${days}`,kept=draft.get(key),until=kept&&Number.isInteger(kept.until)&&kept.until>=height+L-120&&kept.until<=height+L?kept.until:height+L;
     draft.set(key,{until});
     const body={reg:m.reg,seq:m.seq,until,price:p,seller:m.owner},bodyBytes=encodeBody(OP.list,body,info.network),rctx={domain:info.domain,number:n},s=splitOf(p);
     panel.replaceChildren(el('h3',{text:'Sell Mordinal #'+count(n)}),
      el('p',{class:'muted'},'For ',strong(formatXmr(p)+' XMR'),`: you receive ${formatXmr(s.seller)} XMR and ${formatXmr(s.fee)} XMR is the protocol fee. The sale ends at block ${count(until)}.`),
-     signPanel(ctx,{bodyBytes,rctx,text:renderText(OP.list,body,bodyBytes,rctx),signer:m.owner,back:()=>sellForm(price.value),done:done('It is for sale.')}));};
+     signPanel(ctx,{bodyBytes,rctx,text:renderText(OP.list,body,bodyBytes,rctx),signer:m.owner,back:()=>sellForm(price.value,days),done:done('It is for sale.')}));};
    panel.replaceChildren(el('h3',{text:'Sell Mordinal #'+count(n)}),
     field('Price in XMR',price,split),problem,
-    el('p',{class:'muted',text:`The buyer pays you directly. 5% of the price goes to the protocol fee address. The sale ends at block ${count(height+LISTING_BLOCKS)}, about one day from now; you can stop it earlier.`}),
+    el('div',{class:'field'},el('span',{class:'label',text:'Sale length'}),pills(LISTING_DAYS,days,d=>sellForm(price.value,d),'Sale length')),
+    el('p',{class:'muted',text:`The buyer pays you directly. 5% of the price goes to the protocol fee address. The sale ends at block ${count(height+L)}, about ${days===1?'one day':days+' days'} from now; you can stop it earlier.`}),
     el('div',{class:'row'},el('button',{type:'button',class:'btn primary',text:'Continue','data-action':'next',onclick:next}),el('button',{type:'button',class:'btn',text:'Cancel',onclick:leave})));}
 
   function stopForm(){

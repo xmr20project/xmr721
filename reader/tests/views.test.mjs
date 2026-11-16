@@ -240,7 +240,13 @@ test('sell and stop selling through the page',async()=>{
  await page.locator('[data-action=own]').click();await page.locator('[data-action=sell-start]').click();await shown('/mordinal/12/sell');
  await page.locator('[data-field=price]').fill('0.3');
  assert.match(await text('[data-split]'),/You receive 0\.285 XMR · protocol fee 0\.015 XMR/);
+ // A sale runs 30 days unless the seller picks 1 or 7; the end block is in the signed text.
+ assert.deepEqual(await page.locator('.pills button').allInnerTexts(),['1 day','7 days','30 days']);
+ assert.equal(await text('.pills button[aria-pressed=true]'),'30 days');
+ const height=(await get('/mordinal/12')).height;
+ assert.match(await text('p.muted:has-text("The sale ends at block")'),new RegExp(`ends at block ${(height+21540).toLocaleString('en-US')}, about 30 days from now`));
  await page.locator('[data-action=next]').click();
+ assert.match(await text('[data-signtext]'),new RegExp(`until block ${height+21540};`));
  assert.match(await signAndSend('carol'),/0\.3 XMR/);
  await stillWaiting();
  await demo.mine();
