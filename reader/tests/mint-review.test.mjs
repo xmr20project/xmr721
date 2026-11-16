@@ -20,13 +20,13 @@ import {fakeChain,fakeCarrier,carried} from './fake.mjs';
 const dirs=[];test.after(()=>{for(const d of dirs)rmSync(d,{recursive:true,force:true});});
 const hex=b=>Buffer.from(b).toString('hex'),TEXT=5;
 
-function world({minters=null,mintFrom=100,coins=20,limits={},lane=[],origins=[],holders=['alice','bob']}={}){
+function world({minters=null,mintFrom=100,coins=20,limits={},lane=[],fees=null,origins=[],holders=['alice','bob']}={}){
  const w=Object.fromEntries(['alice','bob','carol','fee',...Array.from({length:6},(_,i)=>'anon'+i)].map(n=>[n,wallet(n)]));
  const txs=holders.map(n=>w[n]).map((h,i)=>makeTx('reg'+i,[{to:h,amount:10n**9n}])),owners=txs.map((t,i)=>({...ownerEntry(i,t),registrationHeight:50+i,ownerHeight:50+i}));
  const dir=mkdtempSync(join(tmpdir(),'mint-review-'));dirs.push(dir);
  const chain=fakeChain({start:100}),setup={chain,domain:DOMAIN,feeAddress:w.fee.address,owners,start:100,mintFrom,checkpointEvery:2},pick=m=>m?m.map(n=>w[n].address):null;
  const reader=openReader({dir:join(dir,'state'),...setup,minters:pick(minters)}),carrier=fakeCarrier(chain,{coins});let clock=1_000_000;
- const relay=createRelay({dir:join(dir,'relay'),reader,chain,carrier,domain:DOMAIN,limits:{resendMs:1000,...limits},lane:lane.map(n=>w[n].address),now:()=>clock});
+ const relay=createRelay({dir:join(dir,'relay'),reader,chain,carrier,domain:DOMAIN,limits:{resendMs:1000,...limits},lane:lane.map(n=>w[n].address),...(fees?{fees}:{}),now:()=>clock});
  const service=createService({reader,relay,owners,origins,testHooks:true});
  const L=()=>reader.ledger,signed=(p,who)=>L().sign(p.bodyBytes,who.sign(p.text));
  const mint=(who,text,o={})=>{const p=L().prepareMint({creator:who.address,type:TEXT,content:Buffer.from(text),...o});return {...p,record:signed(p,who)};};
@@ -277,3 +277,47 @@ test('a reader folder of the listed ledger takes an opening in while it has not 
   // Without the opening the same log does not replay: bob's late mint is not this ledger's.
   const {openFrom,...closed}=info;assert.equal((await verify({info:closed,entries,checkpoints:checkpoints.map(c=>{const {openFrom,...rest}=c;return rest;}),owners:x.owners})).ok,false);
  }finally{await svc.close();}});
+
+// Paid minting on a relay with a lane: the listed minters go free, everyone else's collections and mints are carried for
+// the relay's fee, and nothing of theirs goes out before it is paid.
+const FEE=500000000n;
+async function payFee(x,view,amount=FEE){const index=Number(view.pay.address.split(' ').at(-1)),t=makeTx('fee for '+view.id+' '+amount,[{to:x.w.fee,amount}]);
+ x.chain.mine([{txid:t.txid,tx:t.tx}]);x.carrier.paid({index,amount,txid:t.txid});}
+test('a relay with a lane and a fee: the listed minters go free, everyone else pays first, and nothing unpaid goes out',async()=>{
+ const x=world({lane:['alice'],fees:{mint:FEE,collection:FEE},holders:['alice','bob','carol']});await x.reader.sync();const {relay,w,carrier}=x;
+ const sent=()=>carrier.made.length,before=sent();
+ // The listed minter: no fee, no payment address, out at once.
+ const own=x.mint(w.alice,'launch'),o=await relay.submit(hex(own.record));
+ assert.equal(o.pay,undefined);assert.match(o.state,/queued|sent/);assert.equal(sent(),before+1);
+ // Everyone else: a mint and a collection wait unpaid at their own addresses for exactly the fee.
+ const m=x.mint(w.bob,'paid mint'),mv=await relay.submit(hex(m.record));
+ const c=x.signed(x.L().prepareCollection({creator:w.carol.address,name:'Carol set',max:2}),w.carol),cv=await relay.submit(hex(c));
+ for(const v of [mv,cv]){assert.equal(v.state,'unpaid');assert.equal(v.pay.amount,FEE.toString());}
+ assert.notEqual(mv.pay.address,cv.pay.address);assert.equal(sent(),before+1,'nothing of theirs went out');
+ // The regular pass keeps them (they were taken for the fee), and still sends nothing unpaid.
+ await x.service.step();await x.service.step();
+ assert.deepEqual([relay.status(mv.id).state,relay.status(cv.id).state],['unpaid','unpaid']);assert.equal(sent(),before+1);
+ // Too little is not enough.
+ await payFee(x,mv,FEE-1n);await x.service.step();assert.equal(relay.status(mv.id).state,'unpaid');assert.equal(sent(),before+1);
+ // Paid in full: it goes out and counts; the other one still waits.
+ await payFee(x,mv,1n);await x.service.step();assert.match(relay.status(mv.id).state,/sent|done/);assert.equal(sent(),before+2);
+ assert.equal(relay.status(cv.id).state,'unpaid');
+ await x.block();x.chain.mine([]);await x.service.step();
+ assert.equal(relay.status(mv.id).state,'done');assert.equal(x.L().nft(mv.id).owner,w.bob.address);});
+
+test('a relay with a lane charging only for mints still refuses everyone else\'s collections, and its minters\' are free',async()=>{
+ const x=world({lane:['alice'],fees:{mint:FEE},holders:['alice','bob']});await x.reader.sync();const {relay,w}=x;
+ const send=async r=>{try{return await relay.submit(hex(r));}catch(e){return e.status;}};
+ assert.equal(await send(x.signed(x.L().prepareCollection({creator:w.bob.address,name:'Bob set',max:2}),w.bob)),403);
+ assert.equal((await send(x.mint(w.bob,'paid').record)).state,'unpaid');
+ const own=await send(x.signed(x.L().prepareCollection({creator:w.alice.address,name:'Launch set',max:2}),w.alice));assert.equal(own.pay,undefined);assert.notEqual(own.state,'unpaid');});
+
+test('a record taken for the fee is still carried once paid when the relay restarts without a fee; a free one left over is not',async()=>{
+ const x=world({lane:['alice'],fees:{mint:FEE},holders:['alice','bob','carol']});await x.reader.sync();const {w,carrier}=x;
+ const m=x.mint(w.bob,'taken for the fee'),v=await x.relay.submit(hex(m.record));assert.equal(v.state,'unpaid');
+ // A free job of someone outside the lane, left from before the lane rule.
+ const left=x.mint(w.carol,'left over');writeFileSync(join(x.dir,'relay','jobs',left.id+'.json'),JSON.stringify({id:left.id,record:hex(left.record),op:8,number:null,signer:w.carol.address,caller:null,state:'queued',createdAt:1,createdHeight:100}));
+ const again=createRelay({dir:join(x.dir,'relay'),reader:x.reader,chain:x.chain,carrier,domain:DOMAIN,lane:[w.alice.address]}),before=carrier.made.length;
+ await again.tick();assert.deepEqual([again.status(m.id).state,again.status(left.id).state],['unpaid','refused']);assert.equal(carrier.made.length,before);
+ await payFee(x,v);await again.tick();assert.match(again.status(m.id).state,/sent|done/);assert.equal(carrier.made.length,before+1);});
+

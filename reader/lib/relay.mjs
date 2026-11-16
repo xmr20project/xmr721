@@ -10,6 +10,8 @@
 // atomic units; 0 = free). The fee is this relay's own price, not a rule of the ledger: a record published any other
 // way counts the same. Each such record gets a subaddress of the relay's wallet; the record is sent once payments of
 // at least the fee to that subaddress are in a block. A record that is not paid for in time is dropped unsent.
+// A relay with a lane (`lane`: the ledger's listed minters) carries their collections and mints without the fee. Other
+// signers' collections and mints it carries only when it charges for them; without a fee it refuses them.
 //
 // Every job is one file, jobs/<record id>.json, written before the step it describes:
 //   unpaid   a mint or a collection whose relay fee has not arrived yet (only when the relay charges one)
@@ -48,9 +50,10 @@ export const DEFAULT_LIMITS={perSigner:3,waiting:200,perDay:2000,margin:5,resend
 
 export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,limits:given={},fees:asked={},lane=[],now=()=>Date.now(),log=()=>{}}){
  const laneOf=new Set(lane.map(a=>canonical(a,network)));
- // A collection or mint record of someone who is not one of this relay's own minters (on a relay that has any).
+ // A collection or mint record of someone who is not one of this relay's own minters (on a relay that has any), when
+ // the relay does not charge for that kind of record. A relay that charges carries it once it is paid for.
  const NOT_CARRIED='This relay carries collection and mint records of its own minters only. Inscribe from your own wallet with the xmr721 command (see the XMR721 README).';
- const foreign=d=>(d.op===OP.mint||d.op===OP.collection)&&laneOf.size>0&&!laneOf.has(canonical(d.body.creator,network));
+ const foreign=d=>(d.op===OP.mint||d.op===OP.collection)&&laneOf.size>0&&!laneOf.has(canonical(d.body.creator,network))&&!priceOf(d.op);
  // The launch a record is for: a deploy inscription (xmr20-tokens/FORMAT.md) names a Solana mint. The launch is its
  // signer's own (signer and mint together), so nobody holds a launch against another signer.
  const launchOf=d=>{if(d.op!==OP.mint||d.body.collection!==NO_COLLECTION||d.body.type!==TYPE_JSON)return null;
@@ -165,7 +168,8 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
    const onItsWay=[...jobs.values()].find(j=>j.launch===launch&&j.id!==id&&j.state!=='refused'&&!reader.entryById(j.id));
    if(onItsWay||standing)throw Object.assign(bad('Another record for this launch is with the relay or on the ledger already.',409),{held:(onItsWay||standing).id});
    if(before.length&&!anew)throw Object.assign(bad('This launch was inscribed before and its inscription was burned. To inscribe it again, hand the record over with "anew".',409),{held:before.at(-1).id});}
-  const all=waiting(),open=all.filter(j=>j.state!=='unpaid'),price=priceOf(d.op);
+  // The listed minters' collections and mints go without the fee.
+  const all=waiting(),open=all.filter(j=>j.state!=='unpaid'),price=ownLane?0n:priceOf(d.op);
   if(number!=null&&open.some(j=>j.number===number))throw bad('Another record for this Mordinal is waiting for a block. Try again in a few minutes.',429);
   if(price&&all.length-open.length>=limits.unpaid)throw bad('The relay is busy. Try again in a few minutes.',503);
   if(all.filter(j=>j.signer===signer).length>=limits.perSigner)throw bad('This address already has '+limits.perSigner+' records waiting for a block. Try again in a few minutes.',429);
@@ -206,8 +210,8 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
     const ok=reader.entryById(j.id),mine=j.txid?reader.entryByTx(j.txid):null;
     if(ok){j.state='done';j.txid=ok.txid;j.doneHeight=ok.height;j.endedAt=t;j.note=null;save(j);continue;}
     // A collection or mint of someone who is not one of this relay's minters that the relay took before it had that
-    // rule, and has not sent, is not carried either.
-    if(!j.txid&&(j.op===OP.mint||j.op===OP.collection)&&laneOf.size&&!laneOf.has(j.signer)){refuse(j,NOT_CARRIED);continue;}
+    // rule, and has not sent, is not carried either. One taken for the relay's fee (it has a payment address) is.
+    if(!j.txid&&!j.pay&&(j.op===OP.mint||j.op===OP.collection)&&laneOf.size&&!laneOf.has(j.signer)){refuse(j,NOT_CARRIED);continue;}
     if(mine&&!mine.ok){
      // A purchase can be refused in its block only because replaced blocks put it before its own payment. If the
      // rules would accept it now, or once its payment is in a block, it goes out again in a new transaction, a
