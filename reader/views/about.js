@@ -23,7 +23,7 @@ export async function about(ctx){
     el('li',{text:'A record counts only once it is in a Monero block. Until then it is shown as waiting, never as done.'}),
     burn&&!burn.fits?el('li',{},burnMisfit())
      :burn?.active
-     ?el('li',{'data-burn':'about'},'Claiming a Mordinal burns the old one: a Monero transaction made by the wallet that holds it, not on these pages. It spends the inscribed coin in public, names the receiving address, needs a fee of at least 0.001 XMR, and cannot be tried again when it is refused. ',el('a',{href:'#/xmr721',text:'The steps are on the XMR721 page.'}),burnFacts(burn))
+     ?el('li',{'data-burn':'about'},'Claiming a Mordinal burns the old one: a Monero transaction made by the wallet that holds it, not on these pages. It spends the inscribed coin in public, names the receiving address, needs a transaction fee of at least 0.001 XMR, and cannot be tried again when it is refused. It completes once the same fee again is paid to the Mordinal’s own fee address, a payment to the project. ',el('a',{href:'#/xmr721',text:'The steps are on the XMR721 page.'}),burnFacts(burn))
      :el('li',{text:'Claiming a Mordinal needs the keys of the wallet that holds it, so it is done in the XMR20 wallet or with the command-line tool, not on these pages.'}),
     burn&&burn.fits&&!burn.active?el('li',{'data-burn':'ahead',text:burnAhead(burn)}):null))),
   el('section',{class:'section card stack','data-section':'checkpoint'},el('div',{class:'section-head'},el('h2',{text:'Newest checkpoint'}),el('span',{class:'dim',text:'Block '+count(c.height)})),

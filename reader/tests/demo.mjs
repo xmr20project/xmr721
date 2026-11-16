@@ -18,8 +18,10 @@
 //   POST /test/sign {as, text}          a message signature by one of the demo wallets (alice, bob, carol, dave, erin)
 //   POST /test/coins {ready}            how many coins the made-up relay wallet has
 //   GET  /test/wallets                  the demo wallets' addresses
-//   POST /test/burn {number, to}        a made-up burning transfer of that Mordinal to the burn address, naming `to`
-//                                       (counts on a demo started with burnFrom)
+//   POST /test/burn {number, to, paid}  a made-up burning transfer of that Mordinal to the burn address, naming `to`
+//                                       (counts on a demo started with burnFrom); it pays its own fee to the Mordinal's fee
+//                                       address unless paid is false, and then waits for it
+//   POST /test/fee {number, amount}     a made-up payment of `amount` piconero to that Mordinal's fee address
 import {createHash} from 'node:crypto';
 import {deflateSync,crc32} from 'node:zlib';
 import {mkdtempSync,rmSync,readFileSync} from 'node:fs';
@@ -28,7 +30,7 @@ import {join} from 'node:path';
 import {decodeAddress} from '../../rules/lib/monero.mjs';
 import {outputSecret,signWithOutputKey} from '../../rules/lib/claim.mjs';
 import {provePayments} from '../../rules/lib/payment.mjs';
-import {wallet,makeTx,makeBurn,ownerEntry,makeInProof,DOMAIN} from '../../rules/tests/helpers.mjs';
+import {wallet,makeTx,makeBurn,ownerEntry,makeInProof,burnParty,feeParty,payFee,DOMAIN} from '../../rules/tests/helpers.mjs';
 import {openReader} from '../lib/reader.mjs';
 import {loadCollections} from '../../xmr20-nfts/lib/collection.mjs';
 import {createRelay} from '../lib/relay.mjs';
@@ -126,7 +128,10 @@ export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=
   if(path==='/test/payment'){if(!Array.isArray(body.pay)||!body.pay.length||body.pay.length>8)throw Error('pay: a list of {to, amount}');
    const t=payment(body.pay);chain.publish({txid:t.txid,tx:t.tx});return {txid:t.txid,keys:t.keys};}
   // A made-up burning transfer of a numbered demo Mordinal, naming the address that receives it (RULES.md section 10).
-  if(path==='/test/burn'){const t=makeBurn('demo burn '+paid++ +' '+Date.now(),{output:owners[Number(body.number)]?.ownerOutputIndex,to:String(body.to)});chain.publish({txid:t.txid,tx:t.tx});return {txid:t.txid};}
+  if(path==='/test/burn'){const n=Number(body.number),label='demo burn '+paid++ +' '+Date.now();
+   const t=makeBurn(label,{output:owners[n]?.ownerOutputIndex,to:String(body.to),...(body.paid===false?{}:{outs:[{to:burnParty,amount:1n},{to:feeParty(n,{network}),amount:10n**9n+30000000n},{to:wallet(label+' change',network),amount:10n**9n}]})});
+   chain.publish({txid:t.txid,tx:t.tx});return {txid:t.txid};}
+  if(path==='/test/fee'){const t=payFee('demo fee '+paid++ +' '+Date.now(),Number(body.number),BigInt(body.amount),{network});chain.publish({txid:t.txid,tx:t.tx});return {txid:t.txid};}
   if(path==='/test/payment/hold'){if(!Array.isArray(body.pay)||!body.pay.length||body.pay.length>3)throw Error('pay: a list of {to, amount}');
    const t=payment(body.pay);held.set(t.txid,t);return {txid:t.txid,keys:t.keys,fee:'30720000',chainHeight:chain.tip+ahead};}
   if(path==='/test/payment/publish'){const t=held.get(body.txid);if(!t)throw Error('This payment is not held.');const mode=failNext;failNext=null;

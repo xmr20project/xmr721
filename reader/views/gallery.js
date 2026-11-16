@@ -12,7 +12,7 @@ export function card(pic,m,height){
  return el('article',{class:'mcard','data-number':m.number},box,
   el('a',{class:'meta',href:'#/mordinal/'+m.number},
    el('span',{class:'n',text:'#'+count(m.number)}),
-   el('span',{class:'s'},el('span',{'data-claimed':String(Boolean(m.claimed)),text:m.burned?'Burned':m.claimed?'Claimed':'Unclaimed'}),
+   el('span',{class:'s'},el('span',{'data-claimed':String(Boolean(m.claimed)),text:m.burned?'Burned':m.claimed?'Claimed':m.waiting?'Waiting for its fee':'Unclaimed'}),
     lot?el('span',{class:'price',text:xmr(lot.price)+' XMR'}):null),
    reserved?el('span',{class:'s'},el('span',{text:'Reserved'})):null));}
 

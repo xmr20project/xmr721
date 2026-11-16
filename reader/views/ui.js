@@ -125,7 +125,7 @@ export const eventColumns=({number=true}={})=>[
 
 export const OPNAME={1:'Claim',2:'Send',3:'Listing',4:'Stop selling',5:'Reservation',6:'Purchase',7:'Collection',8:'Mint',9:'Burn'};
 export const JOB={unpaid:['Waiting for the relay fee','yellow'],queued:['Waiting to be sent','yellow'],built:['Waiting to be sent','yellow'],held:['Waiting for a payment to be in a block','yellow'],
- sent:['Sent, waiting for a block','yellow'],done:['In a block','green'],refused:['Refused','red'],stuck:['Did not reach a block','red'],unknown:['Not known to this service','']};
+ sent:['Sent, waiting for a block','yellow'],waiting:['Burned, waiting for its fee','yellow'],done:['In a block','green'],refused:['Refused','red'],stuck:['Did not reach a block','red'],unknown:['Not known to this service','']};
 export const jobPill=state=>pill(...(JOB[state]||[state,'']));
 // Records the relay holds that are not in a block yet. They do not count until they are.
 export function waitingList(jobs){

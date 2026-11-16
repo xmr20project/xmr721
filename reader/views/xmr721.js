@@ -26,7 +26,7 @@ const STEPS=[
   body:()=>[el('p',{text:'Choose “Find my Mordinals”. The wallet checks the public list of all Mordinals on your device and shows the ones your keys hold.'}),
    live()
     ?el('p',{text:(live().wallet?'Press “Burn and claim”. The wallet sends the old Mordinal to the burn address and names your Monero address;':'Burn each one: transfer the old Mordinal to the burn address with a text that names your Monero address, as described under How it works;')
-      +' it then is an XMR721 NFT at that address, with its number, its picture and its history. This is one Monero transaction: it spends the inscribed coin in public and costs about 0.001 XMR. A burn that is refused cannot be tried again.'})
+      +' then pay its fee to the Mordinal’s own fee address. It then is an XMR721 NFT at that address, with its number, its picture and its history. The burn is one Monero transaction: it spends the inscribed coin in public and costs about 0.001 XMR; the fee is the same amount again, paid to the project. A burn that is refused cannot be tried again.'})
     :el('p',{text:'Press Claim. Each one becomes an XMR721 NFT at your Monero address. It keeps its number, its picture and its history. Nothing is spent and no XMR moves.'})]},
  {key:'trade',title:'Sell or send by signing a message',
   body:()=>[el('p',{text:'Once claimed, a Mordinal can be listed here for XMR or sent to another address. Each step is a message you sign in your wallet.'}),
@@ -69,7 +69,7 @@ export async function xmr721(ctx){
    el('div',{class:'guide-foot'},el('a',{class:'btn primary',href:'#/market',text:'Go to the market'}),el('a',{class:'btn',href:'#/gallery',text:'See all Mordinals'}))),
   el('section',{class:'section about-grid','data-section':'more'},
    now?el('div',{class:'card catalog stack','data-burn':'how'},el('h2',{text:'Claiming burns the old Mordinal'}),
-    el('p',{class:'muted',text:'The claim is a transfer of the Mordinal under the 2023 rules to the burn address, with a text that names the address that will own it. Only the wallet that holds the inscribed coin can make it.'}),
+    el('p',{class:'muted',text:'The claim is a transfer of the Mordinal under the 2023 rules to the burn address, with a text that names the address that will own it, and a fee paid to the Mordinal’s own fee address. Only the wallet that holds the inscribed coin can make the transfer; any wallet can pay the fee.'}),
     burnHow(now))
    :el('div',{class:'card catalog stack'},el('h2',{text:'Feather and Cake Wallet'}),
     el('p',{class:'muted',text:'These wallets can sign messages, so sending and selling work as they are. Claiming needs proof that your address holds the inscribed coin:'}),

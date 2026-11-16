@@ -2,7 +2,7 @@
 import {OP,RULES,encodeBody,renderText,canonical,parseXmr,splitOf,formatXmr} from './rules.js';
 import {el,add,api,service,count,xmr,addr,txid,exact,notice,pill,strong,table,eventColumns,waitingList,pictures,terms,running,field,textInput,draft} from './ui.js';
 import {signPanel} from './sign.js';
-import {burning,burnHow,burnAhead,burnMisfit} from './burn.js';
+import {burning,burnHow,burnAhead,burnMisfit,burnFee,feeAddress} from './burn.js';
 
 // How long a new listing runs: 720 blocks, about one day.
 const LISTING_BLOCKS=720;
@@ -11,7 +11,9 @@ export async function mordinal(ctx,number,action){
  const info=service.info,n=Number(number);
  const v=await api('/mordinal/'+n,{signal:ctx.signal}),m=v.mordinal,height=v.height;
  ctx.title('Mordinal #'+count(n));ctx.tip(height);
- const pic=pictures(ctx),home='#/mordinal/'+n,burn=burning();
+ const pic=pictures(ctx),home='#/mordinal/'+n,b0=burning();
+ // The service has to state the fee address these pages work out for this Mordinal; otherwise nothing about the burn is shown.
+ const burn=b0&&b0.fits&&m.burnFee&&m.burnFee.address!==feeAddress(b0,n)?{...b0,fits:false}:b0;
  let t=null,unfit=null;
  if(m.lot){try{t=terms(m.lot);}catch(e){unfit=e.message;}}
  const held=t?running(t,height):null,ended=Boolean(t&&t.until<height);
@@ -24,6 +26,14 @@ export async function mordinal(ctx,number,action){
   ?el('div',{class:'card answer stack','data-answer':'claimed'},el('p',{class:'label',text:'Is it claimed?'}),
     el('p',{class:'big',text:'Claimed'}),el('p',{class:'muted',text:'owned by'}),exact(m.owner,{what:'owner address'}),
     el('p',{},el('a',{href:'#/address/'+m.owner,text:'Everything this address owns'})))
+  // Burned by a burn claim that waits for its fee: not claimed yet, with what is missing and where to pay it.
+  :m.waiting
+  ?el('div',{class:'card answer stack','data-answer':'waiting'},el('p',{class:'label',text:'Is it claimed?'}),
+    el('p',{class:'big no',text:'Burned, waiting for its fee'}),
+    el('p',{class:'muted'},'Its old Mordinal was burned in block '+count(m.waiting.height)+', naming ',addr(m.waiting.to),'. It is claimed by that address once its fee is paid. Of the burn’s fee of '+xmr(m.waiting.due)+' XMR, ',
+     el('strong',{'data-burn':'missing',text:xmr(m.waiting.missing)+' XMR'}),' is still missing.'),
+    burn&&burn.fits?burnFee(burn,{number:n,due:m.waiting.missing}):burnMisfit(),
+    el('p',{class:'dim'},'The burn: ',txid(m.waiting.txid)))
   :burn&&!burn.fits
   ?el('div',{class:'card answer stack','data-answer':'unclaimed'},el('p',{class:'label',text:'Is it claimed?'}),
     el('p',{class:'big no',text:'Not claimed yet'}),el('p',{class:'muted',text:'Nobody has claimed this Mordinal.'}),burnMisfit())
@@ -31,7 +41,7 @@ export async function mordinal(ctx,number,action){
   ?el('div',{class:'card answer stack','data-answer':'unclaimed'},el('p',{class:'label',text:'Is it claimed?'}),
     el('p',{class:'big no',text:'Not claimed yet'}),
     el('p',{class:'muted',text:'Nobody has claimed this Mordinal. Whoever holds the Monero coin it was inscribed on claims it by burning the old Mordinal: a transfer to the burn address with a text that names the receiving address. It needs that wallet’s own keys, so it is not done on this page.'}),
-    burnHow(burn),
+    burnHow(burn,{number:n}),
     m.ownerOutput!=null?el('p',{class:'dim','data-burn':'output',text:'Its coin is output '+count(m.ownerOutput)+' of the chain; the transfer’s ring names it.'}):null)
   :el('div',{class:'card answer stack','data-answer':'unclaimed'},el('p',{class:'label',text:'Is it claimed?'}),
     el('p',{class:'big no',text:'Not claimed yet'}),
