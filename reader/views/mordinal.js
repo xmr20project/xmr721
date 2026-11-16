@@ -32,7 +32,7 @@ export async function mordinal(ctx,number,action){
     el('p',{class:'big no',text:'Burned, waiting for its fee'}),
     el('p',{class:'muted'},'Its old Mordinal was burned in block '+count(m.waiting.height)+', naming ',addr(m.waiting.to),'. It is claimed by that address once its fee is paid. Of the burn’s fee of '+xmr(m.waiting.due)+' XMR, ',
      el('strong',{'data-burn':'missing',text:xmr(m.waiting.missing)+' XMR'}),' is still missing.'),
-    burn&&burn.fits?burnFee(burn,{number:n,due:m.waiting.missing}):burnMisfit(),
+    burn&&burn.fits?burnFee(burn,{number:n,waiting:m.waiting}):burnMisfit(),
     el('p',{class:'dim'},'The burn: ',txid(m.waiting.txid)))
   :burn&&!burn.fits
   ?el('div',{class:'card answer stack','data-answer':'unclaimed'},el('p',{class:'label',text:'Is it claimed?'}),

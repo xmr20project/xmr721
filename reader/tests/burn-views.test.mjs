@@ -53,15 +53,22 @@ test('from the first burn block on the pages give the steps for the original wal
  const once=await text('[data-burn=how] [data-burn=once]');
  assert.match(once,/A burn cannot be tried again/);assert.match(once,/counts only in block 140 or later/);assert.match(once,/A burn that is refused has still spent the coin/);assert.match(once,/Until block 860 a claim by signature, as before, still counts/);
  assert.doesNotMatch(await text('[data-section=more]'),/create the payment proof/);
- // The fee: the safe amount (the burn's own fee is not known yet), to the fee address the page works out for this Mordinal.
- assert.match(await text('[data-burn=how] [data-burn=fee-step]'),/Pay at least 0\.0012 XMR to the fee address of that Mordinal, from any Monero wallet, before or after the burn/);
- assert.match(await text('[data-burn=how] [data-burn=no-refund]'),/A fee paid without a burn, or to the fee address of another Mordinal, is not refunded/);
- assert.equal(await page.locator('[data-burn=how] [data-burn=fee-address]').count(),0);assert.match(await text('[data-burn=how] [data-burn=fee-wallet]'),new RegExp(feeWallet().address));
+ // The fee: paid after the burn, when the Mordinal's page shows the exact amount; from which wallet; what is not refunded.
+ assert.match(await text('[data-burn=how] [data-burn=fee-step]'),/Pay the fee after the burn\. Once the burn is in a block, the Mordinal’s page shows the Mordinal as burned and waiting for its fee, with the exact amount still missing/);
+ assert.doesNotMatch(await text('[data-burn=how] [data-burn=fee-step]'),/0\.0012/);
+ assert.match(await text('[data-burn=how] [data-burn=pay-from]'),/holds no inscribed coins: never from the 2023 Mordinals wallet or a wallet restored from the same seed/);
+ assert.match(await text('[data-burn=how] [data-burn=others]'),/Paying the fee for someone else’s burn\? Wait until block 860\. Until then its holder can still claim the Mordinal by signature/);
+ const refund=await text('[data-burn=how] [data-burn=no-refund]');
+ for(const what of [/without a valid burn, also for a burn that is refused/,/to the fee wallet’s main address or to another Mordinal’s fee address/,/more than is due/,/a burn that a claim by signature overtook/])assert.match(refund,what);
+ // The generic page never shows the fee wallet's main address, only its view key, and points to each Mordinal's page.
+ assert.equal(await page.locator('[data-burn=how] [data-burn=fee-address]').count(),0);assert.doesNotMatch(await page.locator('body').textContent(),new RegExp(feeWallet().address));
+ assert.match(await text('[data-burn=how] [data-burn=fee-wallet]'),/Each Mordinal has a fee address of its own, shown on its own page/);assert.equal(await text('[data-burn=how] [data-burn=fee-wallet] .exact .v'),feeWallet().viewKey);
  assert.match(await text('[data-burn=how] [data-burn=once]'),/claims the Mordinal once its fee is paid/);
  await go('/mordinal/5','[data-answer]');
  assert.match(await text('[data-answer=unclaimed]'),/claims it by burning the old Mordinal/);assert.equal(await text('[data-answer] [data-burn=facts] .exact .v'),burnAddress());
- assert.equal(await text('[data-answer] [data-burn=fee-amount]'),'0.0012 XMR');assert.equal(await text('[data-answer] [data-burn=fee-address] .exact .v'),feeAddressOf(feeWallet(),5).address);
- assert.match(await text('[data-answer] [data-burn=fee-step]'),/to the fee address of Mordinal #5/);assert.match(await text('[data-answer] [data-burn=no-refund]'),/not refunded/);
+ assert.match(await text('[data-answer] [data-burn=fee-step]'),/Once the burn is in a block, this page shows the Mordinal as burned and waiting for its fee/);
+ assert.equal(await page.locator('[data-answer] [data-burn=fee-amount],[data-answer] [data-burn=fee-address],[data-answer] [data-burn=fee-wallet]').count(),0);assert.match(await text('[data-answer] [data-burn=no-refund]'),/not refunded/);
+ assert.doesNotMatch(await page.locator('body').textContent(),new RegExp(feeWallet().address));
  assert.equal(await text('[data-answer] [data-burn=text]'),'xmr721 claim to <address>');assert.match(await text('[data-answer] [data-burn=once]'),/cannot be tried again/);assert.match(await text('[data-burn=output]'),/output 1,005 of the chain/);
  await go('/about','[data-burn=about]');assert.match(await text('[data-burn=about]'),/burns the old one/);assert.match(await text('[data-burn=about]'),/cannot be tried again/);assert.equal(await text('[data-burn=about] .exact .v'),burnAddress());
  // A claimed Mordinal's page says nothing of it.
@@ -78,7 +85,7 @@ test('the XMR20 wallet is named only on pages whose index.html says that wallet 
 test('a service that states another burn address, text or fee wallet gets no instructions shown',async()=>{
  const other='4'+burnAddress().slice(1,-1)+(burnAddress().endsWith('o')?'p':'o');
  for(const change of [i=>{i.burn.address=other;},i=>{i.burn.text='xmr721 claim for <address>';},i=>{delete i.burn;},i=>{i.burn.recordsEnd=null;},
-  i=>{i.burn.fee.wallet=other;},i=>{i.burn.fee.viewKey='00'.repeat(32);},i=>{i.burn.fee.account=2;},i=>{delete i.burn.fee;}]){
+  i=>{i.burn.fee.wallet=other;},i=>{i.burn.fee.viewKey='00'.repeat(32);},i=>{i.burn.fee.account=2;},i=>{i.burn.fee.offset=0;},i=>{delete i.burn.fee;}]){
   await page.route('**/info',async route=>{const r=await route.fetch(),i=await r.json();change(i);await route.fulfill({response:r,json:i});});
   try{
    await go('/xmr721','[data-burn=misfit]');assert.match(await text('[data-burn=misfit]'),/The service does not fit its code: do not burn a Mordinal or pay a fee on its word/);
@@ -110,12 +117,15 @@ test('a burn that waits for its fee: the Mordinal page says so, with what is mis
  await go('/mordinal/6','[data-answer=waiting]');
  assert.match(await text('[data-answer=waiting] .big'),/Burned, waiting for its fee/);assert.equal(await text('[data-answer=waiting] [data-burn=missing]'),'0.00103 XMR');
  assert.equal(await text('[data-answer=waiting] [data-burn=fee-amount]'),'0.00103 XMR');assert.equal(await text('[data-answer=waiting] [data-burn=fee-address] .exact .v'),feeAddressOf(feeWallet(),6).address);
+ assert.match(await text('[data-answer=waiting] [data-burn=paid]'),/Paid so far: 0 of 0\.00103 XMR.*A payment shows here once it is in a block\./);
+ assert.match(await text('[data-answer=waiting] [data-burn=pay-from]'),/holds no inscribed coins/);assert.match(await text('[data-answer=waiting] [data-burn=others]'),/Wait until block 860/);
  assert.equal(await page.locator('[data-answer=waiting] .chip a.v').first().getAttribute('title'),W.dave);assert.match(await text('[data-answer=waiting] [data-burn=no-refund]'),/not refunded/);
  await go('/gallery','[data-number="6"]');assert.equal(await text('[data-number="6"] [data-claimed]'),'Waiting for its fee');
  await page.setViewportSize({width:360,height:740});await go('/mordinal/6','[data-answer=waiting]');
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth),0,'no sideways scroll');
  // Part of it, then the rest: claimed in the block of the payment that reaches the fee.
  await post('/test/fee',{number:6,amount:'30000000'});await demo.mine();await go('/mordinal/6','[data-answer=waiting]');assert.equal(await text('[data-answer=waiting] [data-burn=missing]'),'0.001 XMR');
+ assert.equal(await text('[data-answer=waiting] [data-burn=fee-amount]'),'0.001 XMR');assert.match(await text('[data-answer=waiting] [data-burn=paid]'),/Paid so far: 0\.00003 of 0\.00103 XMR/);
  await post('/test/fee',{number:6,amount:'1000000000'});await demo.mine();
  await go('/mordinal/6','[data-answer=claimed]');assert.equal(await text('[data-answer=claimed] .exact .v'),W.dave);assert.match(await page.locator('body').textContent(),/Claimed by burning the old Mordinal, by/);
  assert.deepEqual(problems,[]);});
