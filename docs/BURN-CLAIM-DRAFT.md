@@ -1,6 +1,6 @@
 # Claiming by burning: draft (15 November 2026; the fee added 16 November)
 
-Status: a local candidate. No ledger uses it and nothing here is switched on. Two reviews inside the project read the first version; what they found is changed and listed below. The fee of burn claims (16 November) has not been reviewed yet. The rule is [`../RULES.md`](../RULES.md) section 10; this page says what was
+Status: a local candidate. No ledger uses it and nothing here is switched on. Two reviews inside the project read the first version; what they found is changed and listed below. The fee of burn claims (16 November) was read by two more reviews; what they found is changed and listed at the end. The rule is [`../RULES.md`](../RULES.md) section 10; this page says what was
 built, how to try it, what is decided and what is not, and what a reviewer should attack
 first.
 
@@ -14,7 +14,7 @@ pays an address nobody can spend from, and whose text is `xmr721 claim to <addre
 the original rules the old Mordinal then sits on an unspendable output; here it belongs to
 `<address>`, once its fee is paid: the burn transaction's own fee once more, paid to the
 Mordinal's own fee address (the project fee wallet's subaddress at account 1, index = the
-Mordinal's number). Until then the Mordinal is burned and waits for its fee. Claim records
+Mordinal's number + 1). Until then the Mordinal is burned and waits for its fee. Claim records
 still count for 720 blocks from the first burn block and are refused after that.
 
 ## What was built
@@ -22,7 +22,7 @@ still count for 720 blocks from the first burn block and are refused after that.
 | Where | What |
 |---|---|
 | `rules/lib/burn.mjs` | Monero's `hash_to_ec`, the burn address and its public view key, the dead outputs, the strict reading of `tx_extra`, the text, the ring, the transaction fee, the check that output 0 pays the burn address (with the transaction key, or the additional key of output 0) |
-| `rules/lib/burn-fee.mjs` | the fee wallet (main address and public view key), the fee address of each Mordinal (subaddress (1, n)), the table of their spend keys, `feeParts` (what the rule reads of a transaction) and `feeOutputs` (the outputs that pay a fee address, as wallet2 finds them, amounts checked against commitments) |
+| `rules/lib/burn-fee.mjs` | the fee wallet (main address and public view key), the fee address of each Mordinal (subaddress (1, n + 1)), `walletKeys` (the public keys as wallet2 reads them), the table of their spend keys, `feeParts` (what the rule reads of a transaction) and `feeOutputs` (the outputs that pay a fee address, as wallet2 finds them, amounts checked against commitments) |
 | `rules/lib/ledger.mjs` | `burnFrom`, `burnDead` and `burnFee` in the setup; `checkBurnClaim` / `applyBurnClaim` (a valid burn waits until its fee is paid); `scanBurnFees` / `applyBurnFees`; `burnClaim(id)`, `burnFee(n)`; claim records refused from the first burn block plus 720 on |
 | `reader/lib/reader.mjs` | finds original-format transfers from the first burn block on, journals each (accepted, or refused with the reason); scans every transaction from that block on for fee payments and journals those that pay a fee address; rebuilds from the journal, undoes both when blocks are replaced; the setting (with the fee wallet) is part of the folder's identity and of checkpoints from that block on |
 | `reader/lib/owners.mjs` | a second hash, over each entry's owner output index, which the owner-list hash does not cover |
@@ -64,10 +64,18 @@ same amounts. Without the tool it is skipped (passed on 16 November, about 40 se
 
 To switch a reader on: `--burn-from <height>`. A state folder takes the setting in when it
 is restarted with it, as long as that block is at least 10 blocks above the newest block
-the folder has read. Until the folder has read the block, the height can be corrected or
-the setting taken out again the same way (a new height again 10 blocks above what was
-read). A folder that has read its first burn block keeps it: another one is another ledger,
-read again from the start block.
+the folder has read and above the newest block of its Monero node (the node is asked at the
+first pass; the setting is written into the folder only then, so a folder that lags behind
+the chain cannot take a block already passed). Until the folder has read the block, the
+height can be corrected or the setting taken out again the same way. A folder that has read
+its first burn block keeps it: another one is another ledger, read again from the start
+block.
+
+To switch back: a folder that has taken a first burn block has the state schema
+`mordinals-reader-v3-burn-fee`, and the code the live service runs today refuses it. Before
+the first burn block is read, going back is a restart of this code without `--burn-from`
+(the setting is taken out, the schema is the plain one again) and then the earlier code;
+after it, only reading the chain again from the start block in a new folder.
 
 ## Decided in this draft (each can be argued with)
 
@@ -117,7 +125,9 @@ read again from the start block.
 Added 16 November, the fee (RULES.md section 10, "The fee"):
 
 13. **The fee is the burn transaction's own `txnFee`**, paid once more to the Mordinal's fee
-    address, the project fee wallet's subaddress (1, n). The wallet and its view key are
+        address, the project fee wallet's subaddress (1, n + 1); index 0 takes the wallet's own
+    change (changed after review: with index n, the fee wallet's change counted as Mordinal
+    #0's fee). The wallet and its view key are
     mainnet constants next to the burn address; another wallet only off mainnet or on the
     offline test chain (`--burn-fee-wallet`).
 14. **A burn completes at the first place where the valid burn and enough fee are both on the
@@ -129,14 +139,20 @@ Added 16 November, the fee (RULES.md section 10, "The fee"):
     record in the overlap is not: the first claim that completes wins, and the waiting burn
     is then lost. Fee payments for a claimed Mordinal, or one without a valid burn, are kept
     and give nothing; a later valid burn uses earlier payments.
-16. **A fee payment is found as wallet2 finds it, and no other way**: the first transaction
-    public key and the first list of additional keys up to the first field a wallet does not
-    know; view tags respected; the amount checked against the commitment; no lock time; the
-    block reward transaction not looked at. A one-time key counts once, at the largest amount
-    seen with it (a wallet keeps the larger of two such outputs; the view key is public, so a
-    copy of a payment's key is easy to make).
+16. **A fee payment is found as wallet2 finds it and can spend it**: every transaction public
+    key and the first list of additional keys, read as wallet2's `parse_tx_extra` reads them
+    (past `02`, `03` and `0xde` fields, up to the first field it cannot read); derivations in
+    wallet2's order (first key, additional key, further keys); an additional key only when
+    every entry before it is a point; view tags respected; the amount checked against the
+    commitment; no lock time; no transaction without a public key; the block reward
+    transaction not looked at. A one-time key counts once, at the largest amount seen with
+    it (a wallet keeps the larger of two such outputs while it has not spent the first; the
+    view key is public, so a copy of a payment's key is easy to make, and its writer pays at
+    least what it adds).
 17. **Fee payments are journaled facts.** Every transaction from the first burn block on that
-    pays a fee address gets `fee` (what `feeParts` reads) in its entry, or an entry of its own.
+    pays a fee address gets `fee` (what `feeParts` reads) and `feeFound` (the outputs found,
+    so a rebuild derives no key again; `verify.mjs` finds them again) in its entry, or an
+    entry of its own.
     They count in a checkpoint's `records` and `listHash`, and the ledger summary under it
     gains `waiting` and `fees` once there is something to say. The state folder's schema name
     ends in `-burn-fee`, so code from before the fee refuses such a folder.
@@ -187,19 +203,21 @@ Added 16 November, the fee (RULES.md section 10, "The fee"):
    and waits for its fee is shown.)
 9. **The length of the overlap.** 720 blocks is a choice. Longer leaves the old claim open
    longer; shorter leaves less time to a holder whose burn was mined early.
-10. **`/records` carries no heights.** A client that replays `/records` and `/burns` gets
-    the order, not the block of each entry; `/log` has both. Unchanged from before.
+10. **`/records` carries no heights.** A client that replays `/records` and `/burns` at one
+    height goes wrong around `burnFrom` and `recordsEnd`; reader/README.md now points to
+    `/log`, whose entries carry their block.
 11. **No refunds, and a fee that moves with the network.** A fee paid without a burn, for
     another Mordinal, beyond what is due, or for a burn that a record overtook stays with the
-    project. The amount due is the burn's own fee, so it follows the network's fee level; the
-    pages ask 0.0012 XMR before the burn is known. Whether to return mistaken payments by hand
-    is not decided.
+        project, and so does a fee for a burn that is then refused, or a payment to the fee
+    wallet's main address. The amount due is the burn's own fee, so it follows the network's
+    fee level; the pages ask for the fee only once the burn is in a block and shows the exact
+    amount. Whether to return mistaken payments by hand is not decided.
 12. **What the fee makes public.** Anyone with the published view key sees every fee payment,
     its amount and the Mordinal it is for; the paying transaction is linked to that claim.
 13. **The reader's cost.** Every transaction from the first burn block on is scanned: about
-    1.4 ms per transaction, 48 ms per mainnet block on average (at most 176 ms of 60 blocks
-    measured), and 3.1 s once for the table of the 42,895 fee addresses, on an Apple M4 Pro
-    with Node 24. A reader catching up a year of blocks would spend about 3.5 hours on it.
+    1.22 ms per transaction, 37 ms per mainnet block on average (at most 124 ms of 60 blocks
+    measured), and 3.4 s once for the table of the 42,895 fee addresses, on an Apple M4 Pro
+    with Node 24. A reader catching up a year of blocks would spend about 2.7 hours on it.
     Not optimised (a native scan, or worker threads, would cut it).
 14. **The fee wallet's lookahead.** The fee wallet sees the fees only with a lookahead of at
     least 50,000 addresses in account 1 (reader/README.md, operator note); a payment it does
@@ -239,9 +257,9 @@ Added 16 November, the fee (RULES.md section 10, "The fee"):
    2,855,400; this rule always.
 8. **The fee scan** (`feeOutputs` in `burn-fee.mjs`) against wallet2's `is_out_to_acc_precomp`
    and `cache_tx_data`: can an output count here that the fee wallet cannot find or spend, or
-   the other way round? Known differences, all stricter here: wallet2 tries every `01` field,
-   and reads on past merge-mining (`03`) and `0xde` fields; this rule takes the first `01` and
-   stops there. Point decoding differs at the edges (non-canonical encodings).
+      the other way round? Known differences, all stricter here: a transaction public key that
+   is not a point (wallet2 then scans and spends with a derivation of its own making), and
+   point decoding at the edges (non-canonical encodings).
 9. **Completion and order** (`complete`, `applyBurnFees` in `ledger.mjs`, `judgeFees` in
    `reader.mjs`): a burn and payments in one block, in one transaction, before the burn,
    split across blocks, replaced blocks; the largest-amount rule for repeated one-time keys
@@ -263,3 +281,18 @@ Added 16 November, the fee (RULES.md section 10, "The fee"):
 | A client replaying `/records` missed burn claims; the output indexes were not served | `/burns` with `before`; `/owners` gives `ownerOutputIndex` on a burning ledger |
 | The pages showed whatever burn address the service stated, and named a wallet button that does not exist | the pages work the address out themselves; steps for the original wallet; the XMR20 wallet only by a meta tag |
 | The dead outputs were described as fifteen unknown keys | one shared key, one possible theft; 70499745 is the transaction's ordinary sixteenth output |
+
+## Changed after the two reviews of the fee (16 November)
+
+| Found | Change |
+|---|---|
+| wallet2 sends the change of a payment from account 1 to subaddress (1, 0) with the transaction key, so the fee wallet's own change counted as Mordinal #0's fee | Mordinal n's fee address is (1, n + 1); index 0 is no fee address; checked again against monero-wallet-rpc; the operator moves fees out by sweeping |
+| An output found through additional key i after an entry wallet2 cannot read: wallet2 sees it and cannot spend it | an additional key counts only when every entry before it is a point |
+| Only the first transaction public key was tried, and reading stopped at `03` and `0xde` fields: a payer could lose a payment the fee wallet receives | every `01` key, in wallet2's order; reading goes past `02`, `03` and `0xde` as wallet2's does |
+| The fee wallet's main address was shown on the general pages with a Copy button | only its view key; each Mordinal's fee address on its own page |
+| The pages asked for 0.0012 XMR before the burn | the fee is paid after the burn is in a block, when the page shows the exact amount; from a wallet without inscribed coins; someone paying for another holder's burn waits until claim records stop; what is not refunded is listed |
+| The waiting page did not say what was paid | it shows what was paid so far, and that a payment shows once it is in a block |
+| Fee outputs were found twice per transaction, and again on every rebuild | found once and journaled (`feeFound`); `verify.mjs` finds them again; `/burns` pages of at most 500 |
+| Replaying `/records` and `/burns` at one height goes wrong around `burnFrom` and `recordsEnd` | replay `/log`, entry by entry at its own block |
+| A folder lagging behind the chain could take a first burn block the chain had passed | the node's newest block is checked too, before the setting is written |
+| Switching back after the first burn block was not described | code without the burn rule refuses such a folder: go back before that block is read, or read again from the start |
