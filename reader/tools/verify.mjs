@@ -61,8 +61,10 @@ export async function verify({info,entries,checkpoints=[],owners,chain=null,publ
   for(const k of Object.keys(mine))if(c[k]!==mine[k])bad(`Checkpoint at block ${c.height}: ${k} differs from the replay.`);
   for(const k of ['network','domain','owners','start'])if(c[k]!==info[k])bad(`Checkpoint at block ${c.height}: ${k} is not this ledger's.`);}};
  // The fee payments of an entry, after what it carries. A fee payment entry has to pay a fee address.
- const fees=(e,i)=>{if(e.fee===undefined)return true;
+ // The outputs it names as found are found again here (the reader itself does not, when it rebuilds from its journal).
+ const fees=(e,i)=>{if(e.fee===undefined&&e.feeFound===undefined)return true;
   if(info.burnFrom==null||e.height<info.burnFrom){bad(`Log entry ${i} (block ${e.height}) holds fee payments where none count.`);return false;}
+  if(!same(ledger.scanBurnFees(e.fee),e.feeFound)){bad(`Log entry ${i} (block ${e.height}) names other fee outputs than the rules find in it.`);return false;}
   try{ledger.applyBurnFees(e.txid,e.fee);return true;}catch(err){bad(`Log entry ${i} (block ${e.height}) is logged as a fee payment, but the rules find none in it: ${String(err.message)}`);return false;}};
  for(const [i,e] of entries.entries()){
   if(!Number.isInteger(e.height)||!Number.isInteger(e.pos)||e.height<=info.start||e.height<last[0]||(e.height===last[0]&&e.pos<=last[1])){bad(`Log entry ${i} is out of chain order.`);break;}

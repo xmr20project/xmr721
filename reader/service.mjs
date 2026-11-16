@@ -25,7 +25,7 @@ import {existsSync,readFileSync,statSync} from 'node:fs';
 import {join,normalize,extname,sep} from 'node:path';
 import {RULES,NO_COLLECTION,heldUntil,canonical,decodeRecord} from '../rules/lib/records.mjs';
 import {BURN,CLAIM_PREFIX,isMainnetDead} from '../rules/lib/burn.mjs';
-import {FEE_SAFE,feeWallet,isProjectFeeWallet} from '../rules/lib/burn-fee.mjs';
+import {feeWallet,isProjectFeeWallet} from '../rules/lib/burn-fee.mjs';
 import {createChain} from './lib/chain.mjs';
 import {openReader} from './lib/reader.mjs';
 import {createRelay,createCarrier} from './lib/relay.mjs';
@@ -143,10 +143,10 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
    if(path==='/info')return {network:m.network,domain:m.domain,feeAddress:m.feeAddress,height,count:list.length,chunk,test:Boolean(testHooks),owners:m.owners,start:m.start,startHash:m.startHash,mintFrom:m.mintFrom??null,...(m.minters?{minters:m.minters.split(',')}:{}),...(m.openFrom!=null?{openFrom:m.openFrom}:{}),
     // Claiming by burning: the first block, the first block at which claim records no longer count, where the burned
     // Mordinal goes, the text that names the new owner, the dead outputs of the ring.
-    // The fee: the fee wallet, its public secret view key, the account of the fee addresses (index: the Mordinal's
-    // number), and what a page asks for before a burn's own fee is known.
+    // The fee: the fee wallet, its public secret view key, the account of the fee addresses and what is added to a
+    // Mordinal's number to give its index there (1: index 0 takes the wallet's own change).
     ...(m.burnFrom!=null?{burnFrom:m.burnFrom,burn:{recordsEnd:L().burn.recordsEnd,address:L().burn.address,viewKey:BURN.viewSecret,text:CLAIM_PREFIX+'<address>',dead:L().burn.dead,ownerOutputs:m.ownerOutputs,
-     fee:{...L().burn.fee,safe:FEE_SAFE.toString()}}}:{}),...(xmr20||E?{xmr20:{...(xmr20?{inscribers:xmr20.inscribers}:{}),...(E?{earlier:earlierInfo()}:{})}}:{}),
+     fee:L().burn.fee}}:{}),...(xmr20||E?{xmr20:{...(xmr20?{inscribers:xmr20.inscribers}:{}),...(E?{earlier:earlierInfo()}:{})}}:{}),
     relay:relay?{networkFee:'relay',perAddress:relay.limits.perSigner,fees:relay.fees,payBlocks:relay.limits.payBlocks}:null,rules:{feeBps:RULES.feeBps,marketFeeCapBps:RULES.marketFeeCapBps,minPrice:RULES.minPrice.toString(),maxReserve:RULES.maxReserve,settle:RULES.settle}};
    if(path==='/owners'){const from=int(q.get('from'),0,0,list.length),limit=int(q.get('limit'),chunk,1,chunk);return {from,total:list.length,entries:list.slice(from,from+limit)};}
    if(path==='/claimed')return {height,numbers:claimed()};
@@ -166,7 +166,8 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
    if(m.burnFrom!=null&&path==='/burns'){
     const all=once('burns',()=>{const out=[];let before=0;for(const e of reader.journal){const burn=e.ok&&e.burn;if(e.ok&&e.record!==undefined)before++;
      if(burn||e.fee)out.push({height:e.height,pos:e.pos,txid:e.txid,...(burn?{id:e.id}:{}),before,...(burn?{burn:e.burn,state:L().burnClaim(e.id).state}:{}),...(e.fee?{fee:e.fee}:{})});}return out;});
-    const from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),1000,1,5000);return {height,total:all.length,from,burns:all.slice(from,from+limit)};}
+    // (An entry with a fee payment holds the outputs of its transaction, a few kilobytes: pages of at most 500.)
+    const from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),200,1,500);return {height,total:all.length,from,burns:all.slice(from,from+limit)};}
    if(path.startsWith('/status/')){const id=path.slice(8);if(!/^[0-9a-f]{64}$/.test(id))throw fail('A record code is 64 hexadecimal characters.');
     // A burn claim is done once it claimed its Mordinal; before that it waits for its fee, or it was passed over.
     {const e=reader.entryById(id),b=e?.burn?burnState(id):null;

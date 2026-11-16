@@ -9,8 +9,10 @@
 //                      and, on a ledger that claims by burning, every transfer in the original Mordinals format from
 //                      its first burn block on: {height, pos, txid, burn, id, ok, error?} (burn: rules/lib/burn.mjs),
 //                      and every transaction from that block on that pays a fee address: its record or burn entry
-//                      gets `fee`, or it has an entry of its own, {height, pos, txid, ok: true, fee} (fee: what
-//                      feeParts() in rules/lib/burn-fee.mjs reads; a transaction's payments count after what it carries)
+//                      gets `fee` and `feeFound`, or it has an entry of its own, {height, pos, txid, ok: true, fee,
+//                      feeFound} (fee: what feeParts() in rules/lib/burn-fee.mjs reads; feeFound: the outputs that pay
+//                      a fee address, as the ledger's scanBurnFees found them, so a rebuild from this journal derives
+//                      no key again; a transaction's payments count after what it carries)
 //   checkpoints.jsonl  a summary every `checkpointEvery` blocks (see checkpoint())
 // Records of a block are written before the block line, so a stop in between leaves nothing half read: record lines
 // above the last block line are dropped at the next start. When the chain reorganises, the journal is cut back to
@@ -34,7 +36,10 @@ import {ownersHash,ownerOutputsHash} from './owners.mjs';
 // fee of burn claims, which named such a folder "-burn", refuses it too).
 export const SCHEMA='mordinals-reader-v3',SCHEMA_MINTERS='mordinals-reader-v3-minters',SCHEMA_OPEN='mordinals-reader-v3-open',SCHEMA_BURN='-burn-fee';
 // A folder takes a first burn block in, or another one, only when that block is at least this far above the newest
-// block it has read: a block that close may be read, or replaced, before every reader of the ledger has the setting.
+// block it has read and above the newest block of the Monero node: a block that close may be read, or replaced, before
+// every reader of the ledger has the setting, and a folder that lags behind the chain must not take a block that is
+// already in the past. The folder is checked when it is opened, the node at the first pass; only then is the setting
+// written into the folder.
 export const BURN_MARGIN=10;
 const BURN_KEYS=['burnFrom','burnDead','ownerOutputs','burnFee'];
 const sha=text=>createHash('sha256').update(text).digest('hex');
@@ -112,7 +117,7 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
  const noteBurn=(e,out)=>{const b=ledger.burnClaim(out.id),late=Boolean(b&&b.tx!==e.txid);
   events.push({height:e.height,pos:e.pos,txid:late?b.tx:e.txid,id:out.id,time:timeOf(e.height)??e.time??null,kind:'claim',number:out.number,to:out.owner,proof:'burn',...(late?{burnHeight:b.height,feeTx:e.txid}:{})});};
  // The fee payments of an entry, after what it carries; what each output counted for is kept for /entry.
- const noteFees=e=>{const r=ledger.applyBurnFees(e.txid,e.fee);feeNotes.set(e.txid,r.paid);for(const c of r.claims)noteBurn(e,c);};
+ const noteFees=e=>{const r=ledger.applyBurnFees(e.txid,e.fee,e.feeFound??null);feeNotes.set(e.txid,r.paid);for(const c of r.claims)noteBurn(e,c);};
  function note(e,d,out){events.push(describe(e,d,out));if(d.op===OP.list){lots.push(e.id);bodies.set(e.id,hex(d.bodyBytes));}}
  const index=e=>{if(e.id&&e.ok)byId.set(e.id,e);if(!byTx.has(e.txid))byTx.set(e.txid,e);};
  // The ledger from the owner list and the journal alone. No node is asked.
@@ -137,8 +142,11 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
   replace(files.records,journal);replace(files.blocks,blocks);replace(files.checkpoints,checkpoints);rebuild();}
  load();
  // The opening is written into the folder only now, when the folder has passed every check and was read whole.
- if(opened!==null){writeMeta(meta);log?.({opened:openFrom,at:opened});}
- if(lit!==null){writeMeta(meta);log?.({burnFrom,at:lit});}
+ // A burn setting taken out is written now; one taken in, or changed, once the node's newest block is known (pass()),
+ // and with it an opening taken in at the same start.
+ let pendingBurn=lit!==null&&burnFrom!==null;
+ if(opened!==null&&!pendingBurn){writeMeta(meta);log?.({opened:openFrom,at:opened});}
+ if(lit!==null&&!pendingBurn){writeMeta(meta);log?.({burnFrom,at:lit});}
 
  // A summary anyone can compare: the accepted records so far and the ledger they lead to.
  function checkpoint(){
@@ -179,8 +187,8 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
  // From the first burn block on, every transaction is looked at for fee payments: one that pays a fee address is
  // journaled with what the rule reads of it, on the entry of the record or burn it carries, or on one of its own.
  function judgeFees(block,pos,txid,tx,e){
-  const parts=feeParts(tx);if(!parts||!ledger.scanBurnFees(parts).length)return e;
-  const out=e||{height:block.height,pos,txid,ok:true};out.fee=parts;noteFees(out);return out;}
+  const parts=feeParts(tx),found=parts?ledger.scanBurnFees(parts):[];if(!found.length)return e;
+  const out=e||{height:block.height,pos,txid,ok:true};out.fee=parts;out.feeFound=found;noteFees(out);return out;}
  async function readBlock(height){
   const b=await chain.block(height);if(b.prev!==tipBlock().hash)return false;
   const txs=b.txids.length?await chain.txs(b.txids):new Map(),found=[];
@@ -202,6 +210,8 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
  async function pass({limit=Infinity}={}){
   const info=await chain.info();let reorg=0,added=0;
   if(testChain&&info.nettype!=='fakechain')throw Error('This reader names dead outputs of its own, which only the offline test chain has; the Monero node is not on that chain.');
+  if(pendingBurn){if(burnFrom<info.height+BURN_MARGIN)throw Error(`The first burn block has to be at least ${BURN_MARGIN} blocks above the newest block of the Monero node (${info.height}); this folder keeps its setting.`);
+   writeMeta(meta);if(opened!==null)log?.({opened:openFrom,at:opened});log?.({burnFrom,at:lit});pendingBurn=false;}
   if(info.height<start)throw Error('The Monero node has not reached the start block yet.');
   const first=await chain.header(start);
   if(!meta.startHash){meta.startHash=first.hash;writeMeta(meta);}

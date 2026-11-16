@@ -10,7 +10,7 @@ import {outputSecret,signWithOutputKey} from '../../rules/lib/claim.mjs';
 import {BURN,MAINNET_DEAD,RECORDS_OVERLAP,burnAddress,burnClaimId,burnParts,claimText} from '../../rules/lib/burn.mjs';
 import {createLedger} from '../../rules/lib/ledger.mjs';
 import {wallet,makeTx,ownerEntry,makeBurn,burnParty,feeParty,payFee,DOMAIN} from '../../rules/tests/helpers.mjs';
-import {feeParts,feeWallet,feeAddressOf,FEE_SAFE} from '../../rules/lib/burn-fee.mjs';
+import {feeParts,feeWallet,feeAddressOf} from '../../rules/lib/burn-fee.mjs';
 import {ownersHash,ownerOutputsHash} from '../lib/owners.mjs';
 import {openReader,SCHEMA,SCHEMA_BURN,BURN_MARGIN} from '../lib/reader.mjs';
 import {unframe} from '../lib/transport.mjs';
@@ -55,7 +55,7 @@ test('the reader finds burn claims from the first burn block on, in block order,
  assert.deepEqual(reader.journal.slice(1).map(e=>[e.height,e.pos,e.txid,e.ok,e.error??null]),[[103,1,b1.txid,true,null],[103,3,c4.txid,true,null],[103,5,b2.txid,false,'This Mordinal is already claimed.']]);
  assert.equal(reader.entryByTx(junk.txid),null);assert.equal(reader.entryByTx(long.txid),null);assert.equal(L().mordinal(3).claimed,false);
  // The burn pays its own fee: the entry holds what the rule read for both, and the Mordinal is claimed in its block.
- const e1=reader.journal[1];assert.deepEqual(e1,{height:103,pos:1,txid:b1.txid,burn:burnParts(b1.tx),id:burnClaimId(DOMAIN,b1.txid),ok:true,fee:feeParts(b1.tx)});
+ const e1=reader.journal[1];assert.deepEqual(e1,{height:103,pos:1,txid:b1.txid,burn:burnParts(b1.tx),id:burnClaimId(DOMAIN,b1.txid),ok:true,fee:feeParts(b1.tx),feeFound:[{index:1,number:2,amount:DUE.toString(),error:null}]});
  assert.deepEqual(reader.feesOf(b1.txid),[{index:1,number:2,amount:DUE.toString(),counted:true,error:null}]);
  assert.equal(L().mordinal(2).owner,w.carol.address);assert.equal(L().mordinal(4).owner,w.alice.address);
  assert.deepEqual(reader.events.map(e=>[e.kind,e.number,e.to,e.proof,e.txid,e.height]),[['claim',0,w.alice.address,'one-time key',c0.txid,101],['claim',2,w.carol.address,'burn',b1.txid,103],['claim',4,w.alice.address,'one-time key',c4.txid,103]]);
@@ -180,20 +180,21 @@ test('the setting of a folder: taken in, changed and taken out before its block 
  // Too close to what the folder has read: refused, and the folder is as it was.
  for(const near of [103,111])assert.throws(()=>open({burnFrom:near}),/at least 10 blocks above the newest block this folder has read \(102\)/);
  assert.equal(meta().burnFrom,undefined);assert.equal(meta().schema,SCHEMA);
- // Ten blocks above: taken in.
- const logged=[],lit=open({burnFrom:112,log:v=>logged.push(v)});assert.deepEqual(logged,[{burnFrom:112,at:102}]);
+ // Ten blocks above: taken in, and written into the folder once the node is seen not to be ahead of it either.
+ const logged=[],lit=open({burnFrom:112,log:v=>logged.push(v)});assert.equal(meta().burnFrom,undefined);assert.deepEqual(logged,[]);
+ await lit.sync();assert.deepEqual(logged,[{burnFrom:112,at:102}]);
  assert.equal(lit.meta.schema,SCHEMA+SCHEMA_BURN);assert.deepEqual([meta().burnFrom,meta().burnDead,meta().burnFee,meta().schema],[112,MAINNET_DEAD.join(','),feeWallet().address,SCHEMA+SCHEMA_BURN]);
  assert.equal(lit.height,102);assert.equal(lit.ledger.mordinal(0).owner,w.alice.address);assert.equal(lit.ledger.burn.from,112);
  // A mistyped height is corrected while neither block was read: to a later one, to an earlier one, and taken out again.
- assert.equal(open({burnFrom:120}).ledger.burn.from,120);assert.equal(meta().burnFrom,120);
- assert.equal(open({burnFrom:113}).ledger.burn.from,113);assert.equal(meta().burnFrom,113);
+ const later=open({burnFrom:120});assert.equal(later.ledger.burn.from,120);await later.sync();assert.equal(meta().burnFrom,120);
+ const earlier=open({burnFrom:113});await earlier.sync();assert.equal(earlier.ledger.burn.from,113);assert.equal(meta().burnFrom,113);
  assert.throws(()=>open({burnFrom:105}),/at least 10 blocks above/);assert.equal(meta().burnFrom,113);
  const out=open({burnFrom:null});assert.equal(out.ledger.burn,null);assert.deepEqual(Object.keys(meta()),['schema','network','domain','feeAddress','start','owners','startHash']);assert.equal(meta().schema,SCHEMA);
  // Taken in again and read up to the block before it: still open to change; the block itself read: no longer.
- const r=open({burnFrom:113});for(let h=103;h<=112;h++)chain.mine(h===108?[burn('too early',2,w.carol)]:[]);await r.sync();assert.equal(r.height,112);assert.deepEqual(r.journal.length,1);
+ const r=open({burnFrom:113});await r.sync();for(let h=103;h<=112;h++)chain.mine(h===108?[burn('too early',2,w.carol)]:[]);await r.sync();assert.equal(r.height,112);assert.deepEqual(r.journal.length,1);
  assert.throws(()=>open({burnFrom:121}),/at least 10 blocks above the newest block this folder has read \(112\)/);
- const moved=open({burnFrom:122});assert.equal(moved.ledger.burn.from,122);
- const back=open({burnFrom:null});assert.equal(back.ledger.burn,null);const again=open({burnFrom:125});
+ const moved=open({burnFrom:122});await moved.sync();assert.equal(moved.ledger.burn.from,122);assert.equal(meta().burnFrom,122);
+ const back=open({burnFrom:null});assert.equal(back.ledger.burn,null);const again=open({burnFrom:125});await again.sync();
  for(let h=113;h<=124;h++)chain.mine();chain.mine([burn('in time',3,w.dave)]);await again.sync();assert.equal(again.height,125);assert.equal(again.ledger.mordinal(3).owner,w.dave.address);
  assert.throws(()=>open({burnFrom:140}),/made for another ledger \(burnFrom differs\)/);assert.throws(()=>open({burnFrom:null}),/made for another ledger \(schema differs\)/);
  assert.equal(meta().burnFrom,125);
@@ -201,6 +202,13 @@ test('the setting of a folder: taken in, changed and taken out before its block 
  const past=open({dir:state+'-past',burnFrom:null});await past.sync({limit:8});assert.equal(past.height,108);
  for(const late of [103,108])assert.throws(()=>open({dir:state+'-past',burnFrom:late}),/made for another ledger/);
  assert.equal(JSON.parse(readFileSync(join(state+'-past','meta.json'),'utf8')).burnFrom,undefined);
+ // A folder that lags behind the node cannot take a block the chain has passed, or one less than ten blocks ahead of
+ // the node: it reads nothing and keeps its setting. Ten blocks above the node's newest block is taken.
+ const lagMeta=()=>JSON.parse(readFileSync(join(state+'-lag','meta.json'),'utf8'));
+ const lag=open({dir:state+'-lag',burnFrom:null});await lag.sync({limit:2});assert.equal(lag.height,102);assert.equal(chain.tip,125);
+ for(const near of [120,134]){const take=open({dir:state+'-lag',burnFrom:near});
+  await assert.rejects(take.sync(),/at least 10 blocks above the newest block of the Monero node \(125\); this folder keeps its setting/);assert.equal(take.height,102);assert.equal(lagMeta().burnFrom,undefined);assert.equal(lagMeta().schema,SCHEMA);}
+ const ahead=open({dir:state+'-lag',burnFrom:135});await ahead.sync();assert.equal(lagMeta().burnFrom,135);assert.equal(ahead.height,125);
  // A new folder has read nothing: any block above the start block is taken.
  const fresh=open({dir:state+'-new',burnFrom:101});assert.equal(fresh.ledger.burn.from,101);});
 
@@ -234,7 +242,7 @@ test('the service: the setting in /info, burn claims and fee payments in /burns,
  try{
   const info=(await get('/info')).body,fee=feeWallet(),address=n=>feeAddressOf(fee,n).address;
   assert.equal(info.burnFrom,FROM);assert.deepEqual(info.burn,{recordsEnd:END,address:burnAddress(),viewKey:BURN.viewSecret,text:'xmr721 claim to <address>',dead:[...MAINNET_DEAD],ownerOutputs:ownerOutputsHash(owners),
-   fee:{wallet:fee.address,viewKey:fee.viewKey,account:1,safe:FEE_SAFE.toString()}});
+   fee:{wallet:fee.address,viewKey:fee.viewKey,account:1,offset:1}});
   assert.deepEqual((await get('/mordinal/3')).body.mordinal.ownerOutput,1003);assert.deepEqual((await get('/mordinal/3')).body.mordinal.burnFee,{address:address(3),paid:'0'});
   // The owner list as served states each owner output's index: both hashes can be recomputed from it.
   const served=[];for(let from=0;from<owners.length;from+=4)served.push(...(await get('/owners?from='+from)).body.entries);
@@ -275,12 +283,13 @@ test('the service: the setting in /info, burn claims and fee payments in /burns,
   assert.deepEqual(burns,{height:106,total:3,from:0,burns:[{height:103,pos:0,txid:good.txid,id,before:1,burn:burnParts(good.tx),state:'claimed',fee:feeParts(good.tx)},
    {height:104,pos:1,txid:second.txid,id:id2,before:3,burn:burnParts(second.tx),state:'claimed'},{height:105,pos:0,txid:pay.txid,before:3,fee:feeParts(pay.tx)}]});
   assert.deepEqual((await get('/burns?from=1&limit=1')).body.burns.map(x=>x.txid),[second.txid]);
-  // A client replays the ledger from the two lists: records[0..before), then the burn claim and the fee payments, and the rest of the records.
-  {const l=createLedger({domain:DOMAIN,feeAddress:w.fee.address,owners:served,height:burns.height,burnFrom:info.burnFrom});let at=0;const bytes=h=>Uint8Array.from(Buffer.from(h,'hex'));
-   for(const x of burns.burns){for(;at<x.before;at++)l.apply(bytes(records.records[at]));if(x.burn)assert.equal(l.applyBurnClaim(x.txid,x.burn).id,x.id);if(x.fee)l.applyBurnFees(x.txid,x.fee);}
-   for(;at<records.total;at++)l.apply(bytes(records.records[at]));
-   assert.deepEqual(l.toJSON().claimed.map(c=>[c.number,c.owner,c.seq]),reader.ledger.toJSON().claimed.map(c=>[c.number,c.owner,c.seq]));assert.deepEqual(l.toJSON().fees,reader.ledger.toJSON().fees);}
-  const log=(await get('/log')).body;assert.equal(log.total,7);assert.deepEqual(log.entries[1].burn,burnParts(good.tx));assert.deepEqual(log.entries[6],{height:105,pos:0,txid:pay.txid,ok:true,fee:feeParts(pay.tx)});
+  // A client replays the ledger from /log, each entry at its own block (claim records stop, burns start at a block):
+  // the record or the burn claim, then the fee payments. It ends where the service is.
+  const log=(await get('/log')).body;assert.equal(log.total,7);assert.deepEqual(log.entries[1].burn,burnParts(good.tx));
+  assert.deepEqual(log.entries[6],{height:105,pos:0,txid:pay.txid,ok:true,fee:feeParts(pay.tx),feeFound:[{index:1,number:5,amount:DUE.toString(),error:null}]});
+  {const l=createLedger({domain:DOMAIN,feeAddress:w.fee.address,owners:served,height:info.start,burnFrom:info.burnFrom}),bytes=h=>Uint8Array.from(Buffer.from(h,'hex'));
+   for(const e of log.entries){l.setHeight(e.height);if(e.ok&&e.burn)assert.equal(l.applyBurnClaim(e.txid,e.burn).id,e.id);else if(e.ok&&e.record)l.apply(bytes(e.record),e.facts);if(e.fee)l.applyBurnFees(e.txid,e.fee);}
+   l.setHeight(log.height);assert.equal(JSON.stringify(l.toJSON()),JSON.stringify(reader.ledger.toJSON()));}
   const stats=(await get('/stats')).body;assert.deepEqual([stats.claimed,stats.records,stats.refused,stats.byKind.claim,stats.burns],[4,5,1,4,{waiting:0,feePayments:2}]);
   const cps=(await get('/checkpoints')).body.checkpoints;assert.deepEqual(cps.map(c=>[c.height,c.burnFrom??null,c.burnFee??null,c.records]),[[102,null,null,1],[104,FROM,fee.address,5],[106,FROM,fee.address,6]]);
   // The check tools: the log replays, sits on the node as logged, and a reader of one's own finds the same.
@@ -300,9 +309,12 @@ test('the service: the setting in /info, burn claims and fee payments in /burns,
   assert.match((await verify({...got,owners:owners.map((o,i)=>i===5?{...o,ownerOutputIndex:5}:o),chain})).problems[0],/other owner output indexes/);
   // A fee payment left out, one with another amount, one that pays nothing, fee parts that are not the node's.
   assert.match((await problems(g=>{g.entries.splice(6,1);}))[0],/Checkpoint at block 106: (records|stateHash|listHash) differs/);
-  assert.match((await problems(g=>{const o=g.entries[6].fee.outs[1];o.amount=o.amount.replace(/^./,c=>c==='0'?'1':'0');}))[0],/Checkpoint at block 106: (stateHash|listHash) differs/);
-  assert.match((await problems(g=>{g.entries[4].fee=g.entries[6].fee;}))[0],/Checkpoint at block 104: (stateHash|records|listHash) differs|on the node as logged/);
-  assert.match((await problems(g=>{g.entries[6].fee=feeParts(makeTx('pays nobody',[{to:wallet('x'),amount:1n}]).tx);}))[0],/logged as a fee payment, but the rules find none in it/);
+  assert.match((await problems(g=>{const o=g.entries[6].fee.outs[1];o.amount=o.amount.replace(/^./,c=>c==='0'?'1':'0');}))[0],/Log entry 6 \(block 105\) names other fee outputs than the rules find in it/);
+  assert.match((await problems(g=>{g.entries[6].feeFound[0].amount='1';}))[0],/Log entry 6 \(block 105\) names other fee outputs than the rules find in it/);
+  assert.match((await problems(g=>{g.entries[4].fee=g.entries[6].fee;}))[0],/Log entry 4 \(block 104\) names other fee outputs/);
+  assert.match((await problems(g=>{g.entries[4].fee=g.entries[6].fee;g.entries[4].feeFound=g.entries[6].feeFound;}))[0],/Checkpoint at block 104: (stateHash|records|listHash) differs/);
+  assert.match((await problems(g=>{g.entries[6].fee=feeParts(makeTx('pays nobody',[{to:wallet('x'),amount:1n}]).tx);}))[0],/names other fee outputs than the rules find in it/);
+  assert.match((await problems(g=>{g.entries[6].fee=feeParts(makeTx('pays nobody',[{to:wallet('x'),amount:1n}]).tx);g.entries[6].feeFound=[];}))[0],/logged as a fee payment, but the rules find none in it/);
   assert.match((await problems(g=>{g.entries[6].ok=false;}))[0],/not a well-formed fee payment entry/);
   {const g=clone();g.entries[6].fee.outs[0].tag='00';const r=await verify({...g,owners,chain});assert.equal(r.ok,false);assert.ok(r.problems.some(p=>/fee payments of transaction .* are not on the node as logged/.test(p)),r.problems.join('; '));}
  }finally{await service.close();}});

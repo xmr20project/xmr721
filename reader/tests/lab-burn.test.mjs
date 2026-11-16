@@ -4,7 +4,8 @@
 // node returns it: the Mordinal is burned and waits for its fee. Then an ordinary monero-wallet-rpc wallet pays the
 // fee to the Mordinal's fee address (once alone, once beside another payment, where the transaction carries additional
 // keys), and the reader gives the Mordinal to the address in the text. A view-only copy of the project's fee wallet in
-// monero-wallet-rpc, made from its public view key, sees the same payments at the same subaddresses with the same amounts.
+// monero-wallet-rpc, made from its public view key, sees the same payments at the same subaddresses (1, n + 1) with the
+// same amounts.
 // The tool is not part of this repository: MORDINAL_OLD names its binary (a wallet that builds original-format
 // registrations and transfers to the burn address: `init`, `mint-old`, `transfer-old`, `publish`; it takes the owner
 // list and the first burn block, and builds no burn before that block). Without it the test is skipped.
@@ -106,13 +107,13 @@ test('a real burning transfer on a test chain waits for its fee; a real payment 
   const far=await payer.rpc('transfer',{destinations:[{amount:1000000,address:feeAddressOf(fees,42894).address}],account_index:0,priority:0});await mine(1);await pass();
   assert.equal((await fetch(base+'/entry/'+far.tx_hash)).status,404);
   // A view-only copy of the fee wallet, made from the fee wallet's address and public view key, with the subaddress
-  // lookahead the operator note asks for (account 1, 50,000 addresses), sees the same payments at subaddresses (1, 0)
-  // and (1, 1) with the same amounts, and the one at (1, 42894).
+  // lookahead the operator note asks for (account 1, 50,000 addresses), sees the same payments at subaddresses (1, 1)
+  // and (1, 2), Mordinals 0 and 1, with the same amounts, and the one at (1, 42895).
   feeView=await startWallet(dir,chain.port,'fee-view-only',port=>call(port,'generate_from_keys',{filename:'w',address:FEE_WALLET.address,viewkey:FEE_WALLET.viewKey,password:'',restore_height:0}));
   assert.equal(feeView.address,FEE_WALLET.address);await feeView.rpc('set_subaddress_lookahead',{major_idx:2,minor_idx:50000});await feeView.rpc('rescan_blockchain');await feeView.rpc('refresh');
   const seen=((await feeView.rpc('get_transfers',{in:true,account_index:1})).in||[]).map(x=>[x.txid,x.subaddr_index.major,x.subaddr_index.minor,String(x.amount)]).sort();
-  assert.deepEqual(seen,[[pay0.tx_hash,1,0,due0],[pay1.tx_hash,1,1,String(Number(due1)-1)],[pay2.tx_hash,1,1,'1'],[far.tx_hash,1,42894,'1000000']].sort());
-  assert.equal((await feeView.rpc('get_address',{account_index:1,address_index:[0,1]})).addresses.map(a=>a.address).join(','),[feeAddressOf(fees,0).address,feeAddressOf(fees,1).address].join(','));
+  assert.deepEqual(seen,[[pay0.tx_hash,1,1,due0],[pay1.tx_hash,1,2,String(Number(due1)-1)],[pay2.tx_hash,1,2,'1'],[far.tx_hash,1,42895,'1000000']].sort());
+  assert.equal((await feeView.rpc('get_address',{account_index:1,address_index:[1,2]})).addresses.map(a=>a.address).join(','),[feeAddressOf(fees,0).address,feeAddressOf(fees,1).address].join(','));
   // The original rules read the same transaction as a transfer of the same output.
   assert.deepEqual(transferOf({extra:t.tx.extra,inputs:t.tx.vin.map(i=>i.key.key_offsets),fee:t.tx.rct_signatures.txnFee},{deadAbove:4,deadBelow:21}),{moved:owners[0].ownerOutputIndex,text:'xmr721 claim to '+receiver});
   // The check tool replays the log and finds each entry on the node as logged (the node is the offline test chain,
