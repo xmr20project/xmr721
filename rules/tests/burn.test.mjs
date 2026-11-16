@@ -9,7 +9,8 @@ import {OP,encodeBody} from '../lib/records.mjs';
 import {hex,unhex,concat,encodeAddress,base58Encode,decodeAddress} from '../lib/monero.mjs';
 import {outputSecret,signWithOutputKey} from '../lib/claim.mjs';
 import {BURN,BURN_SPEND_TEXT,BURN_VIEW_TEXT,MAINNET_DEAD,RECORDS_OVERLAP,EXTRA_LIMIT,isMainnetDead,burnAddress,hashToPoint,deadOutputs,recordCost,claimText,burnClaimId,readTransfer,transferExtra,claimTo,burnParts,movedOutput,paysBurnAddress} from '../lib/burn.mjs';
-import {wallet,makeTx,ownerEntry,makeInProof,makeBurn,burnParty,input,scalar,DOMAIN} from './helpers.mjs';
+import {wallet,makeTx,ownerEntry,makeInProof,makeBurn,burnParty,payFee,input,scalar,DOMAIN} from './helpers.mjs';
+import {feeParts,feeOutputs,feeWallet,feeAddressOf} from '../lib/burn-fee.mjs';
 import {transferOf,parseExtra,recordCost as originalCost} from './original-rules.mjs';
 const FIX=JSON.parse(readFileSync(new URL('./fixtures-burn.json',import.meta.url),'utf8')),enc=new TextEncoder();
 const XMR=10n**12n,FROM=110,END=FROM+RECORDS_OVERLAP,ORIGINAL={deadAbove:70499730,deadBelow:70499747};
@@ -26,7 +27,9 @@ function world(o={}){
  const claim1=(n,h)=>{const p=l.prepareClaim({mordinal:n,to:h.address,holder:h.address});return l.claimWithProof(p.bodyBytes,makeInProof({txid:owners[n].ownerTx,txPub:owners[n].ownerTxPubKeys[0],holder:h}),h.sign(p.text));};
  const burn=(label,n,to,more={})=>makeBurn(label,{output:1000+n,to,...more});
  const apply=t=>l.applyBurnClaim(t.txid,burnParts(t.tx)),refused=(t,why)=>assert.throws(()=>l.checkBurnClaim(t.txid,burnParts(t.tx)),why);
- return {w,l,owners,key,claim0,claim1,burn,apply,refused};}
+ // The fee of a burn claim, paid to the Mordinal's fee address (by default the fee of makeBurn's transfers).
+ let paid=0;const pay=(n,amount=10n**9n+30000000n)=>{const t=payFee('world fee '+paid++,n,amount);return l.applyBurnFees(t.txid,feeParts(t.tx));};
+ return {w,l,owners,key,claim0,claim1,burn,apply,refused,pay};}
 
 test('hash_to_ec and the burn address: derived as stated, equal to the published keys',()=>{
  for(const [from,point] of FIX.hashToEc)assert.equal(hex(hashToPoint(unhex(from)).toRawBytes()),point);assert.equal(FIX.hashToEc.length,32);
@@ -84,27 +87,33 @@ test('a transfer is read from tx_extra more strictly than the original parser re
   [1,...pub,0x11,0x80,0x80,0x80,0x80,1],'text',null,undefined,[1,...pub,0x11,0,256],[1,...pub,0x11,0,-1],[1,...pub,0x11,0,1.5]])assert.equal(readTransfer(bad),null,JSON.stringify(bad));});
 
 test('a burn claim: the Mordinal belongs to the address in the text, as after a claim record',()=>{
- const {w,l,owners,claim0,burn,apply,refused}=world();
- assert.deepEqual(l.burn,{from:FROM,recordsEnd:END,dead:[...MAINNET_DEAD],address:burnAddress()});
+ const {w,l,owners,claim0,burn,apply,refused,pay}=world();
+ assert.deepEqual(l.burn,{from:FROM,recordsEnd:END,dead:[...MAINNET_DEAD],address:burnAddress(),fee:{wallet:feeWallet().address,viewKey:feeWallet().viewKey,account:1}});
  l.setHeight(FROM);
- const t=burn('first',2,w.carol),out=apply(t);
- assert.deepEqual(out,{id:burnClaimId(DOMAIN,t.txid),number:2,owner:w.carol.address});
+ // The burn is valid; the Mordinal waits for its fee, then belongs to the address in the text.
+ const t=burn('first',2,w.carol),waiting=apply(t),id=burnClaimId(DOMAIN,t.txid);
+ assert.deepEqual(waiting,{id,number:2,owner:null,waiting:{id,tx:t.txid,number:2,to:w.carol.address,due:'1030000000',height:FROM,state:'waiting',paid:'0',missing:'1030000000'}});
+ assert.equal(l.mordinal(2).claimed,false);assert.equal(l.mordinal(2).owner,null);assert.deepEqual(l.mordinal(2).history,[]);
+ const out=pay(2).claims[0];
+ assert.deepEqual(out,{id,number:2,owner:w.carol.address});
  const m=l.mordinal(2);assert.equal(m.claimed,true);assert.equal(m.owner,w.carol.address);assert.equal(m.seq,0);assert.equal(m.lot,null);
  assert.deepEqual(m.history,[{what:'claim',height:FROM,record:out.id,to:w.carol.address,proof:'burn',tx:t.txid}]);assert.deepEqual(l.owned(w.carol.address),[2]);
  // The original rules read the same transaction as a transfer of the same output.
  assert.deepEqual(original(t),{moved:1002,text:claimText(w.carol.address)});
  // The same state as a ledger where that Mordinal was claimed by a record.
  const other=world({burnFrom:null}),p=other.l.prepareClaim({mordinal:2,to:w.carol.address});other.l.setHeight(FROM);
- other.l.apply(other.l.claimWithKey(p.bodyBytes,signWithOutputKey(p.keyHash,other.key(2,w.bob))));assert.deepEqual(l.toJSON(),other.l.toJSON());
+ other.l.apply(other.l.claimWithKey(p.bodyBytes,signWithOutputKey(p.keyHash,other.key(2,w.bob))));
+ const {fees,...state}=l.toJSON();assert.deepEqual(state,other.l.toJSON());assert.deepEqual(fees,[{number:2,paid:'1030000000',outputs:1}]);
  // What follows works as after any claim: carol sends it on, with move 0.
  const mv=l.prepareMove({mordinal:2,from:w.carol.address,to:w.dave.address});l.apply(l.sign(mv.bodyBytes,w.carol.sign(mv.text)));assert.equal(l.mordinal(2).owner,w.dave.address);assert.equal(l.mordinal(2).seq,1);
  // A subaddress in the text, no payment id in tx_extra, more inputs behind the ring, more outputs, a larger fee, additional public keys.
- const sub=w.alice.sub(4);assert.equal(apply(burn('second',0,sub,{paymentId:false,after:[input([11,22,33,44,55,66,77,88,99,111,222,333,444,555,666,777])],fee:5n*XMR})).owner,sub.address);
+ // (Their fees are paid first: the burns then claim at once.)
+ const sub=w.alice.sub(4);pay(0,5n*XMR);assert.equal(apply(burn('second',0,sub,{paymentId:false,after:[input([11,22,33,44,55,66,77,88,99,111,222,333,444,555,666,777])],fee:5n*XMR})).owner,sub.address);
  const extraKeys=burn('third',4,w.dave,{tamper:tx=>{tx.extra=[...tx.extra.slice(0,33),4,2,...keccak_256(enc.encode('k1')),...keccak_256(enc.encode('k2')),...tx.extra.slice(33)];}});
- assert.equal(apply(extraKeys).number,4);assert.equal(original(extraKeys).moved,1004);
+ pay(4);assert.equal(apply(extraKeys).owner,w.dave.address);assert.equal(original(extraKeys).moved,1004);
  // An ordinary input in front of the ring: the original rules pass over it, and so does this rule.
  const behind=burn('fourth',5,w.dave,{before:[input([3,70499731,70499732,90000000,90000001,90000002,90000003,90000004,90000005,90000006,90000007,90000008,90000009,90000010,90000011,90000012])]});
- assert.equal(apply(behind).number,5);assert.equal(original(behind).moved,1005);
+ pay(5);assert.equal(apply(behind).owner,w.dave.address);assert.equal(original(behind).moved,1005);
  // The check and the apply say the same, and nothing is left to claim twice.
  refused(burn('again',2,w.bob),/already claimed/);refused(burn('again 2',5,w.bob),/already claimed/);
  assert.deepEqual(l.toJSON().claimed.map(c=>c.number),[0,2,4,5]);});
@@ -147,8 +156,15 @@ test('a burn claim is refused: text, fee, ring, owner output, burn address',()=>
  refused(burn('b3',1,w.carol,{tamper:tx=>{const t=tx.vout[0].target.tagged_key;t.view_tag=t.view_tag==='00'?'01':'00';}}),/does not pay the burn address/);
  refused(burn('b4',1,w.carol,{tamper:tx=>{tx.vout=[];}}),/does not pay the burn address/);
  refused(burn('b5',1,w.carol,{tamper:tx=>{tx.extra=[1,...keccak_256(enc.encode('another key')),...tx.extra.slice(33)];}}),/does not pay the burn address/);
- // The burn address is paid only through the first transaction public key: one found through an additional key is not counted.
- {const t=burn('b6',1,w.carol),real=t.tx.extra.slice(1,33);t.tx.extra=[1,...keccak_256(enc.encode('decoy key')),4,2,...real,...real,...t.tx.extra.slice(33)];refused(t,/does not pay the burn address/);}
+ // The burn address is found through the first transaction public key, or through the additional key of output 0 as a
+ // wallet finds it: entry 0 of the first list of additional keys before the transfer field. Not through another entry,
+ // not through a list after the transfer field (a wallet stops reading there), not through a second public key.
+ {const decoy=[...keccak_256(enc.encode('decoy key'))],t=burn('b6',1,w.carol),real=t.tx.extra.slice(1,33),rest=t.tx.extra.slice(33);
+  t.tx.extra=[1,...decoy,4,2,...real,...decoy,...rest];assert.equal(l.checkBurnClaim(t.txid,burnParts(t.tx)).number,1);
+  t.tx.extra=[1,...decoy,4,2,...decoy,...real,...rest];refused(t,/does not pay the burn address/);
+  t.tx.extra=[1,...decoy,...rest,4,2,...real,...decoy];assert.equal(readTransfer(t.tx.extra).txPub,hex(Uint8Array.from(decoy)));refused(t,/does not pay the burn address/);
+  t.tx.extra=[1,...decoy,1,...real,...rest];refused(t,/does not pay the burn address/);
+  t.tx.extra=[1,...decoy,4,2,...decoy,...decoy,4,2,...real,...real,...rest];refused(t,/does not pay the burn address/);}
  // An output without a view tag (the older output form) is judged by its key alone.
  {const t=burn('b7',1,w.carol);t.tx.vout[0].target={key:t.tx.vout[0].target.tagged_key.key};assert.equal(l.checkBurnClaim(t.txid,burnParts(t.tx)).number,1);}
  // Not a transfer at all, or one that also registers.
@@ -159,7 +175,7 @@ test('a burn claim is refused: text, fee, ring, owner output, burn address',()=>
  assert.deepEqual(l.toJSON().claimed,[]);assert.equal(apply(good).number,1);});
 
 test('burns count from the first burn block; claim records count for 720 blocks more, and the first valid claim wins',()=>{
- const {w,l,claim0,claim1,burn,apply,refused}=world();
+ const {w,l,claim0,claim1,burn,apply,refused,pay}=world();
  l.setHeight(FROM-1);
  refused(burn('early',2,w.carol),/Claiming by burning starts at block 110/);
  l.apply(claim0(0,w.alice));assert.equal(l.mordinal(0).owner,w.alice.address);
@@ -169,7 +185,7 @@ test('burns count from the first burn block; claim records count for 720 blocks 
  l.apply(claim1(4,w.carol));assert.equal(l.mordinal(4).owner,w.carol.address);
  l.apply(claim0(2,w.bob,w.carol));assert.equal(l.mordinal(2).owner,w.carol.address);refused(burn('early again',2,w.dave),/already claimed/);
  // The first valid claim wins, whichever kind it is.
- const b3=burn('three',3,w.dave);apply(b3);assert.throws(()=>l.check(claim0(3,w.bob)),/This Mordinal is already claimed/);assert.equal(l.mordinal(3).owner,w.dave.address);
+ const b3=burn('three',3,w.dave);pay(3);apply(b3);assert.throws(()=>l.check(claim0(3,w.bob)),/This Mordinal is already claimed/);assert.equal(l.mordinal(3).owner,w.dave.address);
  // Claimed before the first burn block: it stays claimed, moves on as before, and cannot be claimed again by burning its coin.
  refused(burn('late',0,w.dave),/already claimed/);
  const mv=l.prepareMove({mordinal:0,from:w.alice.address,to:w.bob.address});l.apply(l.sign(mv.bodyBytes,w.alice.sign(mv.text)));assert.equal(l.mordinal(0).owner,w.bob.address);
@@ -182,7 +198,8 @@ test('burns count from the first burn block; claim records count for 720 blocks 
  assert.throws(()=>l.check(claim0(0,w.alice,w.dave)),/claimed only by burning it/);
  // Burns go on, and two burn claims of one Mordinal are one claim: the first.
  const one=burn('one',1,w.carol),two=burn('two',1,w.dave);assert.equal(l.checkBurnClaim(two.txid,burnParts(two.tx)).owner,w.dave.address);
- apply(one);refused(two,/already claimed/);assert.throws(()=>apply(two),/already claimed/);assert.equal(l.mordinal(1).owner,w.carol.address);
+ // (While the first waits for its fee, the second is refused too: the first valid burn holds the Mordinal.)
+ apply(one);refused(two,/burned already; that burn waits for its fee/);pay(1);refused(two,/already claimed/);assert.throws(()=>apply(two),/already claimed/);assert.equal(l.mordinal(1).owner,w.carol.address);
  // A ledger without the setting: claim records count at any height, and no burn does.
  const plain=world({burnFrom:null});plain.l.setHeight(END+100);assert.equal(plain.l.burn,null);
  plain.refused(plain.burn('none',2,w.carol),/Claiming by burning is not part of this ledger/);plain.l.apply(plain.claim0(2,w.bob));assert.equal(plain.l.mordinal(2).owner,w.bob.address);});
@@ -211,7 +228,9 @@ test('the setting: a first burn block, dead outputs for a chain that is not main
  // On stagenet the list has to be named, and the text takes stagenet addresses.
  const sw=wallet('alice','stagenet'),sfee=wallet('fee','stagenet');assert.throws(()=>createLedger({...base,network:'stagenet',feeAddress:sfee.address,burnFrom:20}),/has to name its fifteen dead outputs/);
  const s=createLedger({...base,network:'stagenet',feeAddress:sfee.address,burnFrom:20,burnDead:dead});s.setHeight(20);assert.equal(s.burn.address,burnAddress('stagenet'));
- const st=makeBurn('chain 5',{output:1000,to:sw,dead});assert.equal(s.applyBurnClaim(st.txid,burnParts(st.tx)).owner,sw.address);
+ const st=makeBurn('chain 5',{output:1000,to:sw,dead});assert.equal(s.applyBurnClaim(st.txid,burnParts(st.tx)).owner,null);
+ assert.equal(s.burn.fee.wallet,feeWallet(null,'stagenet').address);assert.notEqual(s.burn.fee.wallet,feeWallet().address);
+ const sf=payFee('chain 5 fee',0,10n**9n+30000000n,{network:'stagenet'});assert.deepEqual(s.applyBurnFees(sf.txid,feeParts(sf.tx)).claims,[{id:burnClaimId(DOMAIN,st.txid),number:0,owner:sw.address}]);
  assert.throws(()=>s.checkBurnClaim(ok.txid,burnParts(ok.tx)),/mainnet address/);});
 
 test('the real mainnet pair: a registration and its transfer to the burn address are a burn claim',()=>{
@@ -229,10 +248,19 @@ test('the real mainnet pair: a registration and its transfer to the burn address
  const t=readTransfer(burn.tx.extra);assert.equal(Buffer.from(t.text).toString(),'xmr721 claim to '+claimedBy);assert.equal(t.text.length,111);
  assert.equal(movedOutput(parts.inputs,MAINNET_DEAD),167798895);assert.equal(paysBurnAddress({txPub:t.txPub,...parts.out0}),true);
  assert.equal(paysBurnAddress({txPub:t.txPub,key:burn.tx.vout[1].target.tagged_key.key,tag:burn.tx.vout[1].target.tagged_key.view_tag}),false);
- assert.deepEqual(l.applyBurnClaim(burn.txid,parts),{id:burnClaimId(DOMAIN,burn.txid),number:50000,owner:claimedBy});assert.equal(l.mordinal(50000).owner,claimedBy);
+ // No fee was paid for it: the Mordinal is burned and waits for its fee, the transaction's own 0.00103316 XMR. The burn
+ // transaction pays no fee address itself.
+ const id=burnClaimId(DOMAIN,burn.txid),due='1033160000';
+ assert.deepEqual(l.applyBurnClaim(burn.txid,parts),{id,number:50000,owner:null,waiting:{id,tx:burn.txid,number:50000,to:claimedBy,due,height:burn.height,state:'waiting',paid:'0',missing:due}});
+ assert.equal(l.mordinal(50000).claimed,false);assert.equal(l.mordinal(50000).owner,null);assert.deepEqual(feeOutputs(feeParts(burn.tx),feeWallet(),()=>50000),[]);assert.deepEqual(l.scanBurnFees(feeParts(burn.tx)),[]);
+ assert.deepEqual(l.burnFee(50000),{address:feeAddressOf(feeWallet(),50000).address,paid:'0',waiting:l.burnClaim(id)});
+ // A made-up payment of one piconero less does not complete it; the rest does, in a later block.
+ const short=payFee('real pair fee 1',50000,BigInt(due)-1n);assert.deepEqual(l.applyBurnFees(short.txid,feeParts(short.tx)).claims,[]);assert.equal(l.burnClaim(id).missing,'1');
+ l.setHeight(burn.height+3);const rest=payFee('real pair fee 2',50000,1n);assert.deepEqual(l.applyBurnFees(rest.txid,feeParts(rest.tx)).claims,[{id,number:50000,owner:claimedBy}]);
+ assert.equal(l.mordinal(50000).owner,claimedBy);assert.deepEqual(l.mordinal(50000).history,[{what:'claim',height:burn.height+3,record:id,to:claimedBy,proof:'burn',tx:burn.txid}]);
  // The original rules read the pair the same way, and the registration is no transfer.
  assert.deepEqual(transferOf({extra:burn.tx.extra,inputs:burn.tx.vin.map(i=>i.key.key_offsets),fee:burn.tx.rct_signatures.txnFee},ORIGINAL),{moved:167798895,text:'xmr721 claim to '+claimedBy});
  assert.equal(readTransfer(reg.tx.extra),null);assert.throws(()=>l.checkBurnClaim(reg.txid,burnParts(reg.tx)),/carries no transfer/);
  // Read through JSON, as a journal keeps it, the parts say the same.
  const again=createLedger({domain:DOMAIN,feeAddress:fee.address,owners:[filler,entry],height:3806700,burnFrom:3806701});again.setHeight(burn.height);
- assert.equal(again.applyBurnClaim(burn.txid,JSON.parse(JSON.stringify(parts))).owner,claimedBy);});
+ assert.equal(again.applyBurnClaim(burn.txid,JSON.parse(JSON.stringify(parts))).waiting.due,due);});

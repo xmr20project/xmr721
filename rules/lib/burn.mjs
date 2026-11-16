@@ -8,9 +8,11 @@
 //   text        "xmr721 claim to <address>"      a main address or a subaddress of the ledger's network, nothing else
 //                                                (one line end after it is allowed: wallets read the text from a file)
 //   ring        the fifteen dead outputs and one other output: the owner output, by its global output index
-//   output 0    P = Hs(8·a·R ‖ varint 0)·G + B   R = the first transaction public key in tx_extra,
+//   output 0    P = Hs(8·a·R ‖ varint 0)·G + B   R = the first transaction public key in tx_extra (or, in a transaction
+//                                                that carries additional public keys, the additional key of output 0),
 //                                                a, B = the burn address's view secret key (public) and spend key
-//   fee         at least 4,000,000 piconero for each byte of the text, rounded up to 0.001 XMR (the original fee rule)
+//   fee         the burn completes once the fee payments for its Mordinal reach the burn's own fee (burn-fee.mjs)
+//   tx fee      at least 4,000,000 piconero for each byte of the text, rounded up to 0.001 XMR (the original fee rule)
 //
 // The burn address: spend key B = hash_to_ec(keccak256("XMR721 Mordinal burn address v1: spend key")), a point that
 // came out of a hash, so nobody knows a secret key for it; view secret a = keccak256("XMR721 Mordinal burn address
@@ -94,10 +96,13 @@ export function readTransfer(extra){
   else if(tag===0x11){const n=count();if(n<0||at+n>b.length||text)return null;text=b.slice(at,at+n);at+=n;}
   else return null;}
  return txPub&&text?{txPub:hex(txPub),text}:null;}
-// The tx_extra of such a transfer (tests, and wallets that build one).
-export function transferExtra(txPub,text,{paymentId=null}={}){
+// The tx_extra of such a transfer (tests, and wallets that build one). additional: the additional public keys of a
+// transaction that also pays a subaddress (such as a fee address); they go before the transfer field, where a wallet,
+// which stops reading at that field, finds them.
+export function transferExtra(txPub,text,{paymentId=null,additional=null}={}){
  const t=typeof text==='string'?enc.encode(text):text,n=t.length;if(n>=16384)throw Error('Text too long');
- return Uint8Array.from([1,...(typeof txPub==='string'?unhex(txPub):txPub),...(paymentId?[2,9,1,...paymentId]:[]),0x11,...(n<128?[n]:[(n&127)|128,n>>7]),...t]);}
+ const keys=(additional||[]).map(k=>typeof k==='string'?unhex(k):k);if(keys.length>=128)throw Error('Too many additional keys');
+ return Uint8Array.from([1,...(typeof txPub==='string'?unhex(txPub):txPub),...(paymentId?[2,9,1,...paymentId]:[]),...(keys.length?[4,keys.length,...keys.flatMap(k=>[...k])]:[]),0x11,...(n<128?[n]:[(n&127)|128,n>>7]),...t]);}
 
 // The address a transfer's text claims for: exactly "xmr721 claim to " and one main address or subaddress, then
 // nothing, or one line end ("\n" or "\r\n": the wallets read the text from a file, and many files end that way).
@@ -135,11 +140,14 @@ export function movedOutput(inputs,dead){
   return other;}
  throw Error('No input of this transaction has a ring of the dead outputs and one owner output.');}
 
-// True when output 0 pays the burn address: its key is the one the burn address's view key gives for the first
-// transaction public key, and its view tag, when it has one, is the one a wallet of the burn address looks for.
-// Additional public keys are not used: a wallet pays a main address with the transaction key itself.
-export function paysBurnAddress({txPub,key,tag=null}){
- try{if(!HEX32.test(key||''))return false;const d=derivation(unhex(BURN.viewSecret),txPub),s=Hs(concat(d,Uint8Array.of(0)));
-  if(hex((s===0n?Pt.ZERO:G.multiply(s)).add(spendPoint).toRawBytes())!==key)return false;
-  return tag==null||parseInt(tag,16)===viewTag(d,0);}
- catch{return false;}}
+// True when output 0 pays the burn address, as a view-only wallet of the burn address finds it: with the derivation of
+// the first transaction public key, then, when the transaction carries additional public keys (one that also pays a
+// subaddress does), with that of the additional key of output 0. A derivation is looked at further only when output
+// 0's view tag, if it has one, is the one it gives; then output 0's key has to be the one it gives.
+export function paysBurnAddress({txPub,additional=null,key,tag=null}){
+ if(!HEX32.test(key||''))return false;
+ for(const pub of [txPub,...(typeof additional==='string'&&HEX32.test(additional)?[additional]:[])]){
+  try{const d=derivation(unhex(BURN.viewSecret),pub);if(tag!=null&&parseInt(tag,16)!==viewTag(d,0))continue;
+   const s=Hs(concat(d,Uint8Array.of(0)));if(hex((s===0n?Pt.ZERO:G.multiply(s)).add(spendPoint).toRawBytes())===key)return true;}
+  catch{}}
+ return false;}

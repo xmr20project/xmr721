@@ -9,13 +9,17 @@ import {hex,unhex} from './monero.mjs';
 import {claimKeyHash,verifyOutputKeySignature,parseInProof,verifyInProof,ownsOutput} from './claim.mjs';
 import {checkPaymentProof,paymentMessage} from './payment.mjs';
 import {RECORDS_OVERLAP,deadOutputs,burnAddress,burnClaimId,readTransfer,claimTo,recordCost,movedOutput,paysBurnAddress} from './burn.mjs';
+import {FEE_ACCOUNT,feeWallet,feeAddressOf,feeTable,feeOutputs} from './burn-fee.mjs';
+import {extraKeys} from './payment.mjs';
 
 // mintFrom: the first block at which collection, mint and burn records count (a setting of the ledger, like the start
 // block). Without it those records are refused, and the ledger is one of Mordinals only.
 // burnFrom: the first block from which a Mordinal is claimed by burning it (section 10; also a setting of the ledger).
 // Claim records still count for RECORDS_OVERLAP blocks from there, then no longer. burnDead: the fifteen dead outputs,
 // for a chain that is not mainnet; testChain says the chain is the offline test chain, whose addresses read as mainnet's.
-export function createLedger({network='mainnet',domain,feeAddress,owners,height=0,mintFrom=null,minters=null,openFrom=null,burnFrom=null,burnDead=null,testChain=false}){
+// burnFee: the wallet that receives the fees of burn claims, {address, viewKey}; null for the project's own (burn-fee.mjs),
+// the only one on mainnet. A burn claim completes once the fee payments for its Mordinal reach the burn's own fee.
+export function createLedger({network='mainnet',domain,feeAddress,owners,height=0,mintFrom=null,minters=null,openFrom=null,burnFrom=null,burnDead=null,burnFee=null,testChain=false}){
  if(!/^[0-9a-f]{64}$/.test(domain||''))throw Error('Ledger domain required');
  if(mintFrom!==null&&!(Number.isInteger(mintFrom)&&mintFrom>=1))throw Error('Bad first mint block');
  // Who may make collections and mint: anyone (null), or the addresses the ledger's setup lists. Like the first mint
@@ -26,7 +30,9 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
  if(openFrom!==null&&!(Number.isInteger(openFrom)&&mayMint&&mintFrom!==null&&openFrom>mintFrom))throw Error('Bad opening block: it needs a minter list and comes after the first mint block');
  if(burnFrom!==null&&!(Number.isInteger(burnFrom)&&burnFrom>=1))throw Error('Bad first burn block');
  if(burnFrom===null&&burnDead!==null)throw Error('Dead outputs are named only with a first burn block');
+ if(burnFrom===null&&burnFee!==null)throw Error('A fee wallet is named only with a first burn block');
  const dead=burnFrom===null?null:deadOutputs(burnDead,network,{testChain}),byOutput=new Map(),recordsEnd=burnFrom===null?null:burnFrom+RECORDS_OVERLAP;
+ const feeW=dead?feeWallet(burnFee,network,{testChain}):null;
  // The fee address is checked like every address in a record: both keys must be keys a wallet can use.
  {const a=decodeAddress(feeAddress,network);if(!usableSpendKey(a.spend)||!usableSpendKey(a.view))throw Error('The fee address has a key no wallet can use.');}
  const fee=canonical(feeAddress,network),mordinals=new Map(),byNumber=new Map(),lots=new Map(),open=new Set(),applied=new Set(),payments=new Set(),paidOutputs=new Set(),collections=new Map();let tip=height;
@@ -37,6 +43,18 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
   // A burn claim names a Mordinal by the global index of its owner output, so every entry has to state it.
   if(dead){if(!Number.isSafeInteger(o.ownerOutputIndex)||o.ownerOutputIndex<0)throw Error(`Owner list entry ${o.number} does not state the global index of its owner output, which a ledger that claims by burning needs`);
    if(byOutput.has(o.ownerOutputIndex))throw Error('Owner list repeats an owner output');byOutput.set(o.ownerOutputIndex,m);}}
+ // The fee of burn claims (section 10). Fee payments are facts kept from the first burn block on, whatever the state of
+ // their Mordinal: `fees` holds, for each one-time output key found, the Mordinal and the amount; for a key found again
+ // the larger amount (a wallet keeps one of two outputs with the same key, the larger). A burn claim waits in `burns`
+ // until the payments for its Mordinal add up to its own fee.
+ const fees=new Map(),paidTo=new Map(),burns=new Map();let feeKeys=null;
+ const numberOf=key=>{if(!feeKeys)feeKeys=feeTable(feeW,[...byNumber.keys()]);const n=feeKeys(key);return n!==undefined&&byNumber.has(n)?n:undefined;};
+ const paidFor=n=>paidTo.get(n)??0n;
+ const burnView=b=>{const paid=paidFor(b.number),due=BigInt(b.due);return {...b,paid:paid.toString(),missing:(paid>=due?0n:due-paid).toString()};};
+ // The claim of a waiting burn, once its fee is paid: as after a claim record to the address in its text.
+ const complete=m=>{const b=m.waiting;if(!b||m.claimed||paidFor(m.number)<BigInt(b.due))return null;
+  m.claimed=true;m.waiting=null;m.owner=b.to;b.state='claimed';b.claimedAt=tip;m.history.push({what:'claim',height:tip,record:b.id,to:b.to,proof:'burn',tx:b.tx});
+  return {id:b.id,number:m.number,owner:m.owner};};
  const find=x=>{const m=typeof x==='number'?byNumber.get(x):mordinals.get(x);if(!m)throw Error('This is not a Mordinal on the owner list.');return m;};
  const lotOf=id=>{const l=lots.get(id);if(!l)throw Error('This listing does not exist.');return l;};
  const latest=l=>l.reservations.at(-1)||null,running=l=>{const r=latest(l);return r&&heldUntil(r)>=tip?r:null;};
@@ -89,11 +107,34 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
   check(record,facts){return validate(record,facts);},
   // Claiming by burning (section 10). null on a ledger without it.
   // recordsEnd: the first block at which a claim record no longer counts.
-  burn:dead?{from:burnFrom,recordsEnd,dead:[...dead],address:burnAddress(network)}:null,
+  // fee: the fee wallet (its main address and public secret view key) and the account of the fee addresses.
+  burn:dead?{from:burnFrom,recordsEnd,dead:[...dead],address:burnAddress(network),fee:{wallet:feeW.address,viewKey:feeW.viewKey,account:FEE_ACCOUNT}}:null,
   // A burn claim is a transaction, not a record: `parts` is what burnParts() takes from it (burn.mjs).
-  checkBurnClaim(txid,parts){const v=burnClaim(txid,parts);return {id:v.id,number:v.mordinal.number,owner:v.to};},
-  applyBurnClaim(txid,parts){const v=burnClaim(txid,parts),m=v.mordinal;
-   m.claimed=true;m.history.push({what:'claim',height:tip,record:v.id,to:v.to,proof:'burn',tx:txid});m.owner=v.to;return {id:v.id,number:m.number,owner:m.owner};},
+  // due: the burn's own fee, which the fee payments for its Mordinal have to reach; paid: what they reach now.
+  checkBurnClaim(txid,parts){const v=burnClaim(txid,parts),paid=paidFor(v.mordinal.number);return {id:v.id,number:v.mordinal.number,owner:v.to,due:v.due.toString(),paid:paid.toString(),waiting:paid<v.due};},
+  // A valid burn claim. When the fee for its Mordinal is paid already it claims the Mordinal now (owner: the address in
+  // its text); otherwise the Mordinal is burned and waits for its fee (owner: null, waiting: what is due and paid).
+  applyBurnClaim(txid,parts){const v=burnClaim(txid,parts),m=v.mordinal,b={id:v.id,tx:txid,number:m.number,to:v.to,due:v.due.toString(),height:tip,state:'waiting'};
+   burns.set(v.id,b);m.waiting=b;const done=complete(m);return done||{id:v.id,number:m.number,owner:null,waiting:burnView(b)};},
+  // The fee payments in one transaction (`parts`: what feeParts() takes from it, burn-fee.mjs), counted from the first
+  // burn block on. -> {paid: [{index, number, amount, counted, error}], claims: [{id, number, owner}]}: the outputs that pay
+  // a fee address, and the burn claims they complete.
+  scanBurnFees(parts){if(!dead)return [];return feeOutputs(parts,feeW,numberOf).map(f=>({...f,amount:f.amount==null?null:f.amount.toString()}));},
+  applyBurnFees(txid,parts){
+   if(!dead)throw Error('Claiming by burning is not part of this ledger.');if(tip<burnFrom)throw Error(`Fee payments count from block ${burnFrom}.`);
+   if(!/^[0-9a-f]{64}$/.test(txid||''))throw Error('Transaction ID required');
+   const found=feeOutputs(parts,feeW,numberOf);if(!found.length)throw Error('This transaction pays no fee address.');
+   const paid=found.map(f=>{const out={index:f.index,number:f.number,amount:f.amount==null?null:f.amount.toString(),counted:false,error:f.error};if(f.error)return out;
+    const key=parts.outs[f.index].key,had=fees.get(key);
+    if(had&&had.amount>=f.amount)return {...out,error:'An earlier output with the same one-time key holds as much or more; a wallet keeps only one of them.'};
+    fees.set(key,{number:f.number,amount:f.amount});paidTo.set(f.number,paidFor(f.number)-(had?had.amount:0n)+f.amount);return {...out,counted:true};});
+   const claims=[];for(const f of paid)if(f.counted){const c=complete(byNumber.get(f.number));if(c)claims.push(c);}
+   return {paid,claims};},
+  // A burn claim by its id: {id, tx, number, to, due, height, state ('waiting', 'claimed' or 'lost': the Mordinal was
+  // claimed by a record before the fee was paid), claimedAt, paid, missing}, or null.
+  burnClaim:id=>{const b=burns.get(id);return b?burnView(b):null;},
+  // What has been paid for one Mordinal's burn claim, and its fee address.
+  burnFee:x=>{const m=find(x);if(!dead||m.number==null)return null;return {address:feeAddressOf(feeW,m.number).address,paid:paidFor(m.number).toString(),...(m.waiting?{waiting:burnView(m.waiting)}:{})};},
   apply(record,facts){
    const v=validate(record,facts),{op,body:b,id}=v;applied.add(id);
    const moved=(m,to,what,extra={})=>{m.history.push({what,height:tip,record:id,from:m.owner,to,...extra});m.owner=to;m.seq++;};
@@ -102,7 +143,10 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
     if(b.collection!==NO_COLLECTION)collections.get(b.collection).editions.add(b.edition);
     mordinals.set(id,{number:null,reg:id,claimed:true,owner,seq:0,lot:null,minted,history:[{what:'mint',height:tip,record:id,to:owner}]});return {id,nft:id,owner,number:null};}
    if(op===OP.burn){const m=v.mordinal;m.history.push({what:'burn',height:tip,record:id,from:m.owner,to:null});m.owner=null;m.burned=true;m.seq++;return {id,nft:m.reg,number:m.number,owner:null};}
-   if(op===OP.claim){const m=v.mordinal;m.claimed=true;m.history.push({what:'claim',height:tip,record:id,to:b.to,proof:b.proof===PROOF.payment?'payment proof and message':'one-time key'});m.owner=b.to;return {id,number:m.number,owner:m.owner};}
+   if(op===OP.claim){const m=v.mordinal;m.claimed=true;m.history.push({what:'claim',height:tip,record:id,to:b.to,proof:b.proof===PROOF.payment?'payment proof and message':'one-time key'});m.owner=b.to;
+    // A burn of this Mordinal that still waits for its fee is passed over: the first claim that completes wins.
+    if(m.waiting){m.waiting.state='lost';m.waiting.lostAt=tip;m.waiting=null;}
+    return {id,number:m.number,owner:m.owner};}
    if(op===OP.move){moved(v.mordinal,b.to,'move');return {id,number:v.mordinal.number,owner:b.to};}
    if(op===OP.list){const m=v.mordinal;lots.set(id,{id,reg:m.reg,number:m.number,seller:b.seller,price:b.price,until:b.until,height:tip,status:'open',reservations:[]});open.add(id);m.lot=id;return {id,lot:id,number:m.number};}
    if(op===OP.cancel){const l=v.lot,m=mordinals.get(l.reg);l.status='cancelled';l.cancelled={height:tip,record:id};open.delete(l.id);m.lot=null;m.seq++;return {id,lot:l.id};}
@@ -115,7 +159,11 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
    lots:[...lots.values()].map(l=>({id:l.id,number:l.number,seller:l.seller,price:l.price.toString(),status:l.status,buyer:l.sale?.buyer||null,reservations:l.reservations.length})),payments:[...payments].sort(),
    // Present only once something was minted, so a ledger of Mordinals alone has the summary it always had.
    ...(collections.size?{collections:[...collections.values()].map(c=>({id:c.id,creator:c.creator,name:c.name,max:c.max,editions:[...c.editions].sort((a,b)=>a-b)}))}:{}),
-   ...([...mordinals.values()].some(m=>m.minted)?{minted:[...mordinals.values()].filter(m=>m.minted).map(m=>({id:m.reg,collection:m.minted.collection,edition:m.minted.edition,sha256:m.minted.sha256,owner:m.owner,seq:m.seq,burned:Boolean(m.burned)}))}:{})}),
+   ...([...mordinals.values()].some(m=>m.minted)?{minted:[...mordinals.values()].filter(m=>m.minted).map(m=>({id:m.reg,collection:m.minted.collection,edition:m.minted.edition,sha256:m.minted.sha256,owner:m.owner,seq:m.seq,burned:Boolean(m.burned)}))}:{}),
+   // On a ledger that claims by burning, once there is something to say: the burns that wait for their fee, and the fee
+   // payments counted for each Mordinal.
+   ...([...burns.values()].some(b=>b.state==='waiting')?{waiting:[...burns.values()].filter(b=>b.state==='waiting').sort((a,b)=>a.number-b.number).map(b=>({number:b.number,id:b.id,to:b.to,due:b.due}))}:{}),
+   ...(paidTo.size?{fees:[...paidTo].sort((a,b)=>a[0]-b[0]).map(([number,paid])=>({number,paid:paid.toString(),outputs:[...fees.values()].filter(f=>f.number===number).length}))}:{})}),
  };
  function validate(record,facts){
   const d=decodeRecord(record,network),{op,body:b,bodyBytes,proof}=d,id=recordId(domain,bodyBytes),out={op,body:b,id};
@@ -205,7 +253,10 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
   const output=movedOutput(parts.inputs,dead),m=byOutput.get(output);
   if(!m)throw Error(`Output ${output}, which the ring names, is not the owner output of a Mordinal on the owner list.`);
   if(m.claimed)throw Error('This Mordinal is already claimed.');
-  if(!paysBurnAddress({txPub:t.txPub,key:parts.out0?.key,tag:parts.out0?.tag}))throw Error('Output 0 of this transaction does not pay the burn address.');
-  return {id:burnClaimId(domain,txid),mordinal:m,to};}
+  if(m.waiting)throw Error('This Mordinal was burned already; that burn waits for its fee.');
+  // Output 0 is looked for with the transaction public key and, in a transaction that carries additional public keys
+  // (one that also pays a subaddress, such as a fee address), with the additional key of output 0, as a wallet looks.
+  if(!paysBurnAddress({txPub:t.txPub,additional:extraKeys([...extra]).additional[0]??null,key:parts.out0?.key,tag:parts.out0?.tag}))throw Error('Output 0 of this transaction does not pay the burn address.');
+  return {id:burnClaimId(domain,txid),mordinal:m,to,due:BigInt(parts.fee)};}
  return api;
 }

@@ -5,6 +5,7 @@ import {hex,concat,le,leBytes,Hs,encodeAddress,base58Encode,messageHash,signWith
 import {viewTag,formatInProof} from '../lib/claim.mjs';
 import {makeOutProof,paymentMessage} from '../lib/payment.mjs';
 import {BURN,MAINNET_DEAD,burnAddress,claimText,transferExtra} from '../lib/burn.mjs';
+import {feeWallet,feeAddressOf} from '../lib/burn-fee.mjs';
 const Pt=ed25519.ExtendedPoint,L=ed25519.CURVE.n,G=Pt.BASE,enc=new TextEncoder();
 const H=Pt.fromHex('8b655970153799af2aeadc9ff1add0ea6c7251d54154cfa92c173a0dd39c1f94');
 const varint=n=>{const out=[];do{let b=n&127;n=Math.floor(n/128);if(n)b|=128;out.push(b);}while(n);return Uint8Array.from(out);};
@@ -31,21 +32,23 @@ export function wallet(label,network='mainnet'){
 //     shape of an owner transaction with change);
 //   - otherwise an additional key per output: rᵢ·B for a subaddress, rᵢ·G for a main address (whose output uses r).
 // tamper: a function that may change the finished transaction (for transactions no wallet would make).
+// allAdditional: in a transaction with additional keys, every output is made with its own additional key, a main
+// address's too (some wallet libraries do that; wallet2 makes a main address's output with r).
 let counter=0;
-export function makeTx(label,outs,{subaddressKey=false,height=null,tamper=null}={}){
+export function makeTx(label,outs,{subaddressKey=false,height=null,tamper=null,allAdditional=false}={}){
  const sub=o=>o.to.kind==='sub',subs=outs.filter(sub).length,single=subaddressKey||(subs===1&&outs.length===1),more=!single&&subs>0;
  const r=scalar(label+' txkey'),base=single?Pt.fromHex(hex(outs[0].to.spend)):G,R=base.multiply(r).toRawBytes();
  const extraKeysOf=outs.map((o,i)=>scalar(label+' txkey '+i)),keys=[r,...(more?extraKeysOf:[])];
  const extra=[1,...R,...(more?[4,outs.length,...outs.flatMap((o,i)=>[...(sub(o)?Pt.fromHex(hex(o.to.spend)):G).multiply(extraKeysOf[i]).toRawBytes()])]:[])];
  const vout=[],ecdhInfo=[],outPk=[];
- outs.forEach((o,i)=>{const D=Pt.fromHex(hex(o.to.view)).multiply(more&&sub(o)?extraKeysOf[i]:r).multiply(8n).toRawBytes(),s=Hs(concat(D,varint(i))),sb=leBytes(s);
+ outs.forEach((o,i)=>{const D=Pt.fromHex(hex(o.to.view)).multiply(more&&(sub(o)||allAdditional)?extraKeysOf[i]:r).multiply(8n).toRawBytes(),s=Hs(concat(D,varint(i))),sb=leBytes(s);
   const key=G.multiply(s).add(Pt.fromHex(hex(o.to.spend))).toRawBytes(),pad=keccak_256(concat(enc.encode('amount'),sb)).subarray(0,8);
   const amount=BigInt(o.amount),mask=Hs(concat(enc.encode('commitment_mask'),sb));
   vout.push({amount:0,target:{tagged_key:{key:hex(key),view_tag:viewTag(D,i).toString(16).padStart(2,'0')}}});
   ecdhInfo.push({amount:hex(Uint8Array.from(leBytes(amount,8),(x,j)=>x^pad[j]))});outPk.push(hex(G.multiply(mask).add(H.multiply(amount)).toRawBytes()));});
  const tx={version:2,unlock_time:0,vout,extra,rct_signatures:{type:6,ecdhInfo,outPk}};if(tamper)tamper(tx);
  return {txid:hex(keccak_256(enc.encode('mordinals test tx '+label+' '+counter++))),height,txKey:hex(leBytes(r)),keys:keys.map(k=>hex(leBytes(k))),txPub:hex(R),tx,
-  outs:outs.map((o,i)=>({to:o.to,amount:BigInt(o.amount),secret:more&&sub(o)?extraKeysOf[i]:r}))};}
+  outs:outs.map((o,i)=>({to:o.to,amount:BigInt(o.amount),secret:more&&(sub(o)||allAdditional)?extraKeysOf[i]:r}))};}
 // An owner-list entry (ownership-index/result/owners.jsonl format) whose owner coin is output 0 of `tx`.
 export const ownerEntry=(number,tx,registrationTx=tx.txid)=>({number,registrationTx,ownerTx:tx.txid,ownerOutputIndex:1000+number,
  ownerOutputKey:tx.tx.vout[0].target.tagged_key.key,ownerViewTag:tx.tx.vout[0].target.tagged_key.view_tag,ownerTxPubKeys:[tx.txPub],ownerAdditionalPubKeys:[]});
@@ -82,7 +85,19 @@ const bytesOf=h=>Uint8Array.from(h.match(/../g),x=>parseInt(x,16));
 export const burnParty={label:'burn address',kind:'main',spend:bytesOf(BURN.spend),view:bytesOf(BURN.view),address:burnAddress()};
 export const offsetsOf=ring=>{const r=[...ring].sort((a,b)=>a-b);return r.map((v,i)=>i?v-r[i-1]:v);};
 export const input=(ring,amount=0)=>({key:{amount,key_offsets:offsetsOf(ring),k_image:hex(keccak_256(enc.encode('mordinals test key image '+ring.join(','))))}});
-export function makeBurn(label,{output,to,text=claimText(to?.address??to),dead=MAINNET_DEAD,ring=[...dead,output],before=[],after=[],fee=10n**9n+30000000n,outs=null,paymentId=true,tamper=null}={}){
- return makeTx(label,outs||[{to:burnParty,amount:1n},{to:wallet(label+' change'),amount:10n**9n}],{tamper:tx=>{
-  tx.extra=[...transferExtra(Uint8Array.from(tx.extra.slice(1,33)),text,{paymentId:paymentId?keccak_256(enc.encode(label)).subarray(0,8):null})];
+// A transfer whose outputs include a subaddress (a fee address: payFee) carries the additional public keys, before the
+// transfer field. allAdditional: output 0 too is made with its additional key.
+export function makeBurn(label,{output,to,text=claimText(to?.address??to),dead=MAINNET_DEAD,ring=[...dead,output],before=[],after=[],fee=10n**9n+30000000n,outs=null,paymentId=true,tamper=null,allAdditional=false}={}){
+ return makeTx(label,outs||[{to:burnParty,amount:1n},{to:wallet(label+' change'),amount:10n**9n}],{allAdditional,tamper:tx=>{
+  const additional=tx.extra[33]===4?Array.from({length:tx.extra[34]},(_,i)=>Uint8Array.from(tx.extra.slice(35+32*i,67+32*i))):null;
+  tx.extra=[...transferExtra(Uint8Array.from(tx.extra.slice(1,33)),text,{paymentId:paymentId?keccak_256(enc.encode(label)).subarray(0,8):null,additional})];
   tx.vin=[...before,input(ring),...after];tx.rct_signatures.txnFee=Number(fee);if(tamper)tamper(tx);}});}
+
+// The fee address of Mordinal n (burn-fee.mjs) as a payee for makeTx, and a made-up fee payment: by default the only
+// output pays the fee address, so the transaction key is r·D and a wallet finds it with the transaction public key;
+// with `alongside` another output comes first and the payment is found with its additional key.
+export const feeParty=(n,{wallet:w=feeWallet(),network='mainnet'}={})=>{const a=feeAddressOf(network===w.network?w:{...w,network},n);
+ return {label:'fee address '+n,kind:'sub',spend:bytesOf(a.spend),view:bytesOf(a.view),address:a.address};};
+export function payFee(label,number,amount,{alongside=null,wallet:w,network,tamper=null}={}){
+ const fee={to:feeParty(number,{wallet:w,network}),amount:BigInt(amount)};
+ return makeTx(label,alongside?[{to:alongside,amount:10n**9n},fee]:[fee],{tamper});}

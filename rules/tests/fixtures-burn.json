@@ -1,5 +1,5 @@
 {
- "note": "Test data for claiming by burning (RULES.md section 10). hashToEc: the first 32 hash_to_ec cases of Monero's tests/crypto/tests.txt (input, point). mainnet: one real pair of transactions, as a Monero node returns them with get_transactions decode_as_json (pruned): a registration in the original Mordinals format in block 3,806,656 and the transfer of its owner output to the burn address in block 3,806,759. That inscription is not on the ledger's owner list; tests put it on a list of their own. texts: what a transfer's text may be, with {address} standing for a main address or subaddress of the ledger's network; the same cases are run against the tool that builds burning transfers.",
+ "note": "Test data for claiming by burning (RULES.md section 10). hashToEc: the first 32 hash_to_ec cases of Monero's tests/crypto/tests.txt (input, point). mainnet: one real pair of transactions, as a Monero node returns them with get_transactions decode_as_json (pruned): a registration in the original Mordinals format in block 3,806,656 and the transfer of its owner output to the burn address in block 3,806,759. That inscription is not on the ledger's owner list; tests put it on a list of their own. texts: what a transfer's text may be, with {address} standing for a main address or subaddress of the ledger's network; the same cases are run against the tool that builds burning transfers. feeAddresses: the fee wallet (its main address and its secret view key, public by design) and its subaddresses at account 1, index = a Mordinal's number, as monero-wallet-rpc 0.18.5.3 lists them for a view-only wallet restored from that address and view key (generate_from_keys, create_account, create_address in account 1 up to index 50,000, get_address).",
  "burnAddress": {
   "mainnet": "4B1DGeU3FMvAP6pv3JPYkJ2hCSZPzj7VGAYUk4LT73BGNYXHuc1X6kcQSiPn9ydpMFNd8t4H6J1pcR9qs7Tb6DLSLs5y93o",
   "stagenet": "5BDFMVNzty2AP6pv3JPYkJ2hCSZPzj7VGAYUk4LT73BGNYXHuc1X6kcQSiPn9ydpMFNd8t4H6J1pcR9qs7Tb6DLSLvphcAv",
@@ -177,5 +177,26 @@
    "claim to {address}",
    "xmr721 claim to {address}\n\u00a0"
   ]
- }
+ },
+  "feeAddresses": {
+   "wallet": "47BebHskardKh24pHr92oZ8wv9JLcyjmJQcUKTpzK4gshhHkffYBqnJ7CUFNRjbJ77iMx3bTgESDjXmBMJZeTKbhCoTxnfE",
+   "viewKey": "8ecb6081cebfdc165fc9201fc5b9df7c86dad5e546b811a1783df0a312626f04",
+   "account": 1,
+   "subaddresses": [
+   [0,"88Y7mWzAYfRVRU8knZxzjuiPEpAgS9KDJMFoL5mpAYwnXa66ATehL4KN9e7tSGLir6BGZJP3GX9VmJR3B6kh81jQScUNGvW"],
+   [1,"8BURJxtSwnB4Qo8pPCUC3SfqWH8PpAzof513UMfKx3fjH6tbD3TEDfG8Ujv3LCvcQxHRuBbdqWs4MCv9rJ9zJTta9JMPPrV"],
+   [2,"87KGnUPN3GdGtjagWNr15kf9HoXzoFVWRUaCssciHyWK4sAxzLPGd283BbUNkjnhBzPPPeRuR17bY2ZzH13D26XyJ5qkz3F"],
+   [7,"8Bp9Fijyhzma7NgYVPbDMnPTTRoYoM13tgEpH2x53dWoSkz7EwwQrCcbGh516wa4P5RBccFiknDRt7UYXs9TGdXwEryarGD"],
+   [42,"8BUWBUzCuam9BKo7ZUEoMpQn3bB8FoZBKhmVkmBQptiNSkT8P8sNYXiAjfyv6rBnfbhk9Pa8P9gzn1wwiB6ZZjAfSAKeRwy"],
+   [255,"86vMZf9ZvwecTwJzhxtNk5bTiBhkHDsbhVLNjQpoMgAUjb8n9mSconLJowCKVzJDwwiERdMSmeyX28T9hq3KwPrR9oAZGmX"],
+   [256,"89zpv221BxG9sUq2Pfqj9eDe9ARkWZJ1TDh2dtWbJYCSBLJyXjPBk1sG3fA7N9A4xVZmFsvnDnfJh7FdFwyswssoGb3yofe"],
+   [1000,"89p1b4pTzu4NptTPDNmLzf9PGxdfA9HQe3qjEPom5kHXeWgFy7Yqrm4Qz7swE3Mbmo6LbGfG5tvBiToC1y56bGen3GpGzmA"],
+   [4096,"87GPGaiSSdcZoqWhzZRcFgeVxSFmShHBzGeeMUnYrxKphAS8SvpARo2AERLkQYjGyGFAAcUDjTcndfmvL2fxTq1W92YvQjD"],
+   [42875,"84E29rLofJoeCohbu1rtnPbYLJoEa9xKvTNX6WV6uq2tVCrfwZduuszBRweN2HbZxLi7BvirAzjbPjCZfTVVxPHa9ChEadd"],
+   [42893,"86zmQPhJhF8SEk2En4yuLd2S9zRT1EMSa8P4nows9Wdfb4XX7LdtiHtNGAMYGe6dC7CxXPSWE9xB7Y6E6iHFBEzELvZyNFW"],
+   [42894,"866LV5mVA6VWyG4kHE4aQjKBhw82eyvV3d4TJDTMEXH9MiT7aNX7d5sDGZ5pmbvXybUHiUWZqqDyf7gK84rWtbus2DbtieZ"],
+   [49999,"83W39VqSxHG5cECsGZoskd4ZVR9TVuwgVURavLnRF3yXcrnc9gPpmGTVJCc8fYPXBjSeEdvksnxxX3bb1iReXxqH9XzVuqp"],
+   [50000,"88eyHVQam7YfEdzR4AA7R9QLEPmL22KHp9RV2Vfagavp6aMhDvMvuitWZL2wWfdMqPRSddN1N71rUByuEqPv5N8J18LjxXg"]
+   ]
+  }
 }
