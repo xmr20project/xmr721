@@ -140,9 +140,10 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
  async function submit(recordHex,{caller=null,anew=false}={}){
   if(typeof recordHex!=='string'||!/^([0-9a-f]{2})+$/.test(recordHex)||recordHex.length>2*MAX_RECORD)throw bad('A record is hexadecimal and at most '+MAX_RECORD+' bytes.');
   const bytes=unhex(recordHex),d=decodeRecord(bytes,network),id=recordId(domain,d.bodyBytes);
-  // A relay with a lane carries collections and mints for the lane alone: everyone else inscribes from a wallet of
-  // their own, which pays its own network fee. Every other record it carries for everyone. This comes first: nothing
-  // is looked up, kept or sent again for such a record.
+  // A relay with a lane that charges no fee for a kind of record carries collections and mints of that kind for the lane
+  // alone: everyone else inscribes from a wallet of their own, which pays its own network fee. Every other record it
+  // carries for everyone. This comes first: nothing is looked up, kept or sent again for such a record. A relay that
+  // charges takes everyone's for the fee below (the lane's go free).
   if(foreign(d))throw bad(NOT_CARRIED,403);
   // A record this relay gave up on (refused, or not mined for so long that it was marked stuck) may be handed over again.
   const known=jobs.get(id);if(known&&known.state!=='refused'&&known.state!=='stuck')return view(known);
