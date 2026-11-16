@@ -22,13 +22,13 @@ import {fakeChain,fakeCarrier,carried} from './fake.mjs';
 
 const XMR=10n**12n,sha=b=>createHash('sha256').update(b).digest('hex');
 const dirs=[];test.after(()=>{for(const d of dirs)rmSync(d,{recursive:true,force:true});});
-const PNG=Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),Buffer.from('made-up picture bytes, not a real image')]),TEXT=Buffer.from('<script>alert(1)</script> is text here: served as text/plain, shown as text, never run.\n');
+const PNG=Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),Buffer.from('made-up picture bytes, not a real image')]),SVG=Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="4" fill="#f26822"/></svg>'),TEXT=Buffer.from('<script>alert(1)</script> is text here: served as text/plain, shown as text, never run.\n');
 
 function world({every=5,coins=6,limits={}}={}){
  const w=Object.fromEntries(['alice','bob','carol','dave','fee'].map(n=>[n,wallet(n)])),by=new Map(Object.values(w).map(x=>[x.address,x]));
  const holders=[w.alice,w.alice,w.bob,w.carol,w.alice,w.alice,w.bob,w.dave];
  const txs=holders.map((h,i)=>makeTx('reg'+i,[{to:h,amount:10n**9n}]));
- const owners=txs.map((t,i)=>({...ownerEntry(i,t),registrationHeight:50+i,ownerHeight:50+i,...(i===0?{bodySha256:sha(PNG),bodySize:PNG.length}:i===1?{bodySha256:sha(TEXT),bodySize:TEXT.length}:{})}));
+ const owners=txs.map((t,i)=>({...ownerEntry(i,t),registrationHeight:50+i,ownerHeight:50+i,...(i===0?{bodySha256:sha(PNG),bodySize:PNG.length}:i===1?{bodySha256:sha(TEXT),bodySize:TEXT.length}:i===3?{bodySha256:sha(SVG),bodySize:SVG.length}:{})}));
  const dir=mkdtempSync(join(tmpdir(),'mordinals-reader-'));dirs.push(dir);
  const chain=fakeChain({start:100}),state=join(dir,'state');
  const open=(o={})=>openReader({dir:state,chain,domain:DOMAIN,feeAddress:w.fee.address,owners,start:100,checkpointEvery:every,...o});
@@ -330,7 +330,7 @@ test('the relay keeps coins ready by splitting one',async()=>{
 
 test('the service answers wallets and pages, and the check tools agree with it',async()=>{
  const x=world({coins:20,every:3}),{w,chain,reader,make,owners,dir}=x,relay=x.relay();
- mkdirSync(join(dir,'content'));writeFileSync(join(dir,'content',sha(PNG)),PNG);writeFileSync(join(dir,'content',sha(TEXT)),TEXT);
+ mkdirSync(join(dir,'content'));writeFileSync(join(dir,'content',sha(PNG)),PNG);writeFileSync(join(dir,'content',sha(TEXT)),TEXT);writeFileSync(join(dir,'content',sha(SVG)),SVG);
  mkdirSync(join(dir,'views','sub'),{recursive:true});writeFileSync(join(dir,'views','index.html'),'<!doctype html><title>t</title>');writeFileSync(join(dir,'views','notes.txt'),'x');writeFileSync(join(dir,'secret.html'),'secret');
  const transfers=[{tx:'ab'.repeat(32),height:60,result:'updated',mordinal:0},{tx:'cd'.repeat(32),height:61,result:'ignored',mordinal:0}];
  const service=createService({reader,relay,owners,transfers,content:createContent({source:dirContent(join(dir,'content'))}),views:join(dir,'views'),origins:['http://localhost:5180'],testHooks:true,chunk:3});
@@ -397,6 +397,12 @@ test('the service answers wallets and pages, and the check tools agree with it',
   assert.deepEqual(['content-type','x-content-type-options','content-security-policy','x-mordinal-sensitive','x-mordinal-sha256'].map(h=>words.headers.get(h)),['text/plain; charset=utf-8','nosniff',"default-src 'none'; sandbox",'0',sha(TEXT)]);
   assert.equal((await get('/text/0')).status,415);assert.equal((await get('/text/2')).status,404);assert.equal((await get('/text/99')).status,404);assert.equal((await get('/text/x')).status,404);
   assert.equal((await get('/text/'+owners[1].registrationTx)).status,200);
+  // An SVG document: the service answers with a PNG picture it drew (when the optional picture library is there), never the SVG.
+  const drawn=await get('/content/3'),canDraw=await import('sharp').then(()=>true,()=>false);
+  if(canDraw){assert.equal(drawn.status,200);assert.deepEqual(drawn.body.subarray(0,8),PNG.subarray(0,8));
+   assert.deepEqual(['content-type','x-content-type-options','content-security-policy','x-mordinal-sensitive','x-mordinal-sha256','x-mordinal-drawn','cache-control'].map(h=>drawn.headers.get(h)),['image/png','nosniff',"default-src 'none'; sandbox",'0',sha(SVG),'svg','public, max-age=86400']);}
+  else assert.equal(drawn.status,415);
+  assert.equal(pic.headers.get('x-mordinal-drawn'),null);assert.equal((await get('/text/3')).status,415);
   // Pages are static files of one folder.
   const index=await get('/view/');assert.equal(index.status,200);assert.match(index.headers.get('content-security-policy'),/script-src 'self'/);assert.equal((await get('/')).status,302);
   for(const p of ['/view/notes.txt','/view/..%2fsecret.html','/view/%2e%2e/secret.html','/view/sub/','/view/missing.html'])assert.equal((await get(p)).status,404,p);
