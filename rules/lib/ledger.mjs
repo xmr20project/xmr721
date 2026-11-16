@@ -107,8 +107,9 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
   check(record,facts){return validate(record,facts);},
   // Claiming by burning (section 10). null on a ledger without it.
   // recordsEnd: the first block at which a claim record no longer counts.
-  // fee: the fee wallet (its main address and public secret view key) and the account of the fee addresses.
-  burn:dead?{from:burnFrom,recordsEnd,dead:[...dead],address:burnAddress(network),fee:{wallet:feeW.address,viewKey:feeW.viewKey,account:FEE_ACCOUNT}}:null,
+  // fee: the fee wallet (its main address and public secret view key), the account of the fee addresses and what is
+  // added to a Mordinal's number to give its index there.
+  burn:dead?{from:burnFrom,recordsEnd,dead:[...dead],address:burnAddress(network),fee:{wallet:feeW.address,viewKey:feeW.viewKey,account:FEE_ACCOUNT,offset:1}}:null,
   // A burn claim is a transaction, not a record: `parts` is what burnParts() takes from it (burn.mjs).
   // due: the burn's own fee, which the fee payments for its Mordinal have to reach; paid: what they reach now.
   checkBurnClaim(txid,parts){const v=burnClaim(txid,parts),paid=paidFor(v.mordinal.number);return {id:v.id,number:v.mordinal.number,owner:v.to,due:v.due.toString(),paid:paid.toString(),waiting:paid<v.due};},
@@ -119,11 +120,17 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
   // The fee payments in one transaction (`parts`: what feeParts() takes from it, burn-fee.mjs), counted from the first
   // burn block on. -> {paid: [{index, number, amount, counted, error}], claims: [{id, number, owner}]}: the outputs that pay
   // a fee address, and the burn claims they complete.
+  // scanBurnFees finds the outputs (key derivations: the costly part); applyBurnFees counts them. `found`, when given,
+  // is what scanBurnFees gave for these parts earlier (a reader rebuilding from its own journal), so nothing is derived
+  // again; without it the outputs are found anew.
   scanBurnFees(parts){if(!dead)return [];return feeOutputs(parts,feeW,numberOf).map(f=>({...f,amount:f.amount==null?null:f.amount.toString()}));},
-  applyBurnFees(txid,parts){
+  applyBurnFees(txid,parts,found=null){
    if(!dead)throw Error('Claiming by burning is not part of this ledger.');if(tip<burnFrom)throw Error(`Fee payments count from block ${burnFrom}.`);
    if(!/^[0-9a-f]{64}$/.test(txid||''))throw Error('Transaction ID required');
-   const found=feeOutputs(parts,feeW,numberOf);if(!found.length)throw Error('This transaction pays no fee address.');
+   if(found!=null){if(!Array.isArray(found)||found.some(f=>!f||!Number.isInteger(f.index)||!parts?.outs?.[f.index]||!byNumber.has(f.number)||!(f.amount===null||/^\d{1,20}$/.test(f.amount))||!(f.error===null||typeof f.error==='string')||(f.error===null&&f.amount===null)))throw Error('The fee outputs given do not fit this transaction.');
+    found=found.map(f=>({...f,amount:f.amount==null?null:BigInt(f.amount)}));}
+   else found=feeOutputs(parts,feeW,numberOf);
+   if(!found.length)throw Error('This transaction pays no fee address.');
    const paid=found.map(f=>{const out={index:f.index,number:f.number,amount:f.amount==null?null:f.amount.toString(),counted:false,error:f.error};if(f.error)return out;
     const key=parts.outs[f.index].key,had=fees.get(key);
     if(had&&had.amount>=f.amount)return {...out,error:'An earlier output with the same one-time key holds as much or more; a wallet keeps only one of them.'};
@@ -133,7 +140,7 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
   // A burn claim by its id: {id, tx, number, to, due, height, state ('waiting', 'claimed' or 'lost': the Mordinal was
   // claimed by a record before the fee was paid), claimedAt, paid, missing}, or null.
   burnClaim:id=>{const b=burns.get(id);return b?burnView(b):null;},
-  // What has been paid for one Mordinal's burn claim, and its fee address.
+  // What has been paid for one Mordinal's burn claim, and its fee address (subaddress (1, number + 1) of the fee wallet).
   burnFee:x=>{const m=find(x);if(!dead||m.number==null)return null;return {address:feeAddressOf(feeW,m.number).address,paid:paidFor(m.number).toString(),...(m.waiting?{waiting:burnView(m.waiting)}:{})};},
   apply(record,facts){
    const v=validate(record,facts),{op,body:b,id}=v;applied.add(id);

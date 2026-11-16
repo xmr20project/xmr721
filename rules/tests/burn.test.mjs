@@ -88,7 +88,7 @@ test('a transfer is read from tx_extra more strictly than the original parser re
 
 test('a burn claim: the Mordinal belongs to the address in the text, as after a claim record',()=>{
  const {w,l,owners,claim0,burn,apply,refused,pay}=world();
- assert.deepEqual(l.burn,{from:FROM,recordsEnd:END,dead:[...MAINNET_DEAD],address:burnAddress(),fee:{wallet:feeWallet().address,viewKey:feeWallet().viewKey,account:1}});
+ assert.deepEqual(l.burn,{from:FROM,recordsEnd:END,dead:[...MAINNET_DEAD],address:burnAddress(),fee:{wallet:feeWallet().address,viewKey:feeWallet().viewKey,account:1,offset:1}});
  l.setHeight(FROM);
  // The burn is valid; the Mordinal waits for its fee, then belongs to the address in the text.
  const t=burn('first',2,w.carol),waiting=apply(t),id=burnClaimId(DOMAIN,t.txid);

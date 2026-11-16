@@ -10,7 +10,7 @@ import {hex,unhex,concat,le,leBytes,Hs,decodeAddress} from '../lib/monero.mjs';
 import {signWithOutputKey,outputSecret} from '../lib/claim.mjs';
 import {checkPayment} from '../lib/payment.mjs';
 import {RECORDS_OVERLAP,burnClaimId,burnParts,readTransfer,paysBurnAddress} from '../lib/burn.mjs';
-import {FEE_WALLET,FEE_ACCOUNT,FEE_SAFE,FEE_LOOKAHEAD,feeWallet,isProjectFeeWallet,feeAddressOf,feeTable,feeParts,feeOutputs} from '../lib/burn-fee.mjs';
+import {FEE_WALLET,FEE_ACCOUNT,FEE_LOOKAHEAD,feeIndex,feeWallet,isProjectFeeWallet,feeAddressOf,feeTable,feeParts,feeOutputs,walletKeys} from '../lib/burn-fee.mjs';
 import {wallet,makeTx,ownerEntry,makeBurn,burnParty,feeParty,payFee,DOMAIN} from './helpers.mjs';
 const FIX=JSON.parse(readFileSync(new URL('./fixtures-burn.json',import.meta.url),'utf8')),enc=new TextEncoder();
 const Pt=ed25519.ExtendedPoint,G=Pt.BASE,H=Pt.fromHex('8b655970153799af2aeadc9ff1add0ea6c7251d54154cfa92c173a0dd39c1f94');
@@ -34,17 +34,21 @@ function world(o={}){
  let k=0;const pay=(n,amount=DUE,more)=>fees(payFee('fee world payment '+k++,n,amount,more));
  return {w,l,owners,claim0,burn,apply,fees,pay};}
 
-test('the fee wallet and the fee addresses: subaddresses (1, n) of the project wallet, as monero-wallet-rpc lists them',()=>{
+test('the fee wallet and the fee addresses: subaddresses (1, n + 1) of the project wallet, as monero-wallet-rpc lists them',()=>{
  const f=FIX.feeAddresses,w=feeWallet();
  assert.deepEqual({wallet:f.wallet,viewKey:f.viewKey,account:f.account},{wallet:FEE_WALLET.address,viewKey:FEE_WALLET.viewKey,account:FEE_ACCOUNT});
- assert.equal(w.address,FEE_WALLET.address);assert.equal(isProjectFeeWallet(w),true);assert.equal(FEE_SAFE,1200000000n);assert.equal(FEE_LOOKAHEAD,50000);
+ assert.equal(w.address,FEE_WALLET.address);assert.equal(isProjectFeeWallet(w),true);assert.equal(FEE_LOOKAHEAD,50000);
+ assert.equal(feeIndex(0),1);assert.equal(feeIndex(42894),42895);
  // The view key belongs to the address: its public key is the address's view key.
  assert.equal(hex(G.multiply(le(unhex(FEE_WALLET.viewKey))).toRawBytes()),hex(decodeAddress(FEE_WALLET.address).view));
- assert.deepEqual(f.subaddresses.map(x=>x[0]),[0,1,2,7,42,255,256,1000,4096,42875,42893,42894,49999,50000]);
- for(const [n,address] of f.subaddresses){const a=feeAddressOf(w,n);assert.equal(a.address,address,'number '+n);
+ // Mordinal n pays to index n + 1: #0 to index 1, the owner list's last numbers to 42,894 and 42,895.
+ assert.deepEqual(f.subaddresses.map(x=>x[0]),[0,1,2,3,8,43,256,257,1001,4096,42875,42894,42895,49999,50000]);
+ for(const [index,address] of f.subaddresses.filter(x=>x[0]>0)){const a=feeAddressOf(w,index-1);assert.equal(a.address,address,'index '+index);
   const d=decodeAddress(address);assert.equal(d.kind,'sub');assert.equal(hex(d.spend),a.spend);assert.equal(hex(d.view),a.view);}
- // The table finds each number by its spend key; numbers not asked for are not found.
- const of=feeTable(w,[0,7,42894]);assert.equal(of(feeAddressOf(w,7).spend),7);assert.equal(of(feeAddressOf(w,42894).spend),42894);assert.equal(of(w.spend),undefined);
+ // The table finds each number by its spend key; numbers not asked for are not found, and index 0 (the wallet's own
+ // change) is no number's fee address.
+ const all=f.subaddresses.filter(x=>x[0]>0).map(x=>x[0]-1),of=feeTable(w,[0,7,42894,...all]),zero=decodeAddress(f.subaddresses[0][1]);
+ assert.equal(of(feeAddressOf(w,7).spend),7);assert.equal(of(feeAddressOf(w,42894).spend),42894);assert.equal(of(w.spend),undefined);assert.equal(of(hex(zero.spend)),undefined);
  // The same keys on stagenet, written as stagenet addresses; another network names a wallet of its own if it likes.
  const s=feeWallet(null,'stagenet');assert.equal(s.spend,w.spend);assert.equal(s.view,w.view);assert.equal(decodeAddress(feeAddressOf(s,7).address,'stagenet').kind,'sub');assert.equal(feeAddressOf(s,7).spend,feeAddressOf(w,7).spend);
  const own=wallet('own fee','stagenet');assert.equal(feeWallet({address:own.address,viewKey:hex(own.viewSecret)},'stagenet').address,own.address);
@@ -55,7 +59,14 @@ test('the fee wallet and the fee addresses: subaddresses (1, n) of the project w
  assert.throws(()=>feeWallet({address:mine.address,viewKey:FEE_WALLET.viewKey},'mainnet',{testChain:true}),/does not belong/);
  assert.throws(()=>feeWallet({address:mine.sub(1).address,viewKey:hex(mine.viewSecret)},'mainnet',{testChain:true}),/main address/);
  assert.throws(()=>feeWallet({address:mine.address}),/main address and its secret view key/);
- assert.throws(()=>feeAddressOf(w,-1),/whole number/);assert.throws(()=>feeAddressOf(w,2**32),/whole number/);});
+ assert.throws(()=>feeAddressOf(w,-1),/whole number/);assert.throws(()=>feeAddressOf(w,2**32-1),/whole number from 0 to 4294967294/);});
+
+test('index 0 of account 1 is no fee address: the fee wallet\'s own change there is not Mordinal #0\'s fee',()=>{
+ const w=feeWallet(),of=feeTable(w,[0,1,2,3,4,5]),z=decodeAddress(FIX.feeAddresses.subaddresses[0][1]),zero={label:'change',kind:'sub',spend:z.spend,view:z.view,address:z.address};
+ // A payment from account 1, as wallet2 makes one: the change goes to (1, 0), made with the transaction key.
+ const t=makeTx('change',[{to:zero,amount:10n**9n}]);assert.deepEqual(feeOutputs(feeParts(t.tx),w,of),[]);
+ const {l}=world();l.setHeight(FROM);assert.throws(()=>l.applyBurnFees(t.txid,feeParts(t.tx)),/pays no fee address/);assert.equal(l.burnFee(0).paid,'0');
+ assert.equal(l.burnFee(0).address,FIX.feeAddresses.subaddresses[1][1]);});
 
 test('a fee payment is found with the transaction public key and with an additional key, its amount read and checked',()=>{
  const w=feeWallet(),of=feeTable(w,[0,1,2,3,4,5]);
@@ -202,3 +213,41 @@ test('a ledger without a first burn block has no fee and no fee state',()=>{
  assert.equal(t.burn.fee.wallet,own.address);const fw=feeWallet(named,'mainnet',{testChain:true});
  assert.equal(t.applyBurnFees(...(p=>[p.txid,feeParts(p.tx)])(payFee('own wallet',0,7n,{wallet:fw}))).paid[0].counted,true);
  assert.throws(()=>t.applyBurnFees(...(p=>[p.txid,feeParts(p.tx)])(payFee('project wallet',0,7n))),/pays no fee address/);});
+
+test('transaction public keys as wallet2 reads them: every key field, past merge-mining and 0xde fields; additional keys up to a broken entry',()=>{
+ const w=feeWallet(),of=feeTable(w,[0,1,2,3,4,5]),pt=label=>[...G.multiply(Hs(enc.encode(label))).toRawBytes()];
+ // 32 bytes that are no point of the curve.
+ const broken=(()=>{for(let y=2;;y++){const b=leBytes(BigInt(y));try{Pt.fromHex(hex(b));}catch{return [...b];}}})();
+ const decoy=pt('decoy key'),found=t=>feeOutputs(feeParts(t.tx),w,of).map(f=>[f.index,f.number,f.amount]);
+ const base=payFee('keys',3,7n),R=base.tx.extra.slice(1,33),as=(label,extra)=>payFee('keys',3,7n,{tamper:tx=>{tx.extra=extra;}});
+ assert.deepEqual(found(base),[[0,3,7n]]);
+ // A second, third key field: wallet2 tries every one, in order.
+ assert.deepEqual(found(as('second',[1,...decoy,1,...R])),[[0,3,7n]]);assert.deepEqual(walletKeys([1,...decoy,1,...R]).pubs.length,2);
+ assert.deepEqual(found(as('third',[1,...decoy,1,...pt('other'),2,1,0,1,...R])),[[0,3,7n]]);
+ // A first key that is no point, then the real one.
+ assert.deepEqual(found(as('broken first',[1,...broken,1,...R])),[[0,3,7n]]);
+ // Past a merge-mining tag (one string: a varint depth and a 32-byte hash) and past a 0xde field.
+ assert.deepEqual(found(as('merge mining',[1,...decoy,3,33,5,...new Uint8Array(32).fill(7),1,...R])),[[0,3,7n]]);
+ assert.deepEqual(found(as('minergate',[1,...decoy,0xde,3,9,9,9,1,...R])),[[0,3,7n]]);
+ // Where wallet2 stops reading, this does too: a merge-mining tag of another length, the transfer field 0x11, any
+ // other tag, padding, a length written long, a field cut short.
+ for(const extra of [[1,...decoy,3,34,5,...new Uint8Array(33),1,...R],[1,...decoy,3,32,5,...new Uint8Array(31),1,...R],[1,...decoy,0x11,1,65,1,...R],[1,...decoy,0x10,1,65,1,...R],
+  [1,...decoy,0,0,0,1,...R],[1,...decoy,2,0x81,0,1,...R],[1,...decoy,0xde,0x80,0x00,1,...R],[1,...decoy,2,200]])assert.deepEqual(found(as('stops',extra)),[],JSON.stringify(extra.slice(33,40)));
+ // No key field at all: wallet2 passes the transaction over, additional keys or not.
+ const two=payFee('no main',4,9n,{alongside:wallet('x')}),keys=two.tx.extra.slice(33);assert.equal(keys[0],4);
+ assert.deepEqual(found(two),[[1,4,9n]]);assert.deepEqual(found({tx:{...two.tx,extra:[...keys]}}),[]);
+ // An additional key counts only when every entry before it in the list is a point.
+ const k=i=>keys.slice(2+32*i,34+32*i);
+ assert.deepEqual(found({tx:{...two.tx,extra:[...two.tx.extra.slice(0,33),4,2,...broken,...k(1)]}}),[]);
+ assert.deepEqual(found({tx:{...two.tx,extra:[...two.tx.extra.slice(0,33),4,2,...k(0),...broken]}}),[]);
+ const first=makeTx('fee first',[{to:feeParty(5),amount:11n},{to:wallet('y'),amount:1n}]),fk=first.tx.extra.slice(35);
+ assert.deepEqual(found({tx:{...first.tx,extra:[...first.tx.extra.slice(0,33),4,2,...fk.slice(0,32),...broken]}}),[[0,5,11n]]);
+ // Only the first list of additional keys is read.
+ assert.deepEqual(found({tx:{...two.tx,extra:[...two.tx.extra.slice(0,33),4,2,...decoy,...decoy,...keys]}}),[]);});
+
+test('the outputs found once can be given back to the ledger, which then derives nothing; a list that does not fit is refused',()=>{
+ const {l}=world(),t=payFee('given',2,DUE),parts=feeParts(t.tx);l.setHeight(FROM);
+ const found=l.scanBurnFees(parts);assert.deepEqual(found,[{index:0,number:2,amount:DUE.toString(),error:null}]);
+ for(const bad of [[{...found[0],index:3}],[{...found[0],number:99}],[{...found[0],amount:'x'}],[{...found[0],amount:null,error:null}],'x',[null]])
+  assert.throws(()=>l.applyBurnFees(t.txid,parts,bad),/do not fit this transaction/);
+ assert.deepEqual(l.applyBurnFees(t.txid,parts,JSON.parse(JSON.stringify(found))).paid,[{index:0,number:2,amount:DUE.toString(),counted:true,error:null}]);assert.equal(l.burnFee(2).paid,DUE.toString());});
