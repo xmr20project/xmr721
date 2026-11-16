@@ -1,11 +1,14 @@
 // Claiming by burning on a local test chain. SIMULATED: own offline fakechain (monerod --regtest) and throwaway wallets,
 // no real funds. Real here: the registration and the burning transfer are real transactions in the original Mordinals
 // format, built by a separate tool and accepted by a real node; the reader finds the transfer in a real block, as the
-// node returns it, and gives the Mordinal to the address in its text.
+// node returns it: the Mordinal is burned and waits for its fee. Then an ordinary monero-wallet-rpc wallet pays the
+// fee to the Mordinal's fee address (once alone, once beside another payment, where the transaction carries additional
+// keys), and the reader gives the Mordinal to the address in the text. A view-only copy of the project's fee wallet in
+// monero-wallet-rpc, made from its public view key, sees the same payments at the same subaddresses with the same amounts.
 // The tool is not part of this repository: MORDINAL_OLD names its binary (a wallet that builds original-format
 // registrations and transfers to the burn address: `init`, `mint-old`, `transfer-old`, `publish`; it takes the owner
 // list and the first burn block, and builds no burn before that block). Without it the test is skipped.
-//   MONERO_BIN=<folder with monerod> MORDINAL_OLD=<path to the tool> node --test reader/tests/lab-burn.test.mjs   (about a minute)
+//   MONERO_BIN=<folder with monerod and monero-wallet-rpc> MORDINAL_OLD=<path to the tool> node --test reader/tests/lab-burn.test.mjs   (a few minutes)
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
@@ -14,7 +17,8 @@ import {join} from 'node:path';
 import {randomBytes} from 'node:crypto';
 import {hex} from '../../rules/lib/monero.mjs';
 import {burnAddress,burnClaimId,burnParts,readTransfer} from '../../rules/lib/burn.mjs';
-import {call,startChain,stopAll} from '../../rules/tests/lab-harness.mjs';
+import {call,startChain,startWallet,stopAll,txPubKeys} from '../../rules/tests/lab-harness.mjs';
+import {FEE_WALLET,feeWallet,feeAddressOf} from '../../rules/lib/burn-fee.mjs';
 import {wallet} from '../../rules/tests/helpers.mjs';
 import {transferOf} from '../../rules/tests/original-rules.mjs';
 import {startService} from '../service.mjs';
@@ -25,8 +29,8 @@ const HERE=import.meta.dirname,TOOL=process.env.MORDINAL_OLD,DOMAIN='5e'.repeat(
 // Sixteen in a row with one left out, the shape of mainnet's.
 const DEAD=[5,6,7,8,9,10,11,12,13,14,15,16,17,18,20];
 
-test('a real burning transfer on a test chain is found by the reader and claims the Mordinal',{timeout:900000,skip:TOOL?false:'MORDINAL_OLD is not set'},async()=>{
- const dir=await mkdtemp(join(HERE,'..','runs-lab-burn-'));let chain,service=null;
+test('a real burning transfer on a test chain waits for its fee; a real payment of the fee claims the Mordinal',{timeout:900000,skip:TOOL?false:'MORDINAL_OLD is not set'},async()=>{
+ const dir=await mkdtemp(join(HERE,'..','runs-lab-burn-'));let chain,service=null,payer=null,feeView=null;
  try{
   chain=await startChain(dir);
   const tool=(wallet,...args)=>new Promise((res,rej)=>execFile(TOOL,[join(dir,wallet),...args],{env:{PATH:process.env.PATH,MORDINALS_NODE:chain.url,MORDINALS_NETWORK:'offline-fakechain'},maxBuffer:1<<24},
@@ -36,7 +40,8 @@ test('a real burning transfer on a test chain is found by the reader and claims 
   const tip=async()=>(await call(chain.port,'get_info')).height-1;
   const node=async txid=>{const r=await (await fetch(chain.url+'/get_transactions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({txs_hashes:[txid],decode_as_json:true})})).json();
    const t=r.txs[0];return {height:t.block_height,outs:t.output_indices,tx:JSON.parse(t.as_json)};};
-  await mine(70,holder);await mine(500);
+  payer=await startWallet(dir,chain.port,'payer');
+  await mine(70,holder);await mine(70,payer.address);await mine(500);
   // Two registrations in the original format, each a small picture of its own. Their owner outputs make the owner list.
   const picture=()=>Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),randomBytes(40)]);
   const owners=[];
@@ -70,18 +75,49 @@ test('a real burning transfer on a test chain is found by the reader and claims 
   assert.equal(Buffer.from(readTransfer(t.tx.extra).text).toString(),'xmr721 claim to '+receiver);
   const ring=(()=>{let at=0;return t.tx.vin[0].key.key_offsets.map(o=>at+=o);})();assert.deepEqual(ring,[...DEAD,owners[0].ownerOutputIndex].sort((a,b)=>a-b));
   assert.ok(BigInt(t.tx.rct_signatures.txnFee)>=10n**9n);
-  // The reader: both Mordinals belong to the addresses in the texts, claimed by burning.
-  const m=await get('/mordinal/0'),id=burnClaimId(DOMAIN,burn.txid);
-  assert.equal(m.mordinal.claimed,true);assert.equal(m.mordinal.owner,receiver);assert.equal(m.mordinal.seq,0);
-  assert.deepEqual(m.history.map(h=>[h.kind,h.proof??null,h.txid]),[['inscribed',null,owners[0].registrationTx],['claim','burn',burn.txid]]);
-  const entry=(await get('/entry/'+burn.txid)).entry;assert.deepEqual({...entry,pos:0},{txid:burn.txid,height:start+3,pos:0,id,op:null,kind:'burn claim',number:0,to:receiver,ok:true});
-  assert.equal((await get('/mordinal/1')).mordinal.owner,other);
+  // The reader: both burns count, and both Mordinals wait for their fee, the burn's own transaction fee.
+  const id=burnClaimId(DOMAIN,burn.txid),due0=String(t.tx.rct_signatures.txnFee),due1=String((await node(second.txid)).tx.rct_signatures.txnFee),fees=feeWallet();
+  {const m=await get('/mordinal/0');assert.equal(m.mordinal.claimed,false);assert.equal(m.mordinal.owner,null);
+   assert.deepEqual(m.mordinal.waiting,{txid:burn.txid,id,to:receiver,height:start+3,due:due0,paid:'0',missing:due0});assert.deepEqual(m.mordinal.burnFee,{address:feeAddressOf(fees,0).address,paid:'0'});
+   const entry=(await get('/entry/'+burn.txid)).entry;assert.deepEqual({...entry,pos:0},{txid:burn.txid,height:start+3,pos:0,id,op:null,kind:'burn claim',number:0,to:receiver,state:'waiting',fee:{due:due0,paid:'0',missing:due0,address:feeAddressOf(fees,0).address},ok:true});
+   assert.equal((await get('/mordinal/1')).mordinal.waiting.to,other);assert.equal((await get('/status/'+id)).state,'waiting');}
   const burns=(await get('/burns')).burns;assert.deepEqual(burns.map(x=>x.txid).sort(),[burn.txid,second.txid].sort());assert.deepEqual(burns.find(x=>x.txid===burn.txid).burn,burnParts(t.tx));
+  assert.deepEqual(burns.map(x=>x.state),['waiting','waiting']);
+  // An ordinary wallet pays Mordinal 0's fee to its fee address, as the only payment of its transaction: the fee output
+  // is found with the transaction public key. The claim completes in that block.
+  await payer.rpc('refresh');
+  const pay0=await payer.rpc('transfer',{destinations:[{amount:Number(due0),address:feeAddressOf(fees,0).address}],account_index:0,priority:0});await mine(1);await pass();
+  const p0=await node(pay0.tx_hash),at0=p0.height;assert.equal(txPubKeys(p0.tx).additional.length,0);
+  {const m=await get('/mordinal/0');assert.equal(m.mordinal.claimed,true);assert.equal(m.mordinal.owner,receiver);assert.equal(m.mordinal.seq,0);
+   assert.deepEqual(m.history.map(h=>[h.kind,h.proof??null,h.txid,h.height,h.burnHeight??null,h.feeTx??null]),[['inscribed',null,owners[0].registrationTx,owners[0].registrationHeight,null,null],['claim','burn',burn.txid,at0,start+3,pay0.tx_hash]]);
+   const fee=(await get('/entry/'+pay0.tx_hash)).entry;assert.equal(fee.kind,'fee payment');assert.deepEqual(fee.fees.map(f=>[f.number,f.amount,f.counted]),[[0,due0,true]]);
+   assert.equal((await get('/entry/'+burn.txid)).entry.state,'claimed');assert.equal((await get('/status/'+id)).state,'done');}
+  // Mordinal 1's fee in a transaction that also pays someone else: it carries additional keys, and the fee output is
+  // found with its own. One piconero short, then the rest in a block of its own.
+  const pay1=await payer.rpc('transfer',{destinations:[{amount:Number(due1)-1,address:feeAddressOf(fees,1).address},{amount:500000000000,address:filler}],account_index:0,priority:0});await mine(1);await pass();
+  const p1=await node(pay1.tx_hash);assert.equal(txPubKeys(p1.tx).additional.length,p1.tx.vout.length);
+  assert.equal((await get('/mordinal/1')).mordinal.waiting.missing,'1');
+  await mine(10);await payer.rpc('refresh');
+  const pay2=await payer.rpc('transfer',{destinations:[{amount:1,address:feeAddressOf(fees,1).address},{amount:1000000,address:filler}],account_index:0,priority:0});await mine(1);await pass();
+  {const m=await get('/mordinal/1'),at=(await node(pay2.tx_hash)).height;assert.equal(m.mordinal.owner,other);assert.deepEqual(m.history.at(-1).height,at);assert.equal(m.history.at(-1).feeTx,pay2.tx_hash);}
+  // A payment to the fee address of a number that is not on this ledger's owner list (the last number of mainnet's) is
+  // no fee payment here: nothing is journaled for it.
+  await mine(10);await payer.rpc('refresh');
+  const far=await payer.rpc('transfer',{destinations:[{amount:1000000,address:feeAddressOf(fees,42894).address}],account_index:0,priority:0});await mine(1);await pass();
+  assert.equal((await fetch(base+'/entry/'+far.tx_hash)).status,404);
+  // A view-only copy of the fee wallet, made from the fee wallet's address and public view key, with the subaddress
+  // lookahead the operator note asks for (account 1, 50,000 addresses), sees the same payments at subaddresses (1, 0)
+  // and (1, 1) with the same amounts, and the one at (1, 42894).
+  feeView=await startWallet(dir,chain.port,'fee-view-only',port=>call(port,'generate_from_keys',{filename:'w',address:FEE_WALLET.address,viewkey:FEE_WALLET.viewKey,password:'',restore_height:0}));
+  assert.equal(feeView.address,FEE_WALLET.address);await feeView.rpc('set_subaddress_lookahead',{major_idx:2,minor_idx:50000});await feeView.rpc('rescan_blockchain');await feeView.rpc('refresh');
+  const seen=((await feeView.rpc('get_transfers',{in:true,account_index:1})).in||[]).map(x=>[x.txid,x.subaddr_index.major,x.subaddr_index.minor,String(x.amount)]).sort();
+  assert.deepEqual(seen,[[pay0.tx_hash,1,0,due0],[pay1.tx_hash,1,1,String(Number(due1)-1)],[pay2.tx_hash,1,1,'1'],[far.tx_hash,1,42894,'1000000']].sort());
+  assert.equal((await feeView.rpc('get_address',{account_index:1,address_index:[0,1]})).addresses.map(a=>a.address).join(','),[feeAddressOf(fees,0).address,feeAddressOf(fees,1).address].join(','));
   // The original rules read the same transaction as a transfer of the same output.
   assert.deepEqual(transferOf({extra:t.tx.extra,inputs:t.tx.vin.map(i=>i.key.key_offsets),fee:t.tx.rct_signatures.txnFee},{deadAbove:4,deadBelow:21}),{moved:owners[0].ownerOutputIndex,text:'xmr721 claim to '+receiver});
   // The check tool replays the log and finds each entry on the node as logged (the node is the offline test chain,
   // which is what lets this ledger name dead outputs of its own).
   await mine(2);await pass();
-  const checked=await verify({...await download(base),owners,chain:createChain(chain.url)});assert.deepEqual(checked,{ok:true,problems:[],accepted:2,refused:0,checkpoints:checked.checkpoints,checkedOnNode:2});
+  const checked=await verify({...await download(base),owners,chain:createChain(chain.url)});assert.deepEqual(checked,{ok:true,problems:[],accepted:5,refused:0,checkpoints:checked.checkpoints,checkedOnNode:5});
   assert.ok(checked.checkpoints>=1);assert.equal((await get('/checkpoint')).burnFrom,start+2);
- }finally{if(service)await service.close();await stopAll([chain]);await rm(dir,{recursive:true,force:true});}});
+ }finally{if(service)await service.close();await stopAll([chain,payer,feeView]);await rm(dir,{recursive:true,force:true});}});
