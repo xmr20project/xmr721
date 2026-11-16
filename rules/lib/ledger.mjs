@@ -163,7 +163,8 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
    // On a ledger that claims by burning, once there is something to say: the burns that wait for their fee, and the fee
    // payments counted for each Mordinal.
    ...([...burns.values()].some(b=>b.state==='waiting')?{waiting:[...burns.values()].filter(b=>b.state==='waiting').sort((a,b)=>a.number-b.number).map(b=>({number:b.number,id:b.id,to:b.to,due:b.due}))}:{}),
-   ...(paidTo.size?{fees:[...paidTo].sort((a,b)=>a[0]-b[0]).map(([number,paid])=>({number,paid:paid.toString(),outputs:[...fees.values()].filter(f=>f.number===number).length}))}:{})}),
+   ...(paidTo.size?{fees:(outs=>[...paidTo].sort((a,b)=>a[0]-b[0]).map(([number,paid])=>({number,paid:paid.toString(),outputs:outs.get(number)})))
+    ([...fees.values()].reduce((m,f)=>m.set(f.number,(m.get(f.number)||0)+1),new Map()))}:{})}),
  };
  function validate(record,facts){
   const d=decodeRecord(record,network),{op,body:b,bodyBytes,proof}=d,id=recordId(domain,bodyBytes),out={op,body:b,id};
