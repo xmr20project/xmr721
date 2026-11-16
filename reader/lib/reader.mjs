@@ -75,6 +75,8 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
  const burning=burnFrom===null?null:{burnFrom,burnDead:deadList.join(','),ownerOutputs:ownerOutputsHash(owners),burnFee:feeW.address},tail=burning?SCHEMA_BURN:'';
  const want={schema:(openFrom!==null?SCHEMA_OPEN:minterList?SCHEMA_MINTERS:SCHEMA)+tail,network,domain,feeAddress:canonical(feeAddress,network),start,owners:ownersHash(owners),...(mintFrom!==null?{mintFrom}:{}),...(minterList?{minters:minterList.join(',')}:{}),...(openFrom!==null?{openFrom}:{}),...(burning||{})};
  let meta=existsSync(files.meta)?JSON.parse(readFileSync(files.meta,'utf8')):null,opened=null,lit=null;
+ // The folder's setting as it stands written, shown (`meta` below) until a burn setting taken in is confirmed.
+ const written=meta;
  // A folder of the same listed ledger that has not read the opening block yet takes the opening in: up to that block
  // the two setups judge every record alike.
  if(meta&&openFrom!==null&&meta.openFrom==null&&meta.schema===SCHEMA_MINTERS+tail&&[...Object.keys(want)].every(k=>k==='schema'||k==='openFrom'||(meta[k]??null)===(want[k]??null))){
@@ -206,12 +208,17 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
   for(const e of found){journal.push(e);index(e);}
   if(checkpointEvery&&height%checkpointEvery===0){const c=checkpoint();checkpoints.push(c);append(files.checkpoints,[c]);}
   return true;}
+ // A burn setting taken in or changed is confirmed against the node's newest block: refused when that block is less
+ // than BURN_MARGIN blocks below it, written into the folder otherwise. The service checks it before it serves anything.
+ function confirmBurn(info){
+  if(!pendingBurn)return;
+  if(burnFrom<info.height+BURN_MARGIN)throw Error(`The first burn block has to be at least ${BURN_MARGIN} blocks above the newest block of the Monero node (${info.height}); this folder keeps its setting.`);
+  writeMeta(meta);if(opened!==null)log?.({opened:openFrom,at:opened});log?.({burnFrom,at:lit});pendingBurn=false;}
  let busy=null;
  async function pass({limit=Infinity}={}){
   const info=await chain.info();let reorg=0,added=0;
   if(testChain&&info.nettype!=='fakechain')throw Error('This reader names dead outputs of its own, which only the offline test chain has; the Monero node is not on that chain.');
-  if(pendingBurn){if(burnFrom<info.height+BURN_MARGIN)throw Error(`The first burn block has to be at least ${BURN_MARGIN} blocks above the newest block of the Monero node (${info.height}); this folder keeps its setting.`);
-   writeMeta(meta);if(opened!==null)log?.({opened:openFrom,at:opened});log?.({burnFrom,at:lit});pendingBurn=false;}
+  confirmBurn(info);
   if(info.height<start)throw Error('The Monero node has not reached the start block yet.');
   const first=await chain.header(start);
   if(!meta.startHash){meta.startHash=first.hash;writeMeta(meta);}
@@ -227,7 +234,9 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
   throw Error('The chain keeps changing; trying again later.');}
  const pool={seen:new Map()};
  return {
-  get ledger(){return ledger;},get height(){return tipBlock().height;},get hash(){return tipBlock().hash;},get meta(){return {...meta};},
+  get ledger(){return ledger;},get height(){return tipBlock().height;},get hash(){return tipBlock().hash;},get meta(){return {...(pendingBurn?written:meta)};},
+  // A first burn block taken in or changed at this start and not yet confirmed against the node, or null.
+  get burnPending(){return pendingBurn?burnFrom:null;},confirmBurn,
   get events(){return events;},get journal(){return journal;},get lots(){return lots;},get checkpoints(){return checkpoints;},get blocks(){return blocks;},
   body:id=>bodies.get(id)||null,entryById:id=>byId.get(id)||null,entryByTx:txid=>byTx.get(txid)||null,timeOf,checkpoint,lookup,
   // What the fee payments of one journaled transaction counted for: [{index, number, amount, counted, error}], or null.

@@ -11,6 +11,7 @@
 //                                                   Mordinal is claimed by burning it (RULES.md section 10) and 720 blocks later claim records stop;
 //                                                   the dead outputs and the fee wallet are mainnet's (the project's), and other ones can be named
 //                                                   only on the offline test chain or another network; part of the ledger's setup
+//        (a new or changed --burn-from of an existing state folder has to lie at least 10 blocks above the newest block of the folder and of the node)
 //        [--carrier-bin <path> --carrier-state <dir> --carrier-network offline-fakechain|stagenet|mainnet [--carrier-start <height>] [--relay-limits name=n,…]]   relay on (mainnet also needs MORDINALS_MAINNET=1)
 //        [--mint-fee <atomic units> --collection-fee <atomic units>]   what this relay charges to carry a mint or a collection record
 //        [--content-dir <dir> | --content-archive [url]] [--collections <dir>] [--views <dir>] [--allow-origin <origin>] [--allow-extension <id>] [--behind-proxy] [--test-hooks]
@@ -349,14 +350,18 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
   follow(every=5000){if(timer)return;const turn=()=>step().catch(e=>log({sync:String(e.message).slice(0,200)}));turn();timer=setInterval(turn,every);timer.unref?.();},
   close:()=>new Promise(done=>{if(timer)clearInterval(timer);timer=null;server.closeAllConnections?.();server.close(()=>done());})};}
 
-// Everything from command-line style options: used by the command below and by tests.
+// Everything from command-line style options: used by the command below and by tests (which may hand in `chain`, a
+// made-up node, in place of `node`).
 export async function startService(o){
- const owners=readOwners(o.owners),chain=createChain(o.node),network=o.network||'mainnet';
+ const owners=readOwners(o.owners),chain=o.chain??createChain(o.node),network=o.network||'mainnet';
  // Dead outputs of one's own are for the offline test chain. On mainnet they are refused here, before anything is
  // opened (the reader refuses them again whenever it reads).
  if(o.burnDead!=null&&network==='mainnet'&&!isMainnetDead([...o.burnDead].map(Number).sort((x,y)=>x-y))&&(await chain.info()).nettype!=='fakechain')throw Error('--burn-dead: on mainnet the dead outputs are fixed; other ones can be named only on the offline test chain.');
  if(o.burnFee!=null&&network==='mainnet'&&!isProjectFeeWallet(feeWallet(o.burnFee,network,{testChain:true}))&&(await chain.info()).nettype!=='fakechain')throw Error('--burn-fee-wallet: on mainnet the fee wallet is the project\'s; another one can be named only on the offline test chain.');
  const reader=openReader({dir:o.state,chain,network,domain:o.domain,feeAddress:o.feeAddress,owners,start:Number(o.start),startHash:o.startHash||null,mintFrom:o.mintFrom==null?null:Number(o.mintFrom),minters:o.minters??null,openFrom:o.openFrom==null?null:Number(o.openFrom),burnFrom:o.burnFrom==null?null:Number(o.burnFrom),burnDead:o.burnDead??null,burnFee:o.burnFee??null,checkpointEvery:o.checkpointEvery??720,log:o.log});
+ // A first burn block that this start takes in, or changes, has to lie at least 10 blocks above the node's newest block.
+ // It is checked here, before anything is served: otherwise the pages would announce a setting the folder refuses.
+ if(reader.burnPending!=null){const info=await chain.info();try{reader.confirmBurn(info);}catch(e){throw Error('--burn-from: '+e.message);}}
  let relay=null;
  if(o.carrierBin){const carrier=createCarrier({bin:o.carrierBin,stateDir:o.carrierState,node:o.node,network:o.carrierNetwork||'offline-fakechain',start:Number(o.carrierStart||o.start)});
   relay=createRelay({dir:join(o.state,'relay'),reader,chain,carrier,network,domain:o.domain,limits:o.limits,fees:o.fees,lane:o.minters||[],...(o.now?{now:o.now}:{}),log:o.log});}

@@ -2,7 +2,8 @@
 // made-up keys: node --test reader/tests/burn.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,rmSync,readFileSync,existsSync} from 'node:fs';
+import {mkdtempSync,rmSync,readFileSync,existsSync,writeFileSync} from 'node:fs';
+import {createServer} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {hex} from '../../rules/lib/monero.mjs';
@@ -14,7 +15,7 @@ import {feeParts,feeWallet,feeAddressOf} from '../../rules/lib/burn-fee.mjs';
 import {ownersHash,ownerOutputsHash} from '../lib/owners.mjs';
 import {openReader,SCHEMA,SCHEMA_BURN,BURN_MARGIN} from '../lib/reader.mjs';
 import {unframe} from '../lib/transport.mjs';
-import {createService} from '../service.mjs';
+import {createService,startService} from '../service.mjs';
 import {verify,scan,download} from '../tools/verify.mjs';
 import {createRelay} from '../lib/relay.mjs';
 import {fakeChain,fakeCarrier,carried} from './fake.mjs';
@@ -211,6 +212,27 @@ test('the setting of a folder: taken in, changed and taken out before its block 
  const ahead=open({dir:state+'-lag',burnFrom:135});await ahead.sync();assert.equal(lagMeta().burnFrom,135);assert.equal(ahead.height,125);
  // A new folder has read nothing: any block above the start block is taken.
  const fresh=open({dir:state+'-new',burnFrom:101});assert.equal(fresh.ledger.burn.from,101);});
+
+test('a service started with a first burn block the node has passed does not start: nothing is served or announced, the folder is unchanged',async()=>{
+ const {w,owners,chain,open,claim,state,dir}=world(),before=open({burnFrom:null});
+ chain.mine([claim(0,w.alice,before.ledger)]);chain.mine();await before.sync();assert.equal(before.height,102);   // the folder has read 102
+ for(let h=103;h<=202;h++)chain.mine();                                                                            // the node is at 202
+ const file=join(dir,'owners.jsonl');writeFileSync(file,owners.map(o=>JSON.stringify(o)+'\n').join(''));
+ const port=await new Promise(done=>{const s=createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>done(p));});});
+ const start=burnFrom=>startService({owners:file,chain,node:'made-up',domain:DOMAIN,feeAddress:w.fee.address,start:100,state,burnFrom,port,checkpointEvery:5,xmr20Earlier:false,log:()=>{}});
+ const written=readFileSync(join(state,'meta.json'),'utf8');
+ // 115 passes the folder's own check (102 + 10) and is below the node's newest block: the start fails, before listening.
+ await assert.rejects(start(115),/--burn-from: The first burn block has to be at least 10 blocks above the newest block of the Monero node \(202\); this folder keeps its setting/);
+ assert.equal(readFileSync(join(state,'meta.json'),'utf8'),written);await assert.rejects(fetch(`http://127.0.0.1:${port}/info`));
+ // A reader opened with it shows the folder's setting as written until the node has confirmed the new one.
+ const r=open({burnFrom:115});assert.equal(r.burnPending,115);assert.equal(r.meta.burnFrom,undefined);assert.deepEqual(r.meta,before.meta);
+ await assert.rejects(r.sync(),/at least 10 blocks above the newest block of the Monero node \(202\)/);assert.equal(r.height,102);assert.equal(r.meta.burnFrom,undefined);
+ assert.equal(readFileSync(join(state,'meta.json'),'utf8'),written);
+ // Ten blocks above the node's newest block: the start takes it in, writes it, and announces it.
+ const s=await start(212);
+ try{assert.equal(JSON.parse(readFileSync(join(state,'meta.json'),'utf8')).burnFrom,212);assert.equal(s.reader.burnPending,null);assert.equal(s.reader.meta.burnFrom,212);
+  assert.equal((await (await fetch(`http://127.0.0.1:${s.port}/info`)).json()).burnFrom,212);}
+ finally{await s.close();}});
 
 test('dead outputs of one\'s own only on the offline test chain; every owner entry states its output index',async()=>{
  const {w,owners,chain,open,burn,state,dir}=world(),reader=open({burnDead:TEST_DEAD});
