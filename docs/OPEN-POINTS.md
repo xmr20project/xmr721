@@ -255,6 +255,8 @@ Service:
 
 A draft of a ledger setting (RULES.md section 10): from a chosen block a Mordinal is claimed
 by burning it under the original rules, and 720 blocks later claim records no longer count.
+Since 16 November a burn claim completes only once its fee is paid (the burn's own fee once
+more, to the Mordinal's fee address); that addition has not been reviewed yet.
 Read twice inside the project, not in use. What was built, what is decided and what is open is in
 [`BURN-CLAIM-DRAFT.md`](BURN-CLAIM-DRAFT.md). The open points in short:
 
@@ -267,7 +269,10 @@ Read twice inside the project, not in use. What was built, what is decided and w
   share (a break would allow one theft in total); 70499745, the ordinary sixteenth output of
   the same transaction, is left out, and who holds it is unknown;
 - what an indexer of the original rules shows after a burn (the claim text as the
-  Mordinal's text) is not consulted here.
+  Mordinal's text) is not consulted here;
+- a fee paid by mistake (without a burn, for another Mordinal, too much) is not refunded,
+  every fee payment is public with the Mordinal it is for, and a reader now scans every
+  transaction from the first burn block on (about 48 ms per block).
 
 ## Still open
 

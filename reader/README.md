@@ -36,7 +36,7 @@ is spent) and from then on it moves by signed records. Every record is a short b
 
 ```
 node service.mjs --owners <owners.jsonl[,added.jsonl]> --domain <hex32> --fee-address <address> --node <url> --start <height> --state <dir>
-     [--start-hash <hash>] [--mint-from <height> [--minters <address>,… [--open-from <height>]]] [--burn-from <height> [--burn-dead <index>,…]] [--network mainnet|stagenet] [--port 18951] [--every <ms>] [--transfers <transfers.jsonl>]
+     [--start-hash <hash>] [--mint-from <height> [--minters <address>,… [--open-from <height>]]] [--burn-from <height> [--burn-dead <index>,…] [--burn-fee-wallet <address>:<view key>]] [--network mainnet|stagenet] [--port 18951] [--every <ms>] [--transfers <transfers.jsonl>]
      [--collections <dir>] [--xmr20-inscribers <address>,…] [--xmr20-earlier <dir> | --no-xmr20-earlier] [--no-xmr20-follow]
      [--carrier-bin bin/mordinals-carrier --carrier-state <dir> --carrier-network offline-fakechain|stagenet|mainnet]
      [--content-dir <dir> | --content-archive [url]] [--views views] [--allow-origin <origin>] [--allow-extension <id>]
@@ -57,32 +57,58 @@ on mainnet it also needs `MORDINALS_MAINNET=1` and an unrestricted node of its o
 ## Claiming by burning (draft)
 
 With `--burn-from <height>` the ledger claims Mordinals by burning from that block on (RULES.md section 10) and
-refuses claim records 720 blocks later. On mainnet the dead outputs are fixed; `--burn-dead` is for the offline test
-chain and other networks. Every owner list entry then has to state `ownerOutputIndex`. The height can be corrected, or
-the option dropped, on a restart while the state folder has read neither block; a new height has to be at least 10
-blocks above the newest block the folder has read.
+refuses claim records 720 blocks later. On mainnet the dead outputs and the fee wallet are fixed; `--burn-dead` and
+`--burn-fee-wallet` are for the offline test chain and other networks. Every owner list entry then has to state
+`ownerOutputIndex`. The height can be corrected, or the option dropped, on a restart while the state folder has read
+neither block; a new height has to be at least 10 blocks above the newest block the folder has read.
+
+A burn claim is a paid service: it completes only once the fee payments for its Mordinal reach the burn
+transaction's own fee. Each Mordinal's fee address is the fee wallet's subaddress at account 1, index = its number.
+The fee wallet's secret view key is public, so the reader finds every fee payment itself: from the first burn block
+on it looks at **every** transaction of every block with that key (one key derivation per transaction, one more for
+each additional public key, and a lookup of the found key among the fee addresses of all Mordinals on the owner
+list). A transaction that pays a fee address is journaled with what the rule reads of it (`fee` in its entry), after
+the record or burn it carries; one that carries neither gets an entry of its own, `{height, pos, txid, ok: true, fee}`.
+Until the fee is paid the Mordinal is burned and waits for it: not claimed, without an owner.
+
+What this costs a reader, measured on 60 recent mainnet blocks (3,807,296 to 3,807,355; 1,975 transactions, 4,837
+outputs) on an Apple M4 Pro with Node 24: the table of the 42,895 fee addresses takes about 3.1 s to build, once per
+process; the scan then takes 1.4 ms per transaction, 48 ms per block on average (median 33 ms, at most 176 ms for a
+block of 136 transactions). A reader that starts far behind spends that per block it catches up on, about 35 s per
+day of blocks.
+
+**Operator note.** The fee wallet sees and spends the fees only when its subaddress lookahead covers account 1 with
+at least 50,000 addresses (`FEE_LOOKAHEAD` in `rules/lib/burn-fee.mjs`). In monero-wallet-rpc: `set_subaddress_lookahead`
+with `major_idx` 2 and `minor_idx` 50000, then `rescan_blockchain` (`tests/lab-burn.test.mjs` does this with a view-only
+copy and sees a payment at subaddress (1, 42894)); monero-wallet-cli has the same setting, `set subaddress-lookahead
+2:50000` (not tried here). Creating account 1 and its addresses up to index 50,000 works too. A fee paid to a
+subaddress the wallet does not watch stays invisible to it, though the ledger counts it.
 
 What a burning ledger answers besides the usual:
 
 | Route | What |
 |---|---|
-| `GET /info` | `burnFrom`, and `burn`: `recordsEnd` (the first block at which claim records are refused), `address`, `viewKey` (the burn address's public view secret), `text`, `dead`, `ownerOutputs` (the hash over every `number:ownerOutputIndex` line) |
+| `GET /info` | `burnFrom`, and `burn`: `recordsEnd` (the first block at which claim records are refused), `address`, `viewKey` (the burn address's public view secret), `text`, `dead`, `ownerOutputs` (the hash over every `number:ownerOutputIndex` line), `fee`: `wallet` (the fee wallet's main address), `viewKey` (its public secret view key), `account` (1), `safe` (what pages ask before a burn's own fee is known, 0.0012 XMR) |
 | `GET /owners` | each entry also has `ownerOutputIndex`, so both owner-list hashes can be recomputed |
-| `GET /burns?from=&limit=` | the accepted burn claims in ledger order: `{height, pos, txid, id, before, burn}` |
-| `GET /entry/<txid>` | for a burning transfer: `kind: "burn claim"`, accepted (with `number` and `to`) or refused with the reason |
-| `GET /log` | every judged entry, records and burning transfers, in chain order with block and place |
+| `GET /mordinal/<n>` | `ownerOutput`, `burnFee: {address, paid}` (the Mordinal's fee address and what was counted for it), and while a burn waits `waiting: {txid, id, to, height, due, paid, missing}`; `waiting: true` also on cards (`/gallery`, `/address`) |
+| `GET /burns?from=&limit=` | the valid burn claims and the fee payments in ledger order: `{height, pos, txid, before, id?, burn?, state?, fee?}`; `state` is where a burn claim stands now: `claimed`, `waiting` or `lost` (a claim record came first) |
+| `GET /entry/<txid>` | for a burning transfer: `kind: "burn claim"`, accepted (with `number`, `to`, `state`, `claimedAt` and `fee: {due, paid, missing, address}`) or refused with the reason; for a transaction that pays fee addresses, `fees: [{index, number, amount, counted, error}]`, and `kind: "fee payment"` when it carries nothing else |
+| `GET /status/<id>` | for a burn claim: `waiting` (with `fee`) until its fee is paid, `refused` when a claim record came first, then `done` |
+| `GET /stats` | also `burns: {waiting, feePayments}`; `records` counts no entry that is a fee payment only |
+| `GET /log` | every judged entry, records, burning transfers and fee payments, in chain order with block and place |
 
 `GET /records` holds MD1 records only, as before. A burn claim is not a record: it is the transaction itself, and
-`burn` in `/burns` holds the parts of it the rule reads. To replay the ledger from the two lists, walk `/burns` in
-order: `before` is the number of entries of `/records` that come before that burn claim, so apply
-`records[0 … before)`, then the burn claim, and after the last one the rest of the records. `height` and `pos` (the
-transaction's place in its block) give the same order.
+`burn` in `/burns` holds the parts of it the rule reads; `fee` holds the parts a fee payment is read from. To replay
+the ledger from the two lists, walk `/burns` in order: `before` is the number of entries of `/records` that come
+before that entry (a record in the same transaction as a fee payment comes before it), so apply `records[0 … before)`,
+then the burn claim (`applyBurnClaim`), then the fee payments (`applyBurnFees`), and after the last one the rest of
+the records. `height` and `pos` (the transaction's place in its block) give the same order.
 
 ## Tests
 
 ```
 node --test tests/reader.test.mjs    # offline, a few seconds: framing, reader, restart, reorg, relay limits, service, check tools
-node --test tests/burn.test.mjs      # offline: claiming by burning (RULES.md section 10) in the reader and the service
+node --test tests/burn.test.mjs      # offline: claiming by burning and its fee (RULES.md section 10) in the reader and the service
 node --test tests/lab.test.mjs       # local Monero test chain, real wallets, real carrier transactions (about a minute)
 node --test tests/views.test.mjs     # the pages in a browser against the demonstration service (needs Playwright's Chromium)
 ```

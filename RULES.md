@@ -452,11 +452,13 @@ From that block on:
    address that owns it from then on. Such a transaction is called a burn claim. It is not
    an MD1 record and needs no signature of its own: only the holder of the owner coin can
    spend it. A burning transfer in a block **before** the first burn block claims nothing,
-   and its coin is spent.
+   and its coin is spent. Claiming by burning is a paid service: the claimer pays the burn's
+   own fee once more, to the Mordinal's fee address ("The fee" below); until then the burned
+   Mordinal waits for it.
 2. **Claim records stop 720 blocks later.** A claim record (op 1, either proof) still counts
    in the 720 blocks from the first burn block on (about one day; one fixed number, not a
    setting) and is refused in every block after them. In those 720 blocks both ways count
-   and the first valid claim of a Mordinal wins. The overlap is for a holder whose burn got
+   and the first claim of a Mordinal that completes wins. The overlap is for a holder whose burn got
    into a block just before the first burn block, by sending early or because blocks were
    replaced: the burn claimed nothing, but a claim record signed with the coin's one-time
    key (proof 0) needs the keys and not the coin, and still claims the Mordinal. After the
@@ -528,18 +530,113 @@ output 0's key = Hs(8·a·R ‖ varint 0)·G + B
 ```
 
 and when output 0 carries a view tag, it is the one this gives, so that a view-only wallet
-of the burn address finds the payment. Additional public keys are **not** used for this
-check: a wallet pays a main address with the transaction key itself, also in a transaction
-that carries additional keys. The amount is not looked at.
+of the burn address finds the payment. In a transaction that carries additional public keys (one that also pays a subaddress, such
+as a fee address, does), output 0 is also looked for with the additional key of output 0, as
+a wallet looks for it: `R` is then entry 0 of the first list of additional keys (field `04`)
+that comes before the transfer field (a wallet stops reading `tx_extra` at the transfer
+field, which it does not know). A derivation is looked at further only when the view tag, if
+output 0 has one, is the one it gives. wallet2 pays a main address with the transaction key
+itself; some other wallet libraries give every output a key of its own. Nothing else is
+tried: no other entry of the list, no second transaction public key. The amount is not
+looked at.
 
-Then the Mordinal belongs to `<address>`, exactly as after a claim record to that address:
-claimed, counter 0, not listed. Its history says it was claimed by burning and names the
-transaction.
+Such a transaction is a **valid burn claim**. Its Mordinal is then burned and claimed by
+nobody until the fee for it is paid ("The fee" below). Once it is, the Mordinal belongs to
+`<address>`, exactly as after a claim record to that address: claimed, counter 0, not
+listed. Its history says it was claimed by burning and names the transaction.
+
+A Mordinal that waits for its fee has no owner: it cannot be moved or listed. A second
+burning transfer of it is refused ("This Mordinal was burned already; that burn waits for
+its fee."): the first valid burn holds the Mordinal, as it did before the fee. Only a break
+of the dead key (below) could make such a second transfer at all.
 
 A transaction is a record carrier (section 8) or a burn claim, never both: a record's
 `tx_extra` has no `0x11` field. Burn claims and records are applied in one order, by block
-and then by the transaction's position in the block. The first valid claim of a Mordinal
-wins. When blocks are replaced, burn claims in them are undone like records.
+and then by the transaction's position in the block. The first claim of a Mordinal that
+completes wins (a burn claim completes once its fee is paid). When blocks are replaced, burn
+claims in them are undone like records.
+
+### The fee
+
+Claiming by burning is a paid service. The claimer pays **twice the burn's real cost**: the
+burn transaction's own fee (`txnFee`: the network fee and the record cost of the original
+rules; 0.00103 XMR for an ordinary burn) goes to the network, and an equal amount goes to the
+project, paid to **the Mordinal's fee address**.
+
+**The fee wallet** is the project's. Its secret view key is public by design, so that every
+reader finds every fee payment:
+
+```
+main address     47BebHskardKh24pHr92oZ8wv9JLcyjmJQcUKTpzK4gshhHkffYBqnJ7CUFNRjbJ77iMx3bTgESDjXmBMJZeTKbhCoTxnfE
+secret view key  8ecb6081cebfdc165fc9201fc5b9df7c86dad5e546b811a1783df0a312626f04      (public)
+```
+
+On mainnet it is fixed, like the dead outputs. Its keys are the same on every network; only
+the written address differs. A ledger on another network or on the offline test chain may
+name a wallet of its own; checkpoints from the first burn block on name the fee wallet.
+
+**The fee address of Mordinal `n`** is the fee wallet's standard subaddress at account 1,
+index `n`, as every Monero wallet derives it:
+
+```
+m = Hs("SubAddr\0" ‖ a ‖ u32le(1) ‖ u32le(n))      a = the secret view key above
+D = B + m·G                                        B = the fee wallet's spend key; D: the subaddress's spend key
+C = a·D                                            the subaddress's view key
+```
+
+For example Mordinal #0:
+`88Y7mWzAYfRVRU8knZxzjuiPEpAgS9KDJMFoL5mpAYwnXa66ATehL4KN9e7tSGLir6BGZJP3GX9VmJR3B6kh81jQScUNGvW`,
+#42,894: `866LV5mVA6VWyG4kHE4aQjKBhw82eyvV3d4TJDTMEXH9MiT7aNX7d5sDGZ5pmbvXybUHiUWZqqDyf7gK84rWtbus2DbtieZ`
+(more in `rules/tests/fixtures-burn.json`, as monero-wallet-rpc lists them).
+
+**A fee payment** for Mordinal `n` is an output, in a transaction in a block at or after the
+first burn block, that pays the fee address of `n`, found with the public view key the way
+wallet2 finds its outputs:
+
+1. The keys are read from `tx_extra` as a wallet reads them: the first transaction public key
+   `R` and the first list of additional public keys, up to the first field a wallet does not
+   know (padding, or the transfer field `0x11`). The block reward transaction is not looked
+   at, nor a transaction that is not a current RingCT transaction (version 2, type 4 to 6,
+   with an amount and a commitment for each output).
+2. For output `i` the derivation `8·a·R` is tried, then, when the list has an entry `i`, the
+   derivation with that entry. A derivation is looked at further only when the output's view
+   tag, if it has one, is the one the derivation gives.
+3. `P − Hs(derivation ‖ varint i)·G`, with `P` the output's key, has to be the spend key `D`
+   of the fee address of a Mordinal on the owner list.
+4. The amount is the 8 bytes of `ecdhInfo` XOR `keccak("amount" ‖ Hs(derivation ‖ varint i))`.
+   It counts only when `Hs("commitment_mask" ‖ Hs(derivation ‖ varint i))·G + amount·H` is the
+   output's commitment: an amount written into `ecdhInfo` that the commitment does not hold is
+   refused, as wallet2 refuses to spend such an output. An output of a transaction with a lock
+   time does not count either.
+5. Two outputs with the same one-time key `P` are one coin for a wallet: it keeps one of them,
+   the larger. So a one-time key counts once, with the largest amount seen with it; a later
+   output with the same key adds only what it holds above that. (The view key is public:
+   anyone can write an output with a copied key and any amount.)
+
+Fee payments are facts kept from the first burn block on, whatever the state of their
+Mordinal. A payment for a Mordinal with no valid burn yet, or one already claimed, gives
+nothing on its own; a later valid burn of that Mordinal uses the payments made before it. A
+fee paid in a block before the first burn block is not counted.
+
+**A burn claim completes** when the fee payments for its Mordinal, counted from the first burn
+block up to and including the completing place, add up to at least the burn transaction's
+`txnFee`. Everything is applied in one order: by block, by the transaction's place in the
+block, and within a transaction first the record or the burn it carries, then its fee
+payments. A burn therefore completes at the first place where both the valid burn and enough
+fee are on the chain: at the burn itself when the fee was paid before it or is paid by the
+burn transaction's own outputs, otherwise at the fee payment that reaches the amount. That
+place is the claim's place in the ledger and its block in the Mordinal's history.
+
+**A claim record while a burn waits for its fee.** In the 720 blocks in which claim records
+still count, a claim record of a Mordinal whose burn waits is valid: the Mordinal is not
+claimed. The first claim that completes wins. A record that comes first claims the Mordinal;
+the waiting burn is then lost, and a fee paid for it afterwards gives nothing. A burn whose
+fee is paid first claims the Mordinal, and a later claim record is refused as for any claimed
+Mordinal. Only someone with the owner coin's keys can make either.
+
+When blocks are replaced, fee payments in them are undone like records: a burn whose last
+payment was taken away waits again, and claims at that payment's new place once it is in a
+block again.
 
 ### Dead outputs
 
@@ -605,9 +702,20 @@ for it. The keys are the same on every network; only the written address differs
   output the list names.
 - The node that relays a burn claim may refuse it when asked for its ring sanity check (the
   default of `send_raw_transaction`); that is advice to wallets, not a rule of the network.
+- **The fee is public.** With the fee wallet's view key anyone sees every fee payment: its
+  amount, its transaction, and the Mordinal it is for (the subaddress index is the number).
+  A fee payment links the paying transaction to that Mordinal's claim.
+- **A fee is not refunded.** A fee paid without a valid burn, for another Mordinal, beyond
+  what is due, or for a burn that a claim record overtook stays with the project. So does a
+  payment that wallet2 finds and this rule does not (through a second transaction public key,
+  or through additional keys that come after a field a wallet does not know).
+- The fee wallet sees and spends the fees only with a subaddress lookahead of at least 50,000
+  addresses in account 1; setting it is the operator's task (reader/README.md).
 
-Code: `rules/lib/burn.mjs`; the checks in order: `burnClaim` in `rules/lib/ledger.mjs`.
+Code: `rules/lib/burn.mjs` and `rules/lib/burn-fee.mjs`; the checks in order: `burnClaim` in
+`rules/lib/ledger.mjs`, the fee in `applyBurnFees` there.
 Tests: `rules/tests/burn.test.mjs` (with one real pair of mainnet transactions in
-`rules/tests/fixtures-burn.json`), `reader/tests/burn.test.mjs`.
+`rules/tests/fixtures-burn.json`; that burn paid no fee and waits for it),
+`rules/tests/burn-fee.test.mjs`, `reader/tests/burn.test.mjs`, `reader/tests/lab-burn.test.mjs`.
 
 Reader and relay: `reader/`.
