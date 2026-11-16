@@ -9,7 +9,8 @@ import {hex} from '../../rules/lib/monero.mjs';
 import {outputSecret,signWithOutputKey} from '../../rules/lib/claim.mjs';
 import {BURN,MAINNET_DEAD,RECORDS_OVERLAP,burnAddress,burnClaimId,burnParts,claimText} from '../../rules/lib/burn.mjs';
 import {createLedger} from '../../rules/lib/ledger.mjs';
-import {wallet,makeTx,ownerEntry,makeBurn,DOMAIN} from '../../rules/tests/helpers.mjs';
+import {wallet,makeTx,ownerEntry,makeBurn,burnParty,feeParty,payFee,DOMAIN} from '../../rules/tests/helpers.mjs';
+import {feeParts,feeWallet,feeAddressOf,FEE_SAFE} from '../../rules/lib/burn-fee.mjs';
 import {ownersHash,ownerOutputsHash} from '../lib/owners.mjs';
 import {openReader,SCHEMA,SCHEMA_BURN,BURN_MARGIN} from '../lib/reader.mjs';
 import {unframe} from '../lib/transport.mjs';
@@ -19,7 +20,7 @@ import {createRelay} from '../lib/relay.mjs';
 import {fakeChain,fakeCarrier,carried} from './fake.mjs';
 
 const dirs=[];test.after(()=>{for(const d of dirs)rmSync(d,{recursive:true,force:true});});
-const FROM=103,END=FROM+RECORDS_OVERLAP,TEST_DEAD=[5,6,7,8,9,10,11,12,13,14,15,16,17,18,20];
+const FROM=103,END=FROM+RECORDS_OVERLAP,TEST_DEAD=[5,6,7,8,9,10,11,12,13,14,15,16,17,18,20],DUE=10n**9n+30000000n;
 // The record a made-up carrier transaction holds, as hex (what a wallet hands to the relay).
 const recordOf=t=>hex(unframe(t.tx.extra));
 function world({every=5}={}){
@@ -32,7 +33,9 @@ function world({every=5}={}){
  const key=(n,h)=>outputSecret({viewSecret:h.viewSecret,spendSecret:h.spendSecret,txPub:owners[n].ownerTxPubKeys[0],subScalar:h.subScalar});
  const claim=(n,h,l,to=h)=>{const p=l.prepareClaim({mordinal:n,to:to.address});return carried(l.claimWithKey(p.bodyBytes,signWithOutputKey(p.keyHash,key(n,h))));};
  const move=(n,from,to,l)=>{const p=l.prepareMove({mordinal:n,from:from.address,to:to.address});return carried(l.sign(p.bodyBytes,from.sign(p.text)));};
- const burn=(label,n,to,more)=>{const t=makeBurn(label,{output:1000+n,to,...more});return {txid:t.txid,tx:t.tx};};
+ // A burning transfer that pays its own fee to the Mordinal's fee address, as the burn's own transaction fee (paid: false: it
+ // does not; the burn then waits for a fee payment).
+ const burn=(label,n,to,{paid=true,...more}={})=>{const t=makeBurn(label,{output:1000+n,to,...(paid?{outs:[{to:burnParty,amount:1n},{to:feeParty(n),amount:DUE},{to:wallet(label+' change'),amount:10n**9n}]}:{}),...more});return {txid:t.txid,tx:t.tx};};
  return {w,owners,dir,state,chain,open,claim,move,burn};}
 
 test('the reader finds burn claims from the first burn block on, in block order, and rebuilds them without a node',async()=>{
@@ -41,17 +44,19 @@ test('the reader finds burn claims from the first burn block on, in block order,
  const sync=async(...txs)=>{chain.mine(txs);await reader.sync();return reader.height;};
  const c0=claim(0,w.alice,L()),early=burn('early',1,w.carol);
  await sync(c0);                                                   // 101: a claim record, before the first burn block
- await sync(early);                                                // 102: a burning transfer before that block is not looked at
- assert.deepEqual(reader.journal.map(e=>e.txid),[c0.txid]);assert.equal(L().mordinal(1).claimed,false);assert.equal(reader.entryByTx(early.txid),null);
+ await sync(early);                                                // 102: a burning transfer before that block is not looked at, nor the fee it pays
+ assert.deepEqual(reader.journal.map(e=>e.txid),[c0.txid]);assert.equal(L().mordinal(1).claimed,false);assert.equal(reader.entryByTx(early.txid),null);assert.equal(L().burnFee(1).paid,'0');
  // 103: two burns of one Mordinal and a claim record for another, in one block. The first burn counts, the second does
  // not; the claim record still counts (claim records stop 720 blocks later). A tx_extra above 1,060 bytes is no transfer.
- const b1=burn('b1',2,w.carol),b2=burn('b2',2,w.dave),c4=claim(4,w.alice,L()),plain={txid:'ee'.repeat(32),tx:{version:2,extra:[1,...new Uint8Array(32)],vout:[]}};
- const junk=burn('junk',3,w.dave,{tamper:tx=>{tx.extra=[...tx.extra.slice(0,33),0x11,0xa0,0x9c,1,...new Uint8Array(20000).fill(66)];}}),long=burn('long',3,w.dave,{tamper:tx=>{tx.extra=[...tx.extra.slice(0,33),...Array.from({length:8},()=>[2,127,...new Uint8Array(127)]).flat(),...tx.extra.slice(33)];}});
+ const b1=burn('b1',2,w.carol),b2=burn('b2',2,w.dave,{paid:false}),c4=claim(4,w.alice,L()),plain={txid:'ee'.repeat(32),tx:{version:2,extra:[1,...new Uint8Array(32)],vout:[]}};
+ const junk=burn('junk',3,w.dave,{paid:false,tamper:tx=>{tx.extra=[...tx.extra.slice(0,33),0x11,0xa0,0x9c,1,...new Uint8Array(20000).fill(66)];}}),long=burn('long',3,w.dave,{paid:false,tamper:tx=>{tx.extra=[...tx.extra.slice(0,33),...Array.from({length:8},()=>[2,127,...new Uint8Array(127)]).flat(),...tx.extra.slice(33)];}});
  assert.ok(long.tx.extra.length>1060);
  await sync(plain,b1,junk,c4,long,b2);
  assert.deepEqual(reader.journal.slice(1).map(e=>[e.height,e.pos,e.txid,e.ok,e.error??null]),[[103,1,b1.txid,true,null],[103,3,c4.txid,true,null],[103,5,b2.txid,false,'This Mordinal is already claimed.']]);
  assert.equal(reader.entryByTx(junk.txid),null);assert.equal(reader.entryByTx(long.txid),null);assert.equal(L().mordinal(3).claimed,false);
- const e1=reader.journal[1];assert.deepEqual(e1,{height:103,pos:1,txid:b1.txid,burn:burnParts(b1.tx),id:burnClaimId(DOMAIN,b1.txid),ok:true});
+ // The burn pays its own fee: the entry holds what the rule read for both, and the Mordinal is claimed in its block.
+ const e1=reader.journal[1];assert.deepEqual(e1,{height:103,pos:1,txid:b1.txid,burn:burnParts(b1.tx),id:burnClaimId(DOMAIN,b1.txid),ok:true,fee:feeParts(b1.tx)});
+ assert.deepEqual(reader.feesOf(b1.txid),[{index:1,number:2,amount:DUE.toString(),counted:true,error:null}]);
  assert.equal(L().mordinal(2).owner,w.carol.address);assert.equal(L().mordinal(4).owner,w.alice.address);
  assert.deepEqual(reader.events.map(e=>[e.kind,e.number,e.to,e.proof,e.txid,e.height]),[['claim',0,w.alice.address,'one-time key',c0.txid,101],['claim',2,w.carol.address,'burn',b1.txid,103],['claim',4,w.alice.address,'one-time key',c4.txid,103]]);
  assert.equal(reader.events[1].id,e1.id);assert.equal(reader.events[1].time,reader.timeOf(103));assert.equal(reader.entryById(e1.id),e1);assert.equal(reader.entryByTx(b2.txid).ok,false);
@@ -60,8 +65,8 @@ test('the reader finds burn claims from the first burn block on, in block order,
  await sync(claim(1,w.alice,L(),w.carol),move(2,w.carol,w.bob,L()));await sync(burn('b3',5,w.dave.sub(1),{text:claimText(w.dave.sub(1).address)+'\n'}));
  assert.equal(L().mordinal(1).owner,w.carol.address);assert.equal(L().mordinal(2).owner,w.bob.address);assert.equal(L().mordinal(5).owner,w.dave.sub(1).address);
  const c=reader.checkpoints.at(-1);assert.equal(c.height,105);
- assert.deepEqual(Object.keys(c),['schema','network','domain','owners','start','burnFrom','burnDead','ownerOutputs','height','blockHash','records','listHash','stateHash']);
- assert.deepEqual([c.burnFrom,c.burnDead,c.ownerOutputs,c.records],[FROM,MAINNET_DEAD.join(','),ownerOutputsHash(owners),6]);
+ assert.deepEqual(Object.keys(c),['schema','network','domain','owners','start','burnFrom','burnDead','ownerOutputs','burnFee','height','blockHash','records','listHash','stateHash']);
+ assert.deepEqual([c.burnFrom,c.burnDead,c.ownerOutputs,c.burnFee,c.records],[FROM,MAINNET_DEAD.join(','),ownerOutputsHash(owners),feeWallet().address,6]);assert.equal(reader.meta.burnFee,feeWallet().address);
  // Opened again from its folder, and read again from the node by another reader: the same journal, events and checkpoints.
  const snapshot=r=>JSON.stringify({h:r.height,hash:r.hash,j:r.journal,e:r.events,c:r.checkpoints,s:r.ledger.toJSON(),now:r.checkpoint()});
  const calls=chain.calls,again=open();assert.equal(chain.calls,calls);assert.equal(snapshot(again),snapshot(reader));
@@ -73,7 +78,7 @@ test('the reader finds burn claims from the first burn block on, in block order,
 
 test('a tx_extra above 1,060 bytes is not looked at: the reader ends where it would without that transaction',async()=>{
  const a=world(),b=world(),ra=a.open(),rb=b.open();
- const junk=a.burn('junk',3,a.w.dave,{tamper:tx=>{tx.extra=[...tx.extra.slice(0,33),0x11,0xa0,0x9c,1,...new Uint8Array(20000).fill(66)];}}),good=a.burn('good',2,a.w.carol);
+ const junk=a.burn('junk',3,a.w.dave,{paid:false,tamper:tx=>{tx.extra=[...tx.extra.slice(0,33),0x11,0xa0,0x9c,1,...new Uint8Array(20000).fill(66)];}}),good=a.burn('good',2,a.w.carol);
  for(const x of [a,b]){x.chain.mine();x.chain.mine();}
  a.chain.mine([good,junk]);b.chain.mine([good]);for(const x of [a,b]){x.chain.mine();x.chain.mine();}await ra.sync();await rb.sync();
  assert.equal(ra.height,105);assert.deepEqual(ra.journal,rb.journal);assert.deepEqual(ra.events.map(e=>({...e,time:0})),rb.events.map(e=>({...e,time:0})));assert.equal(ra.journal.length,1);
@@ -94,6 +99,39 @@ test('a chain reorganisation removes a burn claim, and brings it back when the t
  chain.pop(1,{keep:true});const back=await reader.sync();assert.equal(back.height,104);assert.equal(reader.ledger.mordinal(3).claimed,false);
  chain.mine();await reader.sync();assert.equal(reader.ledger.mordinal(3).owner,w.dave.address);
  const fresh=open({dir:state+'-fresh'});await fresh.sync();assert.deepEqual(fresh.journal,reader.journal);assert.deepEqual(fresh.checkpoints,reader.checkpoints);});
+
+test('a burn waits for its fee in the reader: payments add up across blocks, a replaced block takes one away and brings it back',async()=>{
+ const {w,chain,open,claim,burn,state}=world({every:2}),reader=open(),L=()=>reader.ledger;
+ const snapshot=r=>JSON.stringify({h:r.height,hash:r.hash,j:r.journal,e:r.events,c:r.checkpoints,s:r.ledger.toJSON(),now:r.checkpoint()});
+ chain.mine();chain.mine();const b=burn('waits',2,w.carol,{paid:false}),id=burnClaimId(DOMAIN,b.txid);chain.mine([b]);await reader.sync();          // 103
+ assert.equal(L().mordinal(2).claimed,false);assert.equal(L().burnClaim(id).state,'waiting');assert.deepEqual(reader.events,[]);
+ assert.deepEqual(reader.journal.map(e=>[e.height,e.txid,e.ok,Boolean(e.fee)]),[[103,b.txid,true,false]]);
+ const half1=payFee('half 1',2,DUE/2n),half2=payFee('half 2',2,DUE-DUE/2n,{alongside:wallet('somebody')});
+ chain.mine([half1]);await reader.sync();assert.equal(L().burnClaim(id).missing,(DUE-DUE/2n).toString());                                       // 104
+ chain.mine([half2]);await reader.sync();assert.equal(L().mordinal(2).owner,w.carol.address);                                                       // 105
+ assert.deepEqual(reader.events.map(e=>[e.kind,e.number,e.height,e.txid,e.burnHeight,e.feeTx]),[['claim',2,105,b.txid,103,half2.txid]]);
+ assert.deepEqual(reader.journal.map(e=>[e.height,e.txid,e.ok,Boolean(e.fee)]),[[103,b.txid,true,false],[104,half1.txid,true,true],[105,half2.txid,true,true]]);
+ const claimed=snapshot(reader);
+ // Block 105 is replaced by one without the second payment: the Mordinal waits again, with half of its fee paid.
+ chain.pop(1);chain.mine();await reader.sync();assert.equal(reader.height,105);assert.equal(L().mordinal(2).claimed,false);assert.equal(L().burnClaim(id).state,'waiting');
+ assert.deepEqual(reader.events,[]);assert.equal(reader.entryByTx(half2.txid),null);assert.equal(L().burnFee(2).paid,(DUE/2n).toString());
+ // The payment in a later block of the new chain claims it there.
+ chain.mine([half2]);await reader.sync();assert.equal(L().mordinal(2).owner,w.carol.address);assert.deepEqual(reader.events.map(e=>e.height),[106]);
+ // Blocks 104 to 106 replaced, the payments back among the waiting ones and then mined together in block 104: claimed there.
+ chain.pop(3,{keep:true});chain.mine();chain.mine();await reader.sync();assert.equal(reader.height,105);
+ assert.deepEqual(reader.events.map(e=>e.height),[104]);assert.deepEqual(reader.journal.map(e=>[e.height,e.txid]).slice(1).sort(),[[104,half1.txid],[104,half2.txid]].sort());
+ // From its folder, and read again from the node: the same.
+ assert.equal(snapshot(open()),snapshot(reader));const fresh=open({dir:state+'-fresh'});await fresh.sync();assert.equal(snapshot(fresh),snapshot(reader));
+ assert.notEqual(snapshot(reader),claimed);
+ // A claim record while a burn waits, in the overlap: the record claims it, the burn is passed over, its fee gives nothing.
+ const b4=burn('overtaken',4,w.dave,{paid:false}),id4=burnClaimId(DOMAIN,b4.txid);chain.mine([b4]);await reader.sync();
+ chain.mine([claim(4,w.alice,L())]);chain.mine([payFee('too late',4,DUE)]);await reader.sync();
+ assert.equal(L().mordinal(4).owner,w.alice.address);assert.equal(L().burnClaim(id4).state,'lost');assert.equal(L().burnFee(4).paid,DUE.toString());
+ assert.deepEqual(reader.events.filter(e=>e.number===4).map(e=>[e.kind,e.proof]),[['claim','one-time key']]);
+ const service=createService({reader,owners:[],testHooks:true});
+ try{const port=await service.listen(0),got=await (await fetch(`http://127.0.0.1:${port}/status/${id4}`)).json();
+  assert.deepEqual({state:got.state,error:got.error},{state:'refused',error:'The Mordinal was claimed by a record before the fee of this burn was paid.'});
+ }finally{await service.close();}});
 
 test('a burn that a reorganisation moved in front of the first burn block claims nothing; its holder claims by record',async()=>{
  const {w,chain,open,claim,burn}=world(),reader=open();
@@ -144,7 +182,7 @@ test('the setting of a folder: taken in, changed and taken out before its block 
  assert.equal(meta().burnFrom,undefined);assert.equal(meta().schema,SCHEMA);
  // Ten blocks above: taken in.
  const logged=[],lit=open({burnFrom:112,log:v=>logged.push(v)});assert.deepEqual(logged,[{burnFrom:112,at:102}]);
- assert.equal(lit.meta.schema,SCHEMA+SCHEMA_BURN);assert.deepEqual([meta().burnFrom,meta().burnDead,meta().schema],[112,MAINNET_DEAD.join(','),SCHEMA+SCHEMA_BURN]);
+ assert.equal(lit.meta.schema,SCHEMA+SCHEMA_BURN);assert.deepEqual([meta().burnFrom,meta().burnDead,meta().burnFee,meta().schema],[112,MAINNET_DEAD.join(','),feeWallet().address,SCHEMA+SCHEMA_BURN]);
  assert.equal(lit.height,102);assert.equal(lit.ledger.mordinal(0).owner,w.alice.address);assert.equal(lit.ledger.burn.from,112);
  // A mistyped height is corrected while neither block was read: to a later one, to an earlier one, and taken out again.
  assert.equal(open({burnFrom:120}).ledger.burn.from,120);assert.equal(meta().burnFrom,120);
@@ -180,7 +218,7 @@ test('dead outputs of one\'s own only on the offline test chain; every owner ent
  // The check tool says the same of a service that names its own list.
  const service=createService({reader,owners,testHooks:true}),port=await service.listen(0);
  try{const got=await download('http://127.0.0.1:'+port);
-  assert.match((await verify({...got,owners,chain})).problems[0],/names dead outputs that are not mainnet's/);assert.match((await verify({...got,owners})).problems[0],/not mainnet's/);
+  assert.match((await verify({...got,owners,chain})).problems[0],/names dead outputs or a fee wallet that are not mainnet's/);assert.match((await verify({...got,owners})).problems[0],/not mainnet's/);
   chain.info=info;assert.equal((await verify({...got,owners,chain})).ok,true);
  }finally{await service.close();}
  // An owner list with an entry that has no output index: nothing is opened and nothing is written.
@@ -188,49 +226,65 @@ test('dead outputs of one\'s own only on the offline test chain; every owner ent
  assert.throws(()=>open({dir:join(dir,'bare'),owners:bare}),/Owner list entry 4 does not state the global index of its owner output/);assert.equal(existsSync(join(dir,'bare','meta.json')),false);
  assert.equal(open({dir:join(dir,'bare'),owners:bare,burnFrom:null}).ledger.burn,null);});
 
-test('the service: the setting in /info, burn claims in /burns, in the history, the entry and the log, and the check tools agree',async()=>{
+test('the service: the setting in /info, burn claims and fee payments in /burns, the waiting state, the entry and the log, and the check tools agree',async()=>{
  const {w,owners,chain,open,claim,move,burn,dir}=world({every:2}),reader=open();
  const service=createService({reader,owners,testHooks:true,chunk:4}),port=await service.listen(0),base='http://127.0.0.1:'+port;
  const get=async path=>{const r=await fetch(base+path);return {status:r.status,body:await r.json()};};
  const next=async(...txs)=>{chain.mine(txs);const r=await fetch(base+'/test/step',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});assert.equal(r.status,200);return r.json();};
  try{
-  const info=(await get('/info')).body;
-  assert.equal(info.burnFrom,FROM);assert.deepEqual(info.burn,{recordsEnd:END,address:burnAddress(),viewKey:BURN.viewSecret,text:'xmr721 claim to <address>',dead:[...MAINNET_DEAD],ownerOutputs:ownerOutputsHash(owners)});
-  assert.equal((await get('/mordinal/3')).body.mordinal.ownerOutput,1003);
+  const info=(await get('/info')).body,fee=feeWallet(),address=n=>feeAddressOf(fee,n).address;
+  assert.equal(info.burnFrom,FROM);assert.deepEqual(info.burn,{recordsEnd:END,address:burnAddress(),viewKey:BURN.viewSecret,text:'xmr721 claim to <address>',dead:[...MAINNET_DEAD],ownerOutputs:ownerOutputsHash(owners),
+   fee:{wallet:fee.address,viewKey:fee.viewKey,account:1,safe:FEE_SAFE.toString()}});
+  assert.deepEqual((await get('/mordinal/3')).body.mordinal.ownerOutput,1003);assert.deepEqual((await get('/mordinal/3')).body.mordinal.burnFee,{address:address(3),paid:'0'});
   // The owner list as served states each owner output's index: both hashes can be recomputed from it.
   const served=[];for(let from=0;from<owners.length;from+=4)served.push(...(await get('/owners?from='+from)).body.entries);
   assert.deepEqual(served.map(o=>o.ownerOutputIndex),[1000,1001,1002,1003,1004,1005]);assert.equal(ownerOutputsHash(served),info.burn.ownerOutputs);assert.equal(ownersHash(served),info.owners);
   const c0=claim(0,w.alice,reader.ledger);await next(c0);await next();                               // 101, 102
-  const good=burn('service',3,w.dave),bad=burn('service bad',1,w.dave,{fee:5n}),late=claim(4,w.alice,reader.ledger);
-  await next(good,bad,late);                                                                         // 103
-  const mv=move(3,w.dave,w.bob,reader.ledger),second=burn('service 2',5,w.carol);await next(mv,second);   // 104
-  const id=burnClaimId(DOMAIN,good.txid);
+  const good=burn('service',3,w.dave),bad=burn('service bad',1,w.dave,{fee:5n,paid:false}),late=claim(4,w.alice,reader.ledger);
+  await next(good,bad,late);                                                                         // 103: good pays its own fee
+  const mv=move(3,w.dave,w.bob,reader.ledger),second=burn('service 2',5,w.carol,{paid:false});await next(mv,second);   // 104: second pays none
+  const id=burnClaimId(DOMAIN,good.txid),id2=burnClaimId(DOMAIN,second.txid);
+  // Burned and waiting for its fee: not claimed, no owner; the page has the amount and the fee address to show.
+  {const m=(await get('/mordinal/5')).body;assert.equal(m.mordinal.claimed,false);assert.equal(m.mordinal.owner,null);assert.equal(m.mordinal.waiting.due,DUE.toString());
+   assert.deepEqual(m.mordinal.waiting,{txid:second.txid,id:id2,to:w.carol.address,height:104,due:DUE.toString(),paid:'0',missing:DUE.toString()});assert.deepEqual(m.mordinal.burnFee,{address:address(5),paid:'0'});
+   assert.deepEqual(m.history.map(h=>h.kind),['inscribed']);
+   assert.deepEqual((await get('/entry/'+second.txid)).body,{height:104,entry:{txid:second.txid,height:104,pos:1,id:id2,op:null,kind:'burn claim',number:5,to:w.carol.address,state:'waiting',
+    fee:{due:DUE.toString(),paid:'0',missing:DUE.toString(),address:address(5)},ok:true},confirmations:1});
+   assert.deepEqual((await get('/status/'+id2)).body,{height:104,id:id2,state:'waiting',txid:second.txid,confirmations:0,error:null,fee:{due:DUE.toString(),paid:'0',missing:DUE.toString(),address:address(5)}});
+   assert.equal((await get('/gallery')).body.items.find(x=>x.number===5).waiting,true);assert.deepEqual((await get('/claimed')).body.numbers,[0,3,4]);}
+  // 105: an ordinary payment of the fee to Mordinal 5's fee address, beside another payment, completes the claim there.
+  const pay=payFee('service fee',5,DUE,{alongside:wallet('somebody')});await next(pay);await next();   // 105, 106
   // The Mordinal, its history, the address that now owns it.
-  const m=(await get('/mordinal/5')).body;assert.equal(m.mordinal.claimed,true);assert.equal(m.mordinal.owner,w.carol.address);assert.equal(m.mordinal.seq,0);
-  assert.deepEqual(m.history.map(h=>h.kind),['inscribed','claim']);
-  assert.deepEqual({...m.history[1],time:0},{height:104,pos:1,txid:second.txid,id:burnClaimId(DOMAIN,second.txid),time:0,kind:'claim',number:5,to:w.carol.address,proof:'burn',confirmations:1});
+  const m=(await get('/mordinal/5')).body;assert.equal(m.mordinal.claimed,true);assert.equal(m.mordinal.owner,w.carol.address);assert.equal(m.mordinal.seq,0);assert.equal('waiting' in m.mordinal,false);
+  assert.deepEqual(m.history.map(h=>h.kind),['inscribed','claim']);assert.deepEqual(m.mordinal.burnFee,{address:address(5),paid:DUE.toString()});
+  assert.deepEqual({...m.history[1],time:0},{height:105,pos:0,txid:second.txid,id:id2,time:0,kind:'claim',number:5,to:w.carol.address,proof:'burn',burnHeight:104,feeTx:pay.txid,confirmations:2});
   assert.deepEqual((await get('/address/'+w.bob.address)).body.mordinals.map(x=>x.number),[3]);assert.deepEqual((await get('/claimed')).body.numbers,[0,3,4,5]);
   // What became of each transaction.
-  assert.deepEqual((await get('/entry/'+good.txid)).body,{height:104,entry:{txid:good.txid,height:103,pos:0,id,op:null,kind:'burn claim',number:3,to:w.dave.address,ok:true},confirmations:2});
+  assert.deepEqual((await get('/entry/'+good.txid)).body,{height:106,entry:{txid:good.txid,height:103,pos:0,id,op:null,kind:'burn claim',number:3,to:w.dave.address,state:'claimed',claimedAt:103,
+   fee:{due:DUE.toString(),paid:DUE.toString(),missing:'0',address:address(3)},ok:true,fees:[{index:1,number:3,amount:DUE.toString(),counted:true,error:null}]},confirmations:4});
+  assert.deepEqual((await get('/entry/'+second.txid)).body.entry,{txid:second.txid,height:104,pos:1,id:id2,op:null,kind:'burn claim',number:5,to:w.carol.address,state:'claimed',claimedAt:105,fee:{due:DUE.toString(),paid:DUE.toString(),missing:'0',address:address(5)},ok:true});
+  assert.deepEqual((await get('/entry/'+pay.txid)).body.entry,{txid:pay.txid,height:105,pos:0,id:null,op:null,kind:'fee payment',ok:true,fees:[{index:1,number:5,amount:DUE.toString(),counted:true,error:null}]});
   assert.deepEqual((await get('/entry/'+bad.txid)).body.entry,{txid:bad.txid,height:103,pos:1,id:burnClaimId(DOMAIN,bad.txid),op:null,kind:'burn claim',ok:false,error:'The fee is below the 0.001 XMR the original rules ask for a text of 111 bytes.'});
   assert.equal((await get('/entry/'+late.txid)).body.entry.ok,true);assert.equal((await get('/entry/'+c0.txid)).body.entry.kind,undefined);
-  assert.deepEqual((await get('/status/'+id)).body,{height:104,id,state:'done',txid:good.txid,confirmations:2,error:null});
-  // Activity, the records (MD1 records only), the burn claims, and the log (everything judged).
-  const act=(await get('/activity?kind=claim')).body.events;assert.deepEqual(act.map(e=>[e.number,e.proof]),[[5,'burn'],[4,'one-time key'],[3,'burn'],[0,'one-time key']]);
+  assert.deepEqual((await get('/status/'+id)).body,{height:106,id,state:'done',txid:good.txid,confirmations:4,error:null});
+  assert.deepEqual((await get('/status/'+id2)).body,{height:106,id:id2,state:'done',txid:second.txid,confirmations:2,error:null});
+  // Activity, the records (MD1 records only), the burn claims and fee payments, and the log (everything judged).
+  const act=(await get('/activity?kind=claim')).body.events;assert.deepEqual(act.map(e=>[e.number,e.proof,e.height]),[[5,'burn',105],[4,'one-time key',103],[3,'burn',103],[0,'one-time key',101]]);
   const records=(await get('/records')).body;assert.equal(records.total,3);assert.deepEqual(records.records,reader.journal.filter(e=>e.ok&&e.record).map(e=>e.record));
   const burns=(await get('/burns')).body;
-  assert.deepEqual(burns,{height:104,total:2,from:0,burns:[{height:103,pos:0,txid:good.txid,id,before:1,burn:burnParts(good.tx)},{height:104,pos:1,txid:second.txid,id:burnClaimId(DOMAIN,second.txid),before:3,burn:burnParts(second.tx)}]});
+  assert.deepEqual(burns,{height:106,total:3,from:0,burns:[{height:103,pos:0,txid:good.txid,id,before:1,burn:burnParts(good.tx),state:'claimed',fee:feeParts(good.tx)},
+   {height:104,pos:1,txid:second.txid,id:id2,before:3,burn:burnParts(second.tx),state:'claimed'},{height:105,pos:0,txid:pay.txid,before:3,fee:feeParts(pay.tx)}]});
   assert.deepEqual((await get('/burns?from=1&limit=1')).body.burns.map(x=>x.txid),[second.txid]);
-  // A client replays the ledger from the two lists: records[0..before), then the burn claim, and the rest of the records.
+  // A client replays the ledger from the two lists: records[0..before), then the burn claim and the fee payments, and the rest of the records.
   {const l=createLedger({domain:DOMAIN,feeAddress:w.fee.address,owners:served,height:burns.height,burnFrom:info.burnFrom});let at=0;const bytes=h=>Uint8Array.from(Buffer.from(h,'hex'));
-   for(const x of burns.burns){for(;at<x.before;at++)l.apply(bytes(records.records[at]));assert.equal(l.applyBurnClaim(x.txid,x.burn).id,x.id);}
+   for(const x of burns.burns){for(;at<x.before;at++)l.apply(bytes(records.records[at]));if(x.burn)assert.equal(l.applyBurnClaim(x.txid,x.burn).id,x.id);if(x.fee)l.applyBurnFees(x.txid,x.fee);}
    for(;at<records.total;at++)l.apply(bytes(records.records[at]));
-   assert.deepEqual(l.toJSON().claimed.map(c=>[c.number,c.owner,c.seq]),reader.ledger.toJSON().claimed.map(c=>[c.number,c.owner,c.seq]));}
-  const log=(await get('/log')).body;assert.equal(log.total,6);assert.deepEqual(log.entries[1].burn,burnParts(good.tx));
-  const stats=(await get('/stats')).body;assert.deepEqual([stats.claimed,stats.records,stats.refused,stats.byKind.claim],[4,5,1,4]);
-  const cps=(await get('/checkpoints')).body.checkpoints;assert.deepEqual(cps.map(c=>[c.height,c.burnFrom??null]),[[102,null],[104,FROM]]);
+   assert.deepEqual(l.toJSON().claimed.map(c=>[c.number,c.owner,c.seq]),reader.ledger.toJSON().claimed.map(c=>[c.number,c.owner,c.seq]));assert.deepEqual(l.toJSON().fees,reader.ledger.toJSON().fees);}
+  const log=(await get('/log')).body;assert.equal(log.total,7);assert.deepEqual(log.entries[1].burn,burnParts(good.tx));assert.deepEqual(log.entries[6],{height:105,pos:0,txid:pay.txid,ok:true,fee:feeParts(pay.tx)});
+  const stats=(await get('/stats')).body;assert.deepEqual([stats.claimed,stats.records,stats.refused,stats.byKind.claim,stats.burns],[4,5,1,4,{waiting:0,feePayments:2}]);
+  const cps=(await get('/checkpoints')).body.checkpoints;assert.deepEqual(cps.map(c=>[c.height,c.burnFrom??null,c.burnFee??null,c.records]),[[102,null,null,1],[104,FROM,fee.address,5],[106,FROM,fee.address,6]]);
   // The check tools: the log replays, sits on the node as logged, and a reader of one's own finds the same.
-  const got=await download(base);assert.deepEqual(await verify({...got,owners,chain}),{ok:true,problems:[],accepted:5,refused:1,checkpoints:2,checkedOnNode:6});
+  const got=await download(base);assert.deepEqual(await verify({...got,owners,chain}),{ok:true,problems:[],accepted:6,refused:1,checkpoints:3,checkedOnNode:7});
   assert.deepEqual(await scan({...got,owners,chain,dir:join(dir,'scan')}),[]);
   const clone=()=>JSON.parse(JSON.stringify(got)),problems=async change=>{const g=clone();change(g);return (await verify({...g,owners,chain})).problems;};
   assert.match((await problems(g=>{g.entries[1].ok=false;g.entries[1].error='x';}))[0],/marked refused, but the rules accept it/);
@@ -239,10 +293,18 @@ test('the service: the setting in /info, burn claims in /burns, in the history, 
   assert.match((await problems(g=>{g.entries[1].id='00'.repeat(32);}))[0],/not a well-formed burn claim entry/);
   assert.match((await problems(g=>{g.entries[1].burn.out0.tag=null;}))[0],/is not on the node as logged/);
   assert.match((await problems(g=>{g.entries.splice(1,1);}))[0],/marked accepted, but the rules refuse it: This Mordinal has not been claimed yet/);
-  assert.match((await problems(g=>{delete g.checkpoints[1].burnFrom;}))[0],/another first burn block, other dead outputs or other owner outputs/);
+  assert.match((await problems(g=>{delete g.checkpoints[1].burnFrom;}))[0],/another first burn block, other dead outputs, other owner outputs or another fee wallet/);
+  assert.match((await problems(g=>{g.checkpoints[2].burnFee=address(5);}))[0],/another fee wallet/);
   assert.match((await problems(g=>{g.info.burn.ownerOutputs='00'.repeat(32);}))[0],/other owner output indexes/);
-  assert.match((await problems(g=>{g.info.burn.dead=TEST_DEAD;}))[0],/another first burn block, other dead outputs or other owner outputs/);
+  assert.match((await problems(g=>{g.info.burn.dead=TEST_DEAD;}))[0],/another first burn block, other dead outputs/);
   assert.match((await verify({...got,owners:owners.map((o,i)=>i===5?{...o,ownerOutputIndex:5}:o),chain})).problems[0],/other owner output indexes/);
+  // A fee payment left out, one with another amount, one that pays nothing, fee parts that are not the node's.
+  assert.match((await problems(g=>{g.entries.splice(6,1);}))[0],/Checkpoint at block 106: (records|stateHash|listHash) differs/);
+  assert.match((await problems(g=>{const o=g.entries[6].fee.outs[1];o.amount=o.amount.replace(/^./,c=>c==='0'?'1':'0');}))[0],/Checkpoint at block 106: (stateHash|listHash) differs/);
+  assert.match((await problems(g=>{g.entries[4].fee=g.entries[6].fee;}))[0],/Checkpoint at block 104: (stateHash|records|listHash) differs|on the node as logged/);
+  assert.match((await problems(g=>{g.entries[6].fee=feeParts(makeTx('pays nobody',[{to:wallet('x'),amount:1n}]).tx);}))[0],/logged as a fee payment, but the rules find none in it/);
+  assert.match((await problems(g=>{g.entries[6].ok=false;}))[0],/not a well-formed fee payment entry/);
+  {const g=clone();g.entries[6].fee.outs[0].tag='00';const r=await verify({...g,owners,chain});assert.equal(r.ok,false);assert.ok(r.problems.some(p=>/fee payments of transaction .* are not on the node as logged/.test(p)),r.problems.join('; '));}
  }finally{await service.close();}});
 
 test('a burning ledger on stagenet names its own dead outputs, and the check tools replay it',async()=>{
@@ -254,7 +316,8 @@ test('a burning ledger on stagenet names its own dead outputs, and the check too
  assert.throws(()=>openReader({...setup,dir:join(dir,'none')}),/has to name its fifteen dead outputs/);
  const reader=openReader({...setup,dir:join(dir,'state'),burnDead:TEST_DEAD});assert.equal(reader.meta.burnDead,TEST_DEAD.join(','));assert.equal(reader.ledger.burn.address,burnAddress('stagenet'));
  const service=createService({reader,owners,testHooks:true}),port=await service.listen(0),base='http://127.0.0.1:'+port,get=async path=>(await (await fetch(base+path)).json());
- const burn=(label,n,to,more)=>{const t=makeBurn(label,{output:1000+n,to,dead:TEST_DEAD,...more});return {txid:t.txid,tx:t.tx};};
+ // (Each pays its own fee to the stagenet fee address of its Mordinal.)
+ const burn=(label,n,to,more)=>{const t=makeBurn(label,{output:1000+n,to,dead:TEST_DEAD,outs:[{to:burnParty,amount:1n},{to:feeParty(n,{network:'stagenet'}),amount:DUE},{to:wallet(label+' change','stagenet'),amount:1n}],...more});return {txid:t.txid,tx:t.tx};};
  try{
   const info=await get('/info');assert.equal(info.network,'stagenet');assert.deepEqual(info.burn.dead,TEST_DEAD);assert.equal(info.burn.address,burnAddress('stagenet'));
   chain.mine();chain.mine();
