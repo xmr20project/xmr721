@@ -372,8 +372,9 @@ What a reader operator has to know:
   of the listed ledger that has not read the opening block takes the opening in at the next start; one that has read
   it has to be made again from the start block. The service refuses an option it does not know, so a misspelt
   `--open-from` stops the start instead of being ignored.
-- **A relay with a lane carries collections and mints of its own minters only.** Everyone else's go out from wallets
-  of their own.
+- **A relay with a lane carries its own minters' collections and mints without its fee.** Everyone else's it carries
+  only when it charges for them (`--mint-fee`, `--collection-fee`), once paid; without a fee they go out from wallets of
+  their own.
 
 Known limits:
 

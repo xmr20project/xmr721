@@ -289,8 +289,9 @@ them and build the relay's wallet first with `sh reader/carrier/build.sh`.
   [`docs/OPEN-POINTS.md`](docs/OPEN-POINTS.md) lists what they changed and what is still open.
 - **The relay** carries signed records for wallets that cannot build such a transaction
   themselves and pays the network fee. It cannot change a record. The project's relay carries
-  collections and mints of the two listed minters only; everyone else's go out from a wallet
-  of their own.
+  collections and mints of the two listed minters without a fee, and everyone else's for its
+  fee (shown at `/info`), paid to an address of its own before the record is sent. Anyone
+  can also inscribe from a wallet of their own and pay only the network fee.
 - **Wallets.** Claim, send and sell screens are in the XMR20 wallets and on
   [xmr20.org](https://xmr20.org/); any Monero wallet that can sign a message (Feather, Cake
   Wallet, the command-line wallet) can sign the records.
