@@ -1,0 +1,19 @@
+{
+ "name":"Hydra Society",
+ "id":"fb95c377fb1d2b5b0760a15b",
+ "basis":"matching numbered names",
+ "about":"Pictures titled \"Hydra Society #0\" to \"#9\".",
+ "repeatedEditions":true,
+ "members":[
+  {"edition":0,"number":42886,"registrationTx":"75d6451e19384fea53fd68dcf352766f4ed61529875268821f8ca76dcc71499f","bodyKeccak256":"a0f6aee163bf3be5564b1bbc8ed3ca79e56bd7c5ec5600316cd0e0a79a046f59"},
+  {"edition":1,"number":42877,"registrationTx":"8da183c297425e9e368d422845a9ddce963186b77c448372142cd6ebacbcfc0a","bodyKeccak256":"48ed93fb60973789bf30833f8cb898ef3a8870a20e6d9fd2553719c878e4948f"},
+  {"edition":2,"number":42878,"registrationTx":"e2e916bb8b729a6d40b4eb6fcdb8d474721e31c4b1a7c7653104cac34c03100e","bodyKeccak256":"87ac68183951a5dc4fc51d1656b2a7115e51ae15f9437415570c065fe919c5c0"},
+  {"edition":3,"number":42882,"registrationTx":"ae4530e3b7f38eceb9badfb5449665ca1824530586911734d179d22d55975d48","bodyKeccak256":"a43356810566cd24bcf03301279807cce907bf0853b52930ad6e83c4bc88f478"},
+  {"edition":4,"number":42879,"registrationTx":"7fc3bec8288cba37c406903ce455009223c37c75757c2afcce0746c24cb6e3dc","bodyKeccak256":"440494ece988243cf548e0d7347bdacc76e9ad37bb63b57acad6526c6c61d9ba"},
+  {"edition":5,"number":42883,"registrationTx":"426427fc13e7a57529ecaee71dc1639d48329e28098c5dd39d0e1736de0d0aff","bodyKeccak256":"0e6e16eb3b79ba3d995b20e947ea5170a8cce95c0bdcf127ab02e0714d27d0da"},
+  {"edition":6,"number":42880,"registrationTx":"013a072c8b699213cac602c5baa966c5cf2d1df9113d32ed4aee273b7bef1192","bodyKeccak256":"caa2524029c652758db6e756a9dfd581898ac3326f31e2bd56d07ce20fef8868"},
+  {"edition":7,"number":42881,"registrationTx":"86f013b4ac7f1a58730e2e038129302a7090c58d5267195a52075b827238ee8b","bodyKeccak256":"571d095d1b7f984984b203683bcc6b3815ee81a025cb4228a30bab1b373b373f"},
+  {"edition":8,"number":42884,"registrationTx":"7df1d9cb9ae0589b814065b010d3b0e7b885149299e7c4cfaebe38ce9932a891","bodyKeccak256":"e8885d6ef4ee2cea0e9b6f03987a1ac5a1a249923ef457580c0fa9d315e96b9a"},
+  {"edition":9,"number":42885,"registrationTx":"a1ed4928d963f63ae06d0ddd3c7f77b951123d0fef2e998036266e690f40c77c","bodyKeccak256":"f7aba5a55bd40fba1dd5fd18366d6c839be24250a18995be71072eb0747949ee"}
+ ]
+}

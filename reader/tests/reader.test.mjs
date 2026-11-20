@@ -356,7 +356,7 @@ test('the service answers wallets and pages, and the check tools agree with it',
   const mine=(await get('/address/'+w.alice.address)).body;assert.deepEqual(mine.mordinals.map(m=>[m.number,m.claimed,m.owner,m.seq,m.lot]),[[0,true,w.alice.address,0,null]]);assert.deepEqual(mine.waiting,[]);
   const lot=make.list(0,w.alice,2n*XMR);await send(lot.record);await next();
   const shown=(await get('/listings')).body.listings;assert.equal(shown.length,1);
-  assert.deepEqual({...shown[0],until:0},{id:lot.id,number:0,nft:null,reg:owners[0].registrationTx,seller:w.alice.address,price:String(2n*XMR),until:0,status:'open',body:hex(decodeRecord(lot.record).bodyBytes),reservation:null,buyer:null});
+  assert.deepEqual({...shown[0],until:0},{id:lot.id,number:0,name:null,nft:null,reg:owners[0].registrationTx,seller:w.alice.address,price:String(2n*XMR),until:0,status:'open',body:hex(decodeRecord(lot.record).bodyBytes),reservation:null,buyer:null});
   const res=make.reserve(lot.id,w.bob);await send(res.record);await next();
   const reserved=(await get('/lot/'+lot.id)).body.lot.reservation;assert.deepEqual({buyer:reserved.buyer,record:reserved.record,height:reserved.height,payBy:reserved.payBy},{buyer:w.bob.address,record:res.id,height:103,payBy:132});
   assert.deepEqual((await get('/address/'+w.bob.address)).body.buying.map(l=>l.id),[lot.id]);
@@ -375,7 +375,7 @@ test('the service answers wallets and pages, and the check tools agree with it',
   assert.deepEqual((await get('/activity?kind=claim')).body.events.map(e=>e.number),[2,0]);assert.deepEqual((await get('/activity?number=2')).body.events.map(e=>e.kind),['move','claim']);
   assert.deepEqual((await get('/activity?address='+w.carol.address)).body.events.map(e=>e.kind),['move']);assert.equal((await get('/activity?kind=nonsense')).status,400);
   const sales=(await get('/sales')).body.events;assert.equal(sales.length,1);assert.deepEqual([sales[0].price,sales[0].fee,sales[0].buyer],[String(2n*XMR),String(XMR/10n),w.bob.address]);
-  const g=(await get('/gallery')).body;assert.equal(g.total,8);assert.deepEqual(g.items[0],{number:0,reg:owners[0].registrationTx,claimed:true,owner:w.bob.address,bodySize:PNG.length,group:null,lot:null});
+  const g=(await get('/gallery')).body;assert.equal(g.total,8);assert.deepEqual(g.items[0],{number:0,name:null,reg:owners[0].registrationTx,claimed:true,owner:w.bob.address,bodySize:PNG.length,group:null,lot:null});
   assert.deepEqual((await get('/gallery?filter=claimed')).body.items.map(i=>i.number),[0,2]);assert.equal((await get('/gallery?filter=unclaimed')).body.total,6);
   assert.deepEqual((await get('/gallery?filter=unclaimed&from=4&limit=5')).body.items.map(i=>i.number),[6,7]);assert.equal((await get('/gallery?filter=else')).status,400);
   const m0=(await get('/mordinal/0')).body;assert.deepEqual(m0.history.map(h=>h.kind),['inscribed','transfer','claim','list','reserve','sale']);
@@ -462,3 +462,20 @@ test('the service answers wallets and pages, and the check tools agree with it',
    assert.deepEqual([await from('chrome-extension://abcdefgh'),await from('chrome-extension://zzzzzzzz')],['chrome-extension://abcdefgh',null]);}
   finally{await proxied.close();}}
  finally{await quiet.close();await busy.close();}});
+
+test('a Mordinal is named by its collection and the edition its creator gave it',async()=>{
+ const {reader,owners}=world({coins:2}),A='a'.repeat(24),B='b'.repeat(24);
+ // Editions for members only, numbers only: 3 is in no collection, -1 is no edition, a list that is not one is not read.
+ const C='c'.repeat(24),groups={groups:[{id:A,name:'Rocks Collection',display:'Rocks',basis:'matching numbered names',named:true,numbers:[[0,2]],editions:[[0,5],[1,5],[3,9],[2,-1]]},
+  {id:B,name:'Plain',basis:'shared description',named:true,numbers:[4,5],editions:'no'},
+  // A group that is not a named collection (only a shared description) names nobody.
+  {id:C,name:'testing this',basis:'shared description',numbers:[6,7],editions:[[6,1]]}]};
+ const service=createService({reader,owners,groups}),port=await service.listen(0),get=async p=>(await fetch('http://127.0.0.1:'+port+p)).json();
+ try{
+  assert.deepEqual((await get('/gallery?filter=all&from=0&limit=8')).items.map(i=>i.name),['Rocks #5','Rocks #5','Rocks',null,'Plain','Plain',null,null]);
+  const m=(await get('/mordinal/1')).mordinal;assert.deepEqual([m.name,m.edition,m.group],['Rocks #5',5,{id:A,name:'Rocks'}]);
+  const u=(await get('/mordinal/3')).mordinal;assert.deepEqual([u.name,u.edition,u.group],[null,null,null]);
+  const t=(await get('/mordinal/6')).mordinal;assert.deepEqual([t.name,t.group],[null,{id:C,name:'testing this'}]);
+  assert.deepEqual((await get('/group/'+A)).items.map(i=>i.name),['Rocks #5','Rocks #5','Rocks']);
+  const h=(await get('/history?kind=inscribed&limit=8')).events;assert.equal(h.find(e=>e.number===0).name,'Rocks #5');assert.equal(h.find(e=>e.number===7).name,null);
+ }finally{await service.close();}});

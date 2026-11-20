@@ -45,6 +45,12 @@ list Mordinal belongs to its collection.
 - `monero-chan.json`: Monero Chan Morbinal #2–#10 and Mordinal 144, "The first ever Monero
   Chan Morbinal."
 - `eternal-monero-bubbles.json`: "The eternal monero bubble(s)", Bubble 1 to 5 of 5.
+- `monero-rocks.json`, `chad.json`, `hydra-society.json`, `deus-finance-torus.json`: numbered in
+  their own titles; members keep the number their title gives, also where an edition was
+  registered more than once with different pictures (`repeatedEditions`).
+
+A member's edition is the creator's number, not its Mordinal number: Mordinal 2 is Monero
+Punk #0. Members without one are named by their collection alone.
 
 - `verified/monero-punks.json`: the 1,019 Monero Punks (editions 0–1018) from the
   moneropunks.com gallery of March 2023. Anyone could pick a Punk there and register it, so
@@ -59,6 +65,8 @@ list Mordinal belongs to its collection.
 | `groups[].name`, `display` | the name the rule found (or a list gives); `display` is a shorter name where one is used on xmr20.org |
 | `groups[].basis` | which step of the rule made the group, or `creator catalogue` |
 | `groups[].numbers` | Mordinal numbers, single or `[first, last]` ranges |
+| `groups[].named` | true for a real collection (a list in `verified/`, or at least 10 Mordinals): its members are named after it; members of smaller groups keep "Mordinal #n" |
+| `groups[].editions` | `[Mordinal, edition]` pairs: the number a creator gave a member (in its list or its title); pages name it "<collection> #<edition>" |
 | `featured` | the groups xmr20.org shows first, in that order |
 | `verified` | the collections checked by hand, and their files |
 | `sensitiveByLabel` | Mordinals whose own title or metadata labels them explicit; pages hide their pictures until asked |

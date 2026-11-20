@@ -23,6 +23,7 @@ GROUPS = os.path.join(HERE, 'collections.json')
 FEATURED = os.path.join(HERE, 'featured.json')
 OWNERS = os.path.join(HERE, '..', 'result', 'owners.jsonl')
 HEX64 = re.compile(r'^[0-9a-f]{64}$')
+NAMED_FROM = 10
 ID = re.compile(r'^[0-9a-f]{24}$')
 NOTE = ('The groups named under "verified" were checked by hand (verified/): verified.py checked each of their members '
         'against this index, and they are in no other group.')
@@ -63,14 +64,17 @@ def load_verified(owners):
         editions = [m['edition'] for m in members if m.get('edition') is not None]
         numbers = [m['number'] for m in members]
         check(len(members) >= 2, name + ': fewer than two Mordinals')
-        check(len(set(editions)) == len(editions) and len(set(numbers)) == len(members), name + ': an edition or a Mordinal twice')
+        check(v.get('repeatedEditions') is True or len(set(editions)) == len(editions), name + ': an edition twice')
+        check(len(set(numbers)) == len(members), name + ': a Mordinal twice')
+        check(all(isinstance(e, int) and 0 <= e < 10 ** 6 for e in editions), name + ': an edition is not a number')
         for m in members:
             o = owners.get(m['number'])
             check(o is not None, f"{name}: Mordinal {m['number']} is not in this index")
             check(HEX64.match(m['registrationTx']) and m['registrationTx'] == o['registrationTx'], f"{name}: Mordinal {m['number']}: registration differs")
             check(HEX64.match(m['bodyKeccak256']) and m['bodyKeccak256'] == o['bodyKeccak256'], f"{name}: Mordinal {m['number']}: artwork differs")
         found.append({'file': name, 'id': v['id'], 'name': v['name'], 'display': v.get('display'), 'basis': v.get('basis', 'creator catalogue'),
-                      'replaces': v.get('replaces', []), 'numbers': set(numbers)})
+                      'replaces': v.get('replaces', []), 'numbers': set(numbers),
+                      'editions': sorted((m['number'], m['edition']) for m in members if m.get('edition') is not None)})
     check(len({v['id'] for v in found}) == len(found), 'two files name the same id')
     taken = {}
     for v in found:
@@ -84,7 +88,10 @@ def record(v):
     g = {'id': v['id'], 'name': v['name']}
     if v['display']:
         g['display'] = v['display']
-    return g | {'basis': v['basis'], 'count': len(v['numbers']), 'numbers': ranges(v['numbers'])}
+    g |= {'basis': v['basis'], 'count': len(v['numbers']), 'numbers': ranges(v['numbers'])}
+    if v['editions']:
+        g['editions'] = [list(x) for x in v['editions']]
+    return g
 
 
 def apply(data, verified, featured=None):
@@ -109,6 +116,13 @@ def apply(data, verified, featured=None):
         groups.append(g)
     for v in ours.values():
         groups.append(record(v))
+    # Members of a real collection take its name on the pages: a list checked by hand, or a group of at least
+    # NAMED_FROM Mordinals. Smaller groups only share a description ("testing this") and name nobody.
+    checked = {v['id'] for v in verified}
+    for g in groups:
+        g.pop('named', None)
+        if g['id'] in checked or g['count'] >= NAMED_FROM:
+            g['named'] = True
     kept = {g['id'] for g in groups}
     out['groups'] = groups
     if featured is not None:

@@ -62,10 +62,17 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
  const groupList=[],groupOf=new Map(),labelled=new Set();
  if(groups){const open=list=>list.flatMap(x=>Array.isArray(x)?Array.from({length:x[1]-x[0]+1},(_,i)=>x[0]+i):[x]).filter(n=>entry.has(n));
   for(const g of groups.groups||[]){if(!/^[0-9a-f]{24}$/.test(g.id)||typeof g.name!=='string')continue;const members=open(g.numbers||[]);if(members.length<2)continue;
-   groupList.push({id:g.id,name:g.display||g.name,fullName:g.name,basis:g.basis,members});for(const n of members)if(!groupOf.has(n))groupOf.set(n,g.id);}
+   groupList.push({id:g.id,name:g.display||g.name,fullName:g.name,basis:g.basis,named:g.named===true,members});for(const n of members)if(!groupOf.has(n))groupOf.set(n,g.id);}
   const first=new Map((groups.featured||[]).map((id,i)=>[id,i]));groupList.sort((a,b)=>(first.get(a.id)??1e9)-(first.get(b.id)??1e9)||b.members.length-a.members.length||a.name.localeCompare(b.name));
   for(const n of open(groups.sensitiveByLabel||[]))labelled.add(n);}
  const groupById=new Map(groupList.map(g=>[g.id,g]));
+ // A Mordinal's name: the name of its collection when that is a real one (`named`), with "#<edition>" where the creator
+ // numbered it (its list or its own title: Mordinal 2 is Monero Punks #0). An edition counts only for a member of that
+ // same collection. Null outside a named collection; pages then say "Mordinal #n".
+ const editionOf=new Map();
+ if(groups)for(const g of groups.groups||[])if(groupById.get(g.id)&&Array.isArray(g.editions))for(const x of g.editions)
+  if(Array.isArray(x)&&groupOf.get(x[0])===g.id&&Number.isSafeInteger(x[1])&&x[1]>=0&&!editionOf.has(x[0]))editionOf.set(x[0],x[1]);
+ const nameOf=n=>{const g=groupById.get(groupOf.get(n));if(!g?.named)return null;const e=editionOf.get(n);return e==null?g.name:`${g.name} #${e}`;};
  // The original Mordinals history, oldest first: every registration and every transfer under the 2023 rules.
  const legacy=[...owners.map(o=>({kind:'inscribed',number:o.number,height:o.registrationHeight??null,time:timeAt(o.registrationHeight),txid:o.registrationTx,size:o.bodySize??null})),
   ...[...old].flatMap(([number,list])=>list.map(t=>({...t,number})))].sort((a,b)=>(a.height??0)-(b.height??0)||a.number-b.number);
@@ -74,10 +81,10 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
  const once=(key,make)=>{const at=reader.height+':'+reader.journal.length+':'+reader.hash;if(at!==memoAt){memoAt=at;memo=new Map();}if(!memo.has(key))memo.set(key,make());return memo.get(key);};
  const L=()=>reader.ledger;
  const lotView=id=>{const l=L().lot(id),r=l.reservations.at(-1)||null;
-  return {id:l.id,number:l.number,nft:l.number==null?l.reg:null,reg:l.reg,seller:l.seller,price:l.price.toString(),until:l.until,status:l.status,body:reader.body(l.id),
+  return {id:l.id,number:l.number,name:l.number==null?null:nameOf(l.number),nft:l.number==null?l.reg:null,reg:l.reg,seller:l.seller,price:l.price.toString(),until:l.until,status:l.status,body:reader.body(l.id),
    reservation:r?{record:r.record,buyer:r.buyer,height:r.height,payBy:r.payBy,rate:r.rate}:null,buyer:l.sale?.buyer||null};};
  // A Mordinal burned by a burn claim that waits for its fee is not claimed; `waiting` says so.
- const state=n=>{const x=L().mordinal(n);return {number:x.number,reg:x.reg,claimed:x.claimed,owner:x.owner,...(x.burned?{burned:true}:{}),...(x.waiting?{waiting:true}:{}),seq:x.seq,lot:x.lot?lotView(x.lot):null};};
+ const state=n=>{const x=L().mordinal(n);return {number:x.number,name:nameOf(x.number),reg:x.reg,claimed:x.claimed,owner:x.owner,...(x.burned?{burned:true}:{}),...(x.waiting?{waiting:true}:{}),seq:x.seq,lot:x.lot?lotView(x.lot):null};};
  // A burn claim as the routes show it: the Mordinal, the address in its text, its state ('claimed', 'waiting': burned and
  // waiting for its fee, 'lost': claimed by a record first) and its fee: due (the burn's own fee), paid, missing, and the
  // Mordinal's fee address.
@@ -123,7 +130,7 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
   return {all,list,by:new Map(list.flatMap(t=>[[t.id,t],[String(t.number),t],...(t.mint?[[t.mint,t]]:[])]))};});
  const open=()=>once('open',()=>reader.lots.map(lotView).filter(l=>l.status==='open'));
  const claimed=()=>once('claimed',()=>numbers.filter(n=>L().mordinal(n).claimed));
- const card=n=>{const o=entry.get(n),s=state(n);return {number:n,reg:s.reg,claimed:s.claimed,owner:s.owner,...(s.burned?{burned:true}:{}),...(s.waiting?{waiting:true}:{}),bodySize:o.bodySize??null,group:groupOf.get(n)??null,
+ const card=n=>{const o=entry.get(n),s=state(n);return {number:n,name:s.name,reg:s.reg,claimed:s.claimed,owner:s.owner,...(s.burned?{burned:true}:{}),...(s.waiting?{waiting:true}:{}),bodySize:o.bodySize??null,group:groupOf.get(n)??null,
   lot:s.lot?{id:s.lot.id,price:s.lot.price,until:s.lot.until,seller:s.lot.seller,reserved:Boolean(s.lot.reservation&&heldUntil(s.lot.reservation)>=reader.height)}:null};};
  const which=text=>{const t=decodeURIComponent(text);const o=/^\d{1,9}$/.test(t)?entry.get(Number(t)):/^[0-9a-f]{64}$/.test(t)?byReg.get(t):null;if(!o)throw fail('This is not a Mordinal on the owner list.',404);return o;};
  const stats=()=>once('stats',()=>{const by={};let volume=0n,fees=0n;for(const e of reader.events){by[e.kind]=(by[e.kind]||0)+1;if(e.kind==='sale'){volume+=BigInt(e.price);fees+=BigInt(e.fee);}}
@@ -197,12 +204,12 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
     const all=reader.events,before=int(q.get('before'),all.length,0,all.length),out=[];let at=before;
     while(at>0&&out.length<limit){const e=all[--at];
      if(kind&&e.kind!==kind)continue;if(number!=null&&e.number!==number)continue;
-     if(address&&![e.to,e.from,e.seller,e.buyer].includes(address))continue;out.push({at,...e,confirmations:height-e.height+1});}
+     if(address&&![e.to,e.from,e.seller,e.buyer].includes(address))continue;out.push({at,...e,...(Number.isInteger(e.number)?{name:nameOf(e.number)}:{}),confirmations:height-e.height+1});}
     return {height,total:all.length,next:at>0?at:null,events:out};}
    // The original history (inscriptions and transfers under the 2023 rules), newest first, by pages.
    if(path==='/history'){const kind=q.get('kind');if(kind&&kind!=='inscribed'&&kind!=='transfer')throw fail('Unknown kind.');
     const limit=int(q.get('limit'),50,1,200),before=int(q.get('before'),legacy.length,0,legacy.length),out=[];let at=before;
-    while(at>0&&out.length<limit){const e=legacy[--at];if(kind&&e.kind!==kind)continue;out.push({at,...e});}
+    while(at>0&&out.length<limit){const e=legacy[--at];if(kind&&e.kind!==kind)continue;out.push({at,...e,name:nameOf(e.number)});}
     return {height,total:legacy.length,inscriptions:owners.length,transfers:legacy.length-owners.length,next:at>0&&(kind?legacy.slice(0,at).some(e=>e.kind===kind):true)?at:null,events:out};}
    // Collections: each with its figures and a few members to show, and one collection's members by pages.
    if(path==='/groups')return once('groups',()=>{const listed=new Map();for(const l of open())if(l.until>=height&&l.number!=null)listed.set(l.number,l);const done=new Set(claimed());
@@ -225,7 +232,7 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
     const history=[{kind:'inscribed',height:o.registrationHeight??null,time:timeAt(o.registrationHeight),txid:o.registrationTx},...(old.get(o.number)||[]),
      ...reader.events.filter(e=>e.number===o.number).map(e=>({...e,confirmations:height-e.height+1}))];
     const gid=groupOf.get(o.number);
-    return {height,mordinal:{...s,group:gid?{id:gid,name:groupById.get(gid).name}:null,registrationHeight:o.registrationHeight??null,ownerTx:o.ownerTx,ownerHeight:o.ownerHeight??null,bodySize:o.bodySize??null,bodySha256:o.bodySha256||null,
+    return {height,mordinal:{...s,edition:editionOf.get(o.number)??null,group:gid?{id:gid,name:groupById.get(gid).name}:null,registrationHeight:o.registrationHeight??null,ownerTx:o.ownerTx,ownerHeight:o.ownerHeight??null,bodySize:o.bodySize??null,bodySha256:o.bodySha256||null,
       // The owner output's global index: what the ring of a burning transfer names; the Mordinal's fee address and what
       // was paid to it; a burn claim that waits for its fee.
       ...(m.burnFrom!=null?(f=>({ownerOutput:Number.isSafeInteger(o.ownerOutputIndex)?o.ownerOutputIndex:null,burnFee:{address:f.address,paid:f.paid},
