@@ -405,7 +405,7 @@ test('the market shows the newest history beside the listings, and the GENESIS c
  await go('/collections');assert.deepEqual((await page.locator('.ccard .n').allTextContents()).slice(0,2),['Mordinals','GENESIS']);
  assert.equal(await count('.ccard[data-kind=group]'),10);assert.match(await text('.ccard[data-kind=group] .n'),/Monero Punks/);
  await page.waitForFunction(()=>document.querySelectorAll('.ccard[data-kind=held] .mosaic img').length===3);
- const group=await page.locator('.ccard[data-kind=group]').nth(3).getAttribute('href');await page.locator(`.ccard[href="${group}"]`).click();await shown(group.slice(1));
+ const group=await page.locator('.ccard[data-kind=group]').nth(4).getAttribute('href');await page.locator(`.ccard[href="${group}"]`).click();await shown(group.slice(1));
  assert.match(await text('h1'),/Retarded Rat/);assert.equal(await count('[data-section=group-items] .mcard'),24);
  const member=await page.locator('[data-section=group-items] .mcard').first().getAttribute('data-number');
  await go('/mordinal/'+member);assert.match(await text('.kv'),/Collection\s*Retarded Rat/);

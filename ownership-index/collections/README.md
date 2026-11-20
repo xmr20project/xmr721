@@ -19,16 +19,32 @@ groups are smaller here than in the archive.
 A collection says how inscriptions present themselves. It says nothing about who made them
 or who owns them, and the ownership rules never read it.
 
-## Collections from a creator's list
+## Collections checked by hand
 
-Where a creator published the list of their editions, that list decides membership instead
-of the metadata. Each file in `verified/` holds one such list: every edition with its
-Mordinal number, registration transaction and the Keccak-256 of its artwork. `verified.py`
-checks every edition against this index (`../result/owners.jsonl`) and writes nothing if
-one differs; it then gives the collection its members, takes them out of every other group,
-drops the groups the file names under `replaces` and those left with fewer than two
-Mordinals. Run it after making `collections.json` with the rule; `verified.py --check`
-fails if `collections.json` is not up to date.
+Where a creator published the list of their editions, or the published text leaves a
+member out, a list in `verified/` decides membership instead of the metadata rule. Each
+file holds every member: Mordinal number, registration transaction, the Keccak-256 of its
+artwork, and the edition where the creator numbered it. `verified.py` checks every member
+against this index (`../result/owners.jsonl`) and writes nothing if one differs; it then
+gives the collection its members, takes them out of every other group, drops the groups a
+file names under `replaces` and those left with fewer than two Mordinals, and copies the
+order in `featured.json`. Run it after making `collections.json` with the rule;
+`verified.py --check` fails if `collections.json` is not up to date.
+
+Some creators inscribed their list as a Mordinal: a picture of every edition, with each
+edition's mordinals.org item number, which is the Mordinal number of this index. Such a
+list Mordinal belongs to its collection.
+
+- `elite-black-amex.json`: the creator's signed list (Mordinal 30,680) of editions 1–100,
+  the list itself, and two more registrations titled as editions (103).
+- `retarded-rats.json`: the creator's signed list (Mordinal 22,427) of Rat 1–30, the list,
+  and one more registration titled as a Rat (32).
+- `xmrgirls.json`: the creator's list (Mordinal 19,830) of girl 1–30 and the list (31).
+- `artifacts.json`: the 50 pictures of "The first and only collections of 100 Artifacts
+  under 5,000 Mordinals", including Mordinal 1,697, whose text says "under 5K Mordinals".
+- `monero-chan.json`: Monero Chan Morbinal #2–#10 and Mordinal 144, "The first ever Monero
+  Chan Morbinal."
+- `eternal-monero-bubbles.json`: "The eternal monero bubble(s)", Bubble 1 to 5 of 5.
 
 - `verified/monero-punks.json`: the 1,019 Monero Punks (editions 0–1018) from the
   moneropunks.com gallery of March 2023. Anyone could pick a Punk there and register it, so
@@ -40,9 +56,9 @@ fails if `collections.json` is not up to date.
 | Field | Meaning |
 | --- | --- |
 | `groups[].id` | 24 hex characters, from the rule |
-| `groups[].name`, `display` | the name the rule found; `display` is a shorter name where one is used on xmr20.org |
+| `groups[].name`, `display` | the name the rule found (or a list gives); `display` is a shorter name where one is used on xmr20.org |
 | `groups[].basis` | which step of the rule made the group, or `creator catalogue` |
 | `groups[].numbers` | Mordinal numbers, single or `[first, last]` ranges |
 | `featured` | the groups xmr20.org shows first, in that order |
-| `verified` | the collections taken from a creator's list, and their files |
+| `verified` | the collections checked by hand, and their files |
 | `sensitiveByLabel` | Mordinals whose own title or metadata labels them explicit; pages hide their pictures until asked |

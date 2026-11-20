@@ -1,10 +1,11 @@
-"""Puts the collections a creator published (verified/*.json) into collections.json.
+"""Puts the collections checked by hand (verified/*.json) into collections.json.
 
-A verified collection lists its members as the creator's own catalogue does: edition, Mordinal number, the
-registration transaction and the Keccak-256 of the artwork. Every member must match this index
-(../result/owners.jsonl) on all three, or nothing is written. The members are then taken out of every group the
+Each file lists every member of one collection: Mordinal number, registration transaction and the Keccak-256 of the
+artwork, and the edition where the creator numbered it. Every member must match this index (../result/owners.jsonl)
+on number, transaction and artwork, or nothing is written. The members are then taken out of every group the
 metadata rule made, groups the file names under `replaces` are dropped, and the collection takes the id it names, so
-links to that group keep working. Groups left with fewer than two Mordinals are dropped.
+links to that group keep working (a new id adds a group). Groups left with fewer than two Mordinals are dropped.
+featured.json, when present, sets the groups shown first.
 
 Run it after collections.json is made from the archive with rule.py:
 
@@ -19,6 +20,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GROUPS = os.path.join(HERE, 'collections.json')
+FEATURED = os.path.join(HERE, 'featured.json')
 OWNERS = os.path.join(HERE, '..', 'result', 'owners.jsonl')
 HEX64 = re.compile(r'^[0-9a-f]{64}$')
 ID = re.compile(r'^[0-9a-f]{24}$')
@@ -49,16 +51,19 @@ def load_verified(owners):
         name = os.path.relpath(path, HERE)
         assert ID.match(v['id']) and isinstance(v['name'], str) and v['name'].strip(), name
         members = v['members']
-        editions = [m['edition'] for m in members]
+        assert v.get('display') is None or isinstance(v['display'], str) and v['display'].strip(), name
+        editions = [m['edition'] for m in members if m.get('edition') is not None]
         numbers = [m['number'] for m in members]
-        assert len(set(editions)) == len(members) and len(set(numbers)) == len(members), name + ': an edition or a Mordinal twice'
+        assert len(members) >= 2, name + ': fewer than two Mordinals'
+        assert len(set(editions)) == len(editions) and len(set(numbers)) == len(members), name + ': an edition or a Mordinal twice'
         for m in members:
             o = owners.get(m['number'])
             assert o is not None, f"{name}: Mordinal {m['number']} is not in this index"
-            assert HEX64.match(m['registrationTx']) and m['registrationTx'] == o['registrationTx'], f"{name}: edition {m['edition']}: registration differs"
-            assert HEX64.match(m['bodyKeccak256']) and m['bodyKeccak256'] == o['bodyKeccak256'], f"{name}: edition {m['edition']}: artwork differs"
-        found.append({'file': name, 'id': v['id'], 'name': v['name'], 'basis': v.get('basis', 'creator catalogue'),
+            assert HEX64.match(m['registrationTx']) and m['registrationTx'] == o['registrationTx'], f"{name}: Mordinal {m['number']}: registration differs"
+            assert HEX64.match(m['bodyKeccak256']) and m['bodyKeccak256'] == o['bodyKeccak256'], f"{name}: Mordinal {m['number']}: artwork differs"
+        found.append({'file': name, 'id': v['id'], 'name': v['name'], 'display': v.get('display'), 'basis': v.get('basis', 'creator catalogue'),
                       'replaces': v.get('replaces', []), 'numbers': set(numbers)})
+    assert len({v['id'] for v in found}) == len(found), 'two files name the same id'
     taken = {}
     for v in found:
         for n in v['numbers']:
@@ -67,7 +72,14 @@ def load_verified(owners):
     return found
 
 
-def apply(data, verified):
+def record(v):
+    g = {'id': v['id'], 'name': v['name']}
+    if v['display']:
+        g['display'] = v['display']
+    return g | {'basis': v['basis'], 'count': len(v['numbers']), 'numbers': ranges(v['numbers'])}
+
+
+def apply(data, verified, featured=None):
     out = dict(data)
     ours = {v['id']: v for v in verified}
     dropped = {i for v in verified for i in v['replaces']}
@@ -76,7 +88,7 @@ def apply(data, verified):
     for g in data['groups']:
         if g['id'] in ours:
             v = ours.pop(g['id'])
-            groups.append({'id': v['id'], 'name': v['name'], 'basis': v['basis'], 'count': len(v['numbers']), 'numbers': ranges(v['numbers'])})
+            groups.append(record(v))
             continue
         if g['id'] in dropped:
             continue
@@ -88,10 +100,14 @@ def apply(data, verified):
         g['numbers'] = ranges(left)
         groups.append(g)
     for v in ours.values():
-        groups.append({'id': v['id'], 'name': v['name'], 'basis': v['basis'], 'count': len(v['numbers']), 'numbers': ranges(v['numbers'])})
+        groups.append(record(v))
     kept = {g['id'] for g in groups}
     out['groups'] = groups
-    out['featured'] = [i for i in data.get('featured', []) if i in kept]
+    if featured is not None:
+        assert all(i in kept for i in featured) and len(set(featured)) == len(featured), 'featured.json names a group that is not kept'
+        out['featured'] = list(featured)
+    else:
+        out['featured'] = [i for i in data.get('featured', []) if i in kept]
     if verified and NOTE not in out.get('about', ''):
         out['about'] = (out.get('about', '') + ' ' + NOTE).strip()
     out['verified'] = [{'id': v['id'], 'name': v['name'], 'count': len(v['numbers']), 'file': v['file']} for v in verified]
@@ -105,7 +121,8 @@ def main():
             o = json.loads(line)
             owners[o['number']] = o
     data = json.load(open(GROUPS, encoding='utf-8'))
-    text = json.dumps(apply(data, load_verified(owners)), separators=(',', ':')) + '\n'
+    featured = json.load(open(FEATURED, encoding='utf-8'))['featured'] if os.path.exists(FEATURED) else None
+    text = json.dumps(apply(data, load_verified(owners), featured), separators=(',', ':')) + '\n'
     if '--check' in sys.argv:
         if open(GROUPS, encoding='utf-8').read() != text:
             sys.exit('collections.json is not up to date: run verified.py')
