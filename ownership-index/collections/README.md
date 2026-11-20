@@ -49,6 +49,12 @@ list Mordinal belongs to its collection.
   their own titles; members keep the number their title gives, also where an edition was
   registered more than once with different pictures (`repeatedEditions`).
 
+- `xmr-punks-black.json`: 100 untitled 24 x 24 Punks on a black ground with orange XMR caps,
+  registered in one run (Mordinal 1,873 and 1,929–2,027); found by their pictures. No text
+  names them; the name describes them.
+- `the-ape-society.json`: 28 painted ape portraits, each titled "<name> is a distinguished
+  citizen of The Ape Society." The titles differ by name, so the rule did not group them.
+
 A member's edition is the creator's number, not its Mordinal number: Mordinal 2 is Monero
 Punk #0. Members without one are named by their collection alone.
 
