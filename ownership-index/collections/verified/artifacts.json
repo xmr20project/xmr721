@@ -2,7 +2,7 @@
  "name":"The first and only collections of 100 Artifacts under 5,000 Mordinals",
  "display":"Artifacts",
  "id":"2c27c54455f5413b379214a8",
- "basis":"shared description",
+ "basis":"shared description, checked by hand",
  "about":"Small pixel Monero logos registered between blocks 2,847,080 and 2,848,954 with the description \"The first and only collections of 100 Artifacts under 5,000 Mordinals\"; Mordinal 1697 says \"under 5K Mordinals\". 77 registrations carry the description and 50 different pictures among them; the other 27 repeat a picture already registered, which the original rules do not count.",
  "members":[
   {"number":1697,"registrationTx":"2da0d52fe7509e060bb17ce58cfe5fed34e63e5c90628bfd31da9aa99be63514","bodyKeccak256":"c2c9b3d5de4600b7bcfdf1a12473e897b5431997fcaba8d0bb9a9e1af700e8e6","note":"description says \"under 5K Mordinals\""},

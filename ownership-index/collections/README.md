@@ -1,7 +1,7 @@
 # Collections
 
 `collections.json` groups Mordinals into collections for browsing: GooGirls, Lame Kittens,
-Lame Puppies, Lame Creatures, Monero Punks, Monero Rocks, Retarded Rat and the rest.
+Lame Puppies, Lame Creatures, Monero Punks, Monero Rocks, Retarded Rats and the rest.
 
 A group is made from what each inscription published about itself (its title, its
 metadata and any collection link in them), with the rule in `rule.py`, the same rule
@@ -50,12 +50,12 @@ list Mordinal belongs to its collection.
   moneropunks.com gallery of March 2023. Anyone could pick a Punk there and register it, so
   the registrations carry many different descriptions; 297 shared the description of the
   group `d28d5a234cafb895f949ebd3`, which keeps its id and is now named Monero Punks.
-  Among the inscriptions titled "Monero Punks #n", only #1,124 is a creator edition; the
+  Among the inscriptions titled "Monero Punks #n", only Mordinal 1,124 is a creator edition (Punk #155); the
   other 32 are 200 × 200 copies and are left ungrouped.
 
 | Field | Meaning |
 | --- | --- |
-| `groups[].id` | 24 hex characters, from the rule |
+| `groups[].id` | 24 hex characters, from the rule; a list in `verified/` keeps the id of the group it replaces or sets a new one |
 | `groups[].name`, `display` | the name the rule found (or a list gives); `display` is a shorter name where one is used on xmr20.org |
 | `groups[].basis` | which step of the rule made the group, or `creator catalogue` |
 | `groups[].numbers` | Mordinal numbers, single or `[first, last]` ranges |

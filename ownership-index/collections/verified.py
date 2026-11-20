@@ -24,8 +24,16 @@ FEATURED = os.path.join(HERE, 'featured.json')
 OWNERS = os.path.join(HERE, '..', 'result', 'owners.jsonl')
 HEX64 = re.compile(r'^[0-9a-f]{64}$')
 ID = re.compile(r'^[0-9a-f]{24}$')
-NOTE = ('Groups with basis "creator catalogue" come from a list the creator published (verified/), checked against '
-        'this index by verified.py; their members are in no other group.')
+NOTE = ('The groups named under "verified" were checked by hand (verified/): verified.py checked each of their members '
+        'against this index, and they are in no other group.')
+EARLIER_NOTES = ('Groups with basis "creator catalogue" come from a list the creator published (verified/), checked against '
+                 'this index by verified.py; their members are in no other group.',)
+
+
+def check(ok, message):
+    # Not assert: the checks must also run under python -O.
+    if not ok:
+        sys.exit('verified.py: ' + message + '; nothing written')
 
 
 def ranges(numbers):
@@ -49,25 +57,25 @@ def load_verified(owners):
     for path in sorted(glob.glob(os.path.join(HERE, 'verified', '*.json'))):
         v = json.load(open(path, encoding='utf-8'))
         name = os.path.relpath(path, HERE)
-        assert ID.match(v['id']) and isinstance(v['name'], str) and v['name'].strip(), name
+        check(ID.match(v['id']) and isinstance(v['name'], str) and v['name'].strip(), name)
         members = v['members']
-        assert v.get('display') is None or isinstance(v['display'], str) and v['display'].strip(), name
+        check(v.get('display') is None or isinstance(v['display'], str) and v['display'].strip(), name)
         editions = [m['edition'] for m in members if m.get('edition') is not None]
         numbers = [m['number'] for m in members]
-        assert len(members) >= 2, name + ': fewer than two Mordinals'
-        assert len(set(editions)) == len(editions) and len(set(numbers)) == len(members), name + ': an edition or a Mordinal twice'
+        check(len(members) >= 2, name + ': fewer than two Mordinals')
+        check(len(set(editions)) == len(editions) and len(set(numbers)) == len(members), name + ': an edition or a Mordinal twice')
         for m in members:
             o = owners.get(m['number'])
-            assert o is not None, f"{name}: Mordinal {m['number']} is not in this index"
-            assert HEX64.match(m['registrationTx']) and m['registrationTx'] == o['registrationTx'], f"{name}: Mordinal {m['number']}: registration differs"
-            assert HEX64.match(m['bodyKeccak256']) and m['bodyKeccak256'] == o['bodyKeccak256'], f"{name}: Mordinal {m['number']}: artwork differs"
+            check(o is not None, f"{name}: Mordinal {m['number']} is not in this index")
+            check(HEX64.match(m['registrationTx']) and m['registrationTx'] == o['registrationTx'], f"{name}: Mordinal {m['number']}: registration differs")
+            check(HEX64.match(m['bodyKeccak256']) and m['bodyKeccak256'] == o['bodyKeccak256'], f"{name}: Mordinal {m['number']}: artwork differs")
         found.append({'file': name, 'id': v['id'], 'name': v['name'], 'display': v.get('display'), 'basis': v.get('basis', 'creator catalogue'),
                       'replaces': v.get('replaces', []), 'numbers': set(numbers)})
-    assert len({v['id'] for v in found}) == len(found), 'two files name the same id'
+    check(len({v['id'] for v in found}) == len(found), 'two files name the same id')
     taken = {}
     for v in found:
         for n in v['numbers']:
-            assert n not in taken, f"Mordinal {n} is in {taken[n]} and {v['file']}"
+            check(n not in taken, f"Mordinal {n} is in {taken.get(n)} and {v['file']}")
             taken[n] = v['file']
     return found
 
@@ -104,12 +112,14 @@ def apply(data, verified, featured=None):
     kept = {g['id'] for g in groups}
     out['groups'] = groups
     if featured is not None:
-        assert all(i in kept for i in featured) and len(set(featured)) == len(featured), 'featured.json names a group that is not kept'
+        check(all(i in kept for i in featured) and len(set(featured)) == len(featured), 'featured.json names a group that is not kept')
         out['featured'] = list(featured)
     else:
         out['featured'] = [i for i in data.get('featured', []) if i in kept]
-    if verified and NOTE not in out.get('about', ''):
-        out['about'] = (out.get('about', '') + ' ' + NOTE).strip()
+    about = out.get('about', '')
+    for note in EARLIER_NOTES + (NOTE,):
+        about = about.replace(' ' + note, '').replace(note, '')
+    out['about'] = (about + ' ' + NOTE).strip() if verified else about
     out['verified'] = [{'id': v['id'], 'name': v['name'], 'count': len(v['numbers']), 'file': v['file']} for v in verified]
     return out
 

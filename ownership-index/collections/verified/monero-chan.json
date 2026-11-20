@@ -1,7 +1,7 @@
 {
  "name":"Monero Chan Morbinal",
  "id":"0f52cf83801673e12edfae15",
- "basis":"matching numbered names",
+ "basis":"matching numbered names, checked by hand",
  "about":"Monero Chan pictures titled \"Monero Chan Morbinal #2\" to \"#10\", and Mordinal 144, registered just before #2 and titled \"The first ever Monero Chan Morbinal.\"",
  "members":[
   {"number":144,"registrationTx":"4e9fed54c9a41e6076de4bf64a89c7bc4251d1bde483f9fce427990868a7f536","bodyKeccak256":"5b71fc42f31ae1ff0ee043c0b28943adad92ef29b0851dccae90500fbbcec664","note":"titled \"The first ever Monero Chan Morbinal.\""},
