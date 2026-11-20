@@ -227,6 +227,14 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
      :filter==='listed'?once('listed',()=>open().filter(l=>l.until>=height&&l.number!=null).map(l=>l.number).sort((a,b)=>a-b)):filter==='all'?numbers:null;
     if(!pick)throw fail('Unknown filter.');const from=int(q.get('from'),0,0,pick.length),limit=int(q.get('limit'),60,1,200);
     return {height,filter,from,total:pick.length,items:pick.slice(from,from+limit).map(card)};}
+   // Names of many Mordinals at once: by number (a wallet's list), or by registration transaction (the archive's pages
+   // know a Mordinal by its transaction). Numbers or transactions that are not on the owner list are left out.
+   if(path==='/names'){const nums=q.get('numbers'),txs=q.get('tx');if((nums===null)===(txs===null))throw fail('Ask by numbers or by tx.');
+    const list=(nums??txs).split(',').filter(Boolean),most=nums!==null?200:100;if(!list.length||list.length>most)throw fail(`Ask for 1 to ${most}.`);
+    const one=n=>{const gid=groupOf.get(n);return {name:nameOf(n),group:gid?{id:gid,name:groupById.get(gid).name}:null};},names={};
+    if(nums!==null)for(const x of list){if(!/^\d{1,9}$/.test(x))throw fail('Not a Mordinal number.');const n=Number(x);if(entry.has(n))names[n]=one(n);}
+    else for(const x of list){if(!/^[0-9a-f]{64}$/.test(x))throw fail('Not a transaction id.');const o=byReg.get(x);if(o)names[x]={number:o.number,...one(o.number)};}
+    return {height,names};}
    if(path.startsWith('/mordinal/')){const o=which(path.slice(10)),s=state(o.number);
     // The whole public story of one Mordinal: inscribed, moved by spending (2023), then claimed and moved by record.
     const history=[{kind:'inscribed',height:o.registrationHeight??null,time:timeAt(o.registrationHeight),txid:o.registrationTx},...(old.get(o.number)||[]),

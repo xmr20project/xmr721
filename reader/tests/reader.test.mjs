@@ -478,4 +478,9 @@ test('a Mordinal is named by its collection and the edition its creator gave it'
   const t=(await get('/mordinal/6')).mordinal;assert.deepEqual([t.name,t.group],[null,{id:C,name:'testing this'}]);
   assert.deepEqual((await get('/group/'+A)).items.map(i=>i.name),['Rocks #5','Rocks #5','Rocks']);
   const h=(await get('/history?kind=inscribed&limit=8')).events;assert.equal(h.find(e=>e.number===0).name,'Rocks #5');assert.equal(h.find(e=>e.number===7).name,null);
+  // Many at once: by number (unknown numbers left out) and by registration transaction.
+  assert.deepEqual((await get('/names?numbers=0,2,3,99999')).names,{0:{name:'Rocks #5',group:{id:A,name:'Rocks'}},2:{name:'Rocks',group:{id:A,name:'Rocks'}},3:{name:null,group:null}});
+  assert.deepEqual((await get('/names?tx='+owners[4].registrationTx+','+'0'.repeat(64))).names,{[owners[4].registrationTx]:{number:4,name:'Plain',group:{id:B,name:'Plain'}}});
+  const bad=async p=>(await fetch('http://127.0.0.1:'+port+p)).status;
+  assert.deepEqual([await bad('/names'),await bad('/names?numbers=1&tx='+'0'.repeat(64)),await bad('/names?numbers=x'),await bad('/names?tx=12'),await bad('/names?numbers='+Array(201).fill(1).join(','))],[400,400,400,400,400]);
  }finally{await service.close();}});
