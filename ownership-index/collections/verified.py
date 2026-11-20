@@ -24,6 +24,7 @@ FEATURED = os.path.join(HERE, 'featured.json')
 OWNERS = os.path.join(HERE, '..', 'result', 'owners.jsonl')
 HEX64 = re.compile(r'^[0-9a-f]{64}$')
 NAMED_FROM = 10
+TITLE = re.compile(r'^[^\x00-\x1f\x7f]{1,80}$')
 ID = re.compile(r'^[0-9a-f]{24}$')
 NOTE = ('The groups named under "verified" were checked by hand (verified/): verified.py checked each of their members '
         'against this index, and they are in no other group.')
@@ -67,6 +68,8 @@ def load_verified(owners):
         check(v.get('repeatedEditions') is True or len(set(editions)) == len(editions), name + ': an edition twice')
         check(len(set(numbers)) == len(members), name + ': a Mordinal twice')
         check(all(isinstance(e, int) and 0 <= e < 10 ** 6 for e in editions), name + ': an edition is not a number')
+        titles = [m['title'] for m in members if m.get('title') is not None]
+        check(all(isinstance(t, str) and TITLE.match(t) and t == t.strip() for t in titles), name + ': a title is not 1 to 80 printable characters')
         for m in members:
             o = owners.get(m['number'])
             check(o is not None, f"{name}: Mordinal {m['number']} is not in this index")
@@ -74,7 +77,8 @@ def load_verified(owners):
             check(HEX64.match(m['bodyKeccak256']) and m['bodyKeccak256'] == o['bodyKeccak256'], f"{name}: Mordinal {m['number']}: artwork differs")
         found.append({'file': name, 'id': v['id'], 'name': v['name'], 'display': v.get('display'), 'basis': v.get('basis', 'creator catalogue'),
                       'replaces': v.get('replaces', []), 'numbers': set(numbers),
-                      'editions': sorted((m['number'], m['edition']) for m in members if m.get('edition') is not None)})
+                      'editions': sorted((m['number'], m['edition']) for m in members if m.get('edition') is not None),
+                      'titles': sorted((m['number'], m['title']) for m in members if m.get('title') is not None)})
     check(len({v['id'] for v in found}) == len(found), 'two files name the same id')
     taken = {}
     for v in found:
@@ -91,6 +95,8 @@ def record(v):
     g |= {'basis': v['basis'], 'count': len(v['numbers']), 'numbers': ranges(v['numbers'])}
     if v['editions']:
         g['editions'] = [list(x) for x in v['editions']]
+    if v['titles']:
+        g['titles'] = [list(x) for x in v['titles']]
     return g
 
 

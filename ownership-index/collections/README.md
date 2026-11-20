@@ -53,7 +53,8 @@ list Mordinal belongs to its collection.
   registered in one run (Mordinal 1,873 and 1,929–2,027); found by their pictures. No text
   names them; the name describes them.
 - `the-ape-society.json`: 28 painted ape portraits, each titled "<name> is a distinguished
-  citizen of The Ape Society." The titles differ by name, so the rule did not group them.
+  citizen of The Ape Society." The titles differ by name, so the rule did not group them;
+  each member is named by its own (`title`, e.g. "Sir Fulton Brown").
 
 A member's edition is the creator's number, not its Mordinal number: Mordinal 2 is Monero
 Punk #0. Members without one are named by their collection alone.
@@ -72,6 +73,7 @@ Punk #0. Members without one are named by their collection alone.
 | `groups[].basis` | which step of the rule made the group, or `creator catalogue` |
 | `groups[].numbers` | Mordinal numbers, single or `[first, last]` ranges |
 | `groups[].named` | true for a real collection (a list in `verified/`, or at least 10 Mordinals): its members are named after it; members of smaller groups keep "Mordinal #n" |
+| `groups[].titles` | `[Mordinal, title]` pairs: a member's own title where the creator gave each one a name ("Sir Fulton Brown"); pages name it by that title |
 | `groups[].editions` | `[Mordinal, edition]` pairs: the number a creator gave a member (in its list or its title); pages name it "<collection> #<edition>" |
 | `featured` | the groups xmr20.org shows first, in that order |
 | `verified` | the collections checked by hand, and their files |

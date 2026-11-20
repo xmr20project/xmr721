@@ -72,7 +72,12 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
  const editionOf=new Map();
  if(groups)for(const g of groups.groups||[])if(groupById.get(g.id)&&Array.isArray(g.editions))for(const x of g.editions)
   if(Array.isArray(x)&&groupOf.get(x[0])===g.id&&Number.isSafeInteger(x[1])&&x[1]>=0&&!editionOf.has(x[0]))editionOf.set(x[0],x[1]);
- const nameOf=n=>{const g=groupById.get(groupOf.get(n));if(!g?.named)return null;const e=editionOf.get(n);return e==null?g.name:`${g.name} #${e}`;};
+ // Where the creator named each member ("Sir Fulton Brown is a distinguished citizen of The Ape Society."), its own title
+ // names it instead: up to 80 printable characters, for a member of that collection only.
+ const titleOf=new Map();
+ if(groups)for(const g of groups.groups||[])if(groupById.get(g.id)&&Array.isArray(g.titles))for(const x of g.titles)
+  if(Array.isArray(x)&&groupOf.get(x[0])===g.id&&typeof x[1]==='string'&&/^[^\x00-\x1f\x7f]{1,80}$/.test(x[1])&&x[1].trim()===x[1]&&!titleOf.has(x[0]))titleOf.set(x[0],x[1]);
+ const nameOf=n=>{const g=groupById.get(groupOf.get(n));if(!g?.named)return null;const t=titleOf.get(n);if(t)return t;const e=editionOf.get(n);return e==null?g.name:`${g.name} #${e}`;};
  // The original Mordinals history, oldest first: every registration and every transfer under the 2023 rules.
  const legacy=[...owners.map(o=>({kind:'inscribed',number:o.number,height:o.registrationHeight??null,time:timeAt(o.registrationHeight),txid:o.registrationTx,size:o.bodySize??null})),
   ...[...old].flatMap(([number,list])=>list.map(t=>({...t,number})))].sort((a,b)=>(a.height??0)-(b.height??0)||a.number-b.number);
