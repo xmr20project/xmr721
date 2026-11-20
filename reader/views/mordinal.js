@@ -1,6 +1,6 @@
 // One Mordinal: is it claimed, who owns it, its picture and whole history, and what its owner can do with it.
 import {OP,RULES,encodeBody,renderText,canonical,parseXmr,splitOf,formatXmr} from './rules.js';
-import {el,add,api,service,count,xmr,addr,txid,exact,notice,pill,strong,table,eventColumns,waitingList,pictures,terms,running,field,textInput,draft} from './ui.js';
+import {el,add,api,service,count,xmr,addr,txid,exact,notice,pill,strong,table,eventColumns,waitingList,pictures,terms,running,field,textInput,draft,mordinalName} from './ui.js';
 import {signPanel} from './sign.js';
 import {burning,burnHow,burnAhead,burnMisfit,burnFee,feeAddress} from './burn.js';
 
@@ -10,7 +10,7 @@ const LISTING_BLOCKS=720;
 export async function mordinal(ctx,number,action){
  const info=service.info,n=Number(number);
  const v=await api('/mordinal/'+n,{signal:ctx.signal}),m=v.mordinal,height=v.height;
- ctx.title('Mordinal #'+count(n));ctx.tip(height);
+ const NAME=mordinalName(n,m.name);ctx.title(NAME);ctx.tip(height);
  const pic=pictures(ctx),home='#/mordinal/'+n,b0=burning();
  // The service has to state the fee address these pages work out for this Mordinal; otherwise nothing about the burn is shown.
  const burn=b0&&b0.fits&&m.burnFee&&m.burnFee.address!==feeAddress(b0,n)?{...b0,fits:false}:b0;
@@ -69,7 +69,11 @@ export async function mordinal(ctx,number,action){
    el('p',{},el('a',{class:'btn primary',href:'#/lot/'+t.id,text:ended?'See the listing':'See the listing and buy'})));}
 
  add(ctx.main,
-  el('div',{class:'head'},el('a',{class:'crumb',href:'#/gallery',text:'Gallery'}),el('h1',{class:'small',text:'Mordinal #'+count(n)})),
+  el('div',{class:'head'},el('a',{class:'crumb',href:'#/gallery',text:'Gallery'}),el('h1',{class:'small',text:NAME}),
+   // Its collection, to open the whole of it, and its Mordinal number when the heading is a collection's name.
+   m.group?el('p',{class:'item-of'},el('a',{class:'item-group',href:'#/collection/'+m.group.id,title:'See the whole collection'},
+     el('span',{text:m.group.name.length>60?m.group.name.slice(0,58)+'…':m.group.name}),el('span',{'aria-hidden':'true',text:'→'})),
+    m.name?el('span',{class:'num',text:'Mordinal #'+count(n)}):null):null),
   el('div',{class:'split item'},pic(n,{size:'large',hasContent:m.bodySize!==null}),el('div',{class:'stack'},sale,answer,el('div',{class:'card'},facts))),
   m.claimed&&!m.burned?owner():null,
   v.waiting.length?el('section',{class:'section','data-section':'waiting'},el('div',{class:'section-head'},el('h2',{text:'Waiting for a block'}),
@@ -88,7 +92,7 @@ export async function mordinal(ctx,number,action){
   const box=el('section',{class:'section card stack','data-section':'owner'},el('h2',{text:'Do you own this Mordinal?'}));
   if(!info.relay){box.append(el('p',{class:'muted',text:'Records cannot be sent from here: this service only reads. Use the XMR20 wallet or the command-line tool to send or sell it.'}));return box;}
   const panel=el('div',{class:'stack'}),open=el('button',{type:'button',class:'btn',text:'I own this','data-action':'own',onclick:()=>{open.hidden=true;choices();}});
-  const done=text=>s=>el('div',{class:'stack'},notice('good',text+' The record is in block '+count(s.height)+'.'),el('p',{},el('a',{class:'btn',href:home,text:'Back to Mordinal #'+count(n)})));
+  const done=text=>s=>el('div',{class:'stack'},notice('good',text+' The record is in block '+count(s.height)+'.'),el('p',{},el('a',{class:'btn',href:home,text:'Back to '+NAME})));
   const go=to=>()=>{location.hash=home+'/'+to;};
   const leave=()=>{location.hash=home;};
   function choices(){
@@ -109,9 +113,9 @@ export async function mordinal(ctx,number,action){
    const next=()=>{let dest;
     try{dest=canonical(to.value,info.network);if(dest===m.owner)throw Error('This address already owns it.');}catch(e){problem.replaceChildren(notice('error',e.message));return;}
     const body={reg:m.reg,seq:m.seq,from:m.owner,to:dest},bodyBytes=encodeBody(OP.move,body,info.network),rctx={domain:info.domain,number:n};
-    panel.replaceChildren(el('h3',{text:'Send Mordinal #'+count(n)}),el('p',{class:'muted'},'To ',addr(dest),'. This cannot be undone.'),
+    panel.replaceChildren(el('h3',{text:'Send '+NAME}),el('p',{class:'muted'},'To ',addr(dest),'. This cannot be undone.'),
      signPanel(ctx,{bodyBytes,rctx,text:renderText(OP.move,body,bodyBytes,rctx),signer:m.owner,back:()=>sendForm(to.value),done:done('Sent.')}));};
-   panel.replaceChildren(el('h3',{text:'Send Mordinal #'+count(n)}),
+   panel.replaceChildren(el('h3',{text:'Send '+NAME}),
     field('Monero address that receives it',to,'A main address or a subaddress. Check it carefully: a sent Mordinal cannot be taken back.'),problem,
     el('div',{class:'row'},el('button',{type:'button',class:'btn primary',text:'Continue','data-action':'next',onclick:next}),el('button',{type:'button',class:'btn',text:'Cancel',onclick:leave})));}
 
@@ -125,17 +129,17 @@ export async function mordinal(ctx,number,action){
     const key=`sell:${m.reg}:${m.seq}:${p}`,kept=draft.get(key),until=kept&&Number.isInteger(kept.until)&&kept.until>=height+LISTING_BLOCKS-120&&kept.until<=height+LISTING_BLOCKS?kept.until:height+LISTING_BLOCKS;
     draft.set(key,{until});
     const body={reg:m.reg,seq:m.seq,until,price:p,seller:m.owner},bodyBytes=encodeBody(OP.list,body,info.network),rctx={domain:info.domain,number:n},s=splitOf(p);
-    panel.replaceChildren(el('h3',{text:'Sell Mordinal #'+count(n)}),
+    panel.replaceChildren(el('h3',{text:'Sell '+NAME}),
      el('p',{class:'muted'},'For ',strong(formatXmr(p)+' XMR'),`: you receive ${formatXmr(s.seller)} XMR and ${formatXmr(s.fee)} XMR is the protocol fee. The sale ends at block ${count(until)}.`),
      signPanel(ctx,{bodyBytes,rctx,text:renderText(OP.list,body,bodyBytes,rctx),signer:m.owner,back:()=>sellForm(price.value),done:done('It is for sale.')}));};
-   panel.replaceChildren(el('h3',{text:'Sell Mordinal #'+count(n)}),
+   panel.replaceChildren(el('h3',{text:'Sell '+NAME}),
     field('Price in XMR',price,split),problem,
     el('p',{class:'muted',text:`The buyer pays you directly. 5% of the price goes to the protocol fee address. The sale ends at block ${count(height+LISTING_BLOCKS)}, about one day from now; you can stop it earlier.`}),
     el('div',{class:'row'},el('button',{type:'button',class:'btn primary',text:'Continue','data-action':'next',onclick:next}),el('button',{type:'button',class:'btn',text:'Cancel',onclick:leave})));}
 
   function stopForm(){
    const body={lot:t.id,seller:m.owner},bodyBytes=encodeBody(OP.cancel,body,info.network),rctx={domain:info.domain,number:n};
-   panel.replaceChildren(el('h3',{text:'Stop selling Mordinal #'+count(n)}),
+   panel.replaceChildren(el('h3',{text:'Stop selling '+NAME}),
     el('p',{class:'muted',text:'The Mordinal stays yours. Nobody can buy it after the record is in a block.'}),
     signPanel(ctx,{bodyBytes,rctx,text:renderText(OP.cancel,body,bodyBytes,rctx),signer:m.owner,back:leave,backLabel:'Cancel',done:done('The sale is stopped.')}));}
 

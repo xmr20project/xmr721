@@ -414,3 +414,9 @@ input[type=file]{font-size:13px;color:var(--ux-copy)}
 .mosaic .pic{width:100%;height:100%;aspect-ratio:auto;padding:0;border-radius:0;font-size:0;gap:0}
 .mosaic .pic img{object-fit:cover}
 .mosaic .pic .btn{display:none}
+/* Mordinal names: a card's name stays on one line; a Mordinal's page names its collection as a link beside its number. */
+.mcard .meta .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.head .item-of{margin:14px 0 0;display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px}
+.head .item-of .item-group{display:inline-flex;align-items:center;gap:8px;padding:7px 14px;border:1px solid var(--ux-line2);border-radius:999px;background:rgba(18,18,21,.9);color:var(--ux-strong);font:600 14px/1.2 var(--ux-sans);transition:border-color .2s,color .2s}
+.head .item-of .item-group:hover{border-color:var(--ux-accent);color:var(--ux-soft);text-decoration:none}
+.head .item-of .num{font:12px/1 var(--ux-mono);color:var(--ux-dim)}
