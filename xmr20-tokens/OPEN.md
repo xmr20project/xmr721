@@ -289,8 +289,8 @@ engine in wallets and the one the checkpoint repository pins.
    blocks, as on Bitcoin. A limit per person is not possible. A mint price paid to the
    creator would slow this and is not in this draft.
 4. **Who can mint in practice.** A mint record needs a transaction with the record in its
-   extra field. The `xmr721` wallet in this repository makes one (`xmr721 wallet mint`),
-   and deploys (`xmr721 wallet deploy`). Feather and Cake cannot write a record into a
+   extra field. The `xmr721` wallet in this repository makes one (`xmr20 mint`, the same as `xmr721 wallet mint`),
+   and deploys (`xmr20 deploy`). Feather and Cake cannot write a record into a
    transaction, so their users mint and deploy through a relay: a mint needs no signature,
    a deploy one signed message (section 12). A relay charges for both.
 5. **Not built yet.** The rules are in the token ledger's core, in the wallet engine built
@@ -329,7 +329,7 @@ engine in wallets and the one the checkpoint repository pins.
   records that exist today.
 - `reader/service.mjs`: the routes of section 10, from the records the reader's journal
   holds.
-- `cli/`: `xmr721 wallet deploy` and `xmr721 wallet mint`. The carrier tool
+- `cli/`: `xmr20 deploy` and `xmr20 mint` (`cli/xmr20.mjs`, the `xmr721` wallet's `deploy` and `mint` under their own name). The carrier tool
   (`reader/carrier`) makes the mint record: the token's asset id and the owner key of a
   Monero address, checked against values of the token ledger's core. On a local test chain
   a token deployed and minted by this wallet in real transactions is the same token, with

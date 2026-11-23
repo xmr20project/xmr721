@@ -261,6 +261,42 @@ node cli/xmr721.mjs wallet inscriptions
 
 `node cli/xmr721.mjs --help` lists every command and option.
 
+## Create and mint XMR20 tokens
+
+The `xmr20` command creates and mints open XMR20 tokens ([the rules](xmr20-tokens/OPEN.md)):
+tokens anyone can create on Monero and anyone can mint, from block 3,812,510 on. It is the
+same wallet as `xmr721` under another name, because a token is announced by an inscription
+on this ledger. It uses the same wallet folder and needs the same things (see
+[Inscribe](#inscribe)): your own Monero node and the transaction tool, built once.
+
+```
+npm install
+sh reader/carrier/build.sh                      # once
+node cli/xmr20.mjs create                       # prints the wallet's address; send it a little XMR
+node cli/xmr20.mjs balance
+node cli/xmr20.mjs deploy --tick PEPE --max 21000000 --lim 1000 --dry-run
+node cli/xmr20.mjs deploy --tick PEPE --max 21000000 --lim 1000
+node cli/xmr20.mjs mint <token id> 1000         # to this wallet's address, or --to <Monero address>
+node cli/xmr20.mjs status                       # where each transaction is now
+```
+
+- **Create.** `deploy` makes a token with a ticker and a total supply that can never be
+  raised. `--lim` is the most one mint may take. `--pre` keeps a share for the creator;
+  with `--pre` equal to `--max` the whole supply goes to the creator and nobody mints.
+  The command prints the token's id.
+- **Mint.** `mint` takes the token's id (or the 16 characters shown after its ticker) and
+  an amount. The last mint gets what is left. Minting needs no signature: anyone can mint
+  to any Monero address.
+- **Cost.** The wallet pays the Monero network fee of each transaction. There is no other
+  fee.
+- **Tickers repeat.** Anyone can create another token with the same ticker. The id tells
+  tokens apart, so check it before you mint.
+- **Afterwards.** Tokens at a Monero address are moved and traded by signing a message in
+  Feather, Cake Wallet or any Monero wallet, on [xmr20.org/move](https://xmr20.org/move/)
+  and [xmr20.org/market](https://xmr20.org/market/).
+
+`node cli/xmr20.mjs --help` lists every command and option.
+
 ## Try it
 
 Node.js 22 or newer.
