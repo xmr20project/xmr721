@@ -15,6 +15,7 @@ ledger setting from a later block.
 | Mint fee in the rules | None |
 | First mint block | 3,805,946 |
 | Opening block | 3,806,220: from this block on anyone makes collections and mints |
+| Open XMR20 tokens | 3,812,510: from this block on anyone creates and mints open XMR20 tokens ([rules](../xmr20-tokens/OPEN.md)); reader option `--xmr20-open-from 3812510` |
 | Who may mint | Until the opening block the listed minters: `42zfMRhM9aQAXb4uZKw5gzVN9uTf3bUrgAz2cY7jpvbn8ZE4RWsBsKUECgXNiFKsqK9nBDPThFzTafsZX3bZ7socRQZU1qX` (the XMR20 launchpad's inscriber) and `47hW3YWbqR5LrvJyfRSBAqArp8TcU1xnL29dn5xpEWJN9dmyohzaS4ug3e57yvSGmT3UWh47gfN4VW1soHSrXsmqD8haurE` (the Sweep and Burn issuer) |
 | XMR20 token inscribers | `42zfMRhM9aQAXb4uZKw5gzVN9uTf3bUrgAz2cY7jpvbn8ZE4RWsBsKUECgXNiFKsqK9nBDPThFzTafsZX3bZ7socRQZU1qX` |
 | Relay fee | None at present. Claims, moves, listings, reservations and purchases are always carried free |

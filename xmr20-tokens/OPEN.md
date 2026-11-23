@@ -1,8 +1,9 @@
-# Open XMR20 tokens (draft 1)
+# Open XMR20 tokens
 
-Status: draft. Not reviewed, no start block. Nothing here is in use. Values marked
-**draft** can still change. Section 11 lists what is still open, section 12 where the code
-and the test cases are.
+Status: in use on Monero mainnet from block 3,812,510 (the opening block). Experimental:
+the rules have had no independent outside review. The opening block and the rules of
+records already on the chain do not change. Section 11 lists what is still open, section 12
+where the code and the test cases are.
 
 Today an XMR20 token starts at a launchpad: the launchpad announces it
 ([FORMAT.md](FORMAT.md), [EARLIER.md](EARLIER.md)) and its supply reaches Monero through the
@@ -90,7 +91,7 @@ refuses a field it does not know), so nothing changes for it.
 ## 4. Which inscriptions are open tokens
 
 There is one **opening block** for open tokens, fixed for the ledger and the same for
-every reader (**draft**: not set). From that block on, going through the chain in order, an
+every reader: 3,812,510 on mainnet. From that block on, going through the chain in order, an
 inscription is an open deploy when all of this holds:
 
 1. it is a mint record (op 8) that decodes exactly as RULES.md says, and its signature
@@ -278,8 +279,8 @@ engine in wallets and the one the checkpoint repository pins.
 
 ## 11. Open points
 
-1. **The opening block.** Not set. It is set once, for good, after review and after every
-   published reader and wallet knows the rules.
+1. **The opening block** is set: 3,812,510 on mainnet. A reader is started with
+   `--xmr20-open-from 3812510`.
 2. **The signed texts of open tokens** (section 7) are a new form of the move and trade
    texts. Their exact wording, record by record, is to be written out with the engine's
    code and test vectors. For bridged tokens the rules still do not compare the ticker
