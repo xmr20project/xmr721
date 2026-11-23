@@ -34,6 +34,8 @@ export function createTool({bin,stateDir,node,network,start=1,lock=null,limit=1<
    c.on('error',e=>finish(cannot(e)));c.on('close',()=>finish(null));c.on('exit',()=>{if(late||over)finish(null);});}));
   queue=next.catch(()=>{});return next;};
  return {init:()=>run('init',null,60000),status:()=>run('status'),carry:record=>run('carry',record),split:n=>run('split',n),
+  // The mint record of an open XMR20 token for an address (xmr20-tokens/OPEN.md); the tool asks no node for it.
+  mintRecord:arg=>run('mint-record',arg,60000),
   // The process id of the tool while it runs, and a way to end it at once: it is killed outright, and with that its
   // hold on the wallet folder is over.
   get running(){return child?.pid??null;},stop(){if(child){end(child);release?.();}}};}

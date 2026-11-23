@@ -18,6 +18,10 @@
 //   POST /test/sign {as, text}          a message signature by one of the demo wallets (alice, bob, carol, dave, erin)
 //   POST /test/coins {ready}            how many coins the made-up relay wallet has
 //   GET  /test/wallets                  the demo wallets' addresses
+//   POST /test/burn {number, to, paid}  a made-up burning transfer of that Mordinal to the burn address, naming `to`
+//                                       (counts on a demo started with burnFrom); it pays its own fee to the Mordinal's fee
+//                                       address unless paid is false, and then waits for it
+//   POST /test/fee {number, amount}     a made-up payment of `amount` piconero to that Mordinal's fee address
 import {createHash} from 'node:crypto';
 import {deflateSync,crc32} from 'node:zlib';
 import {mkdtempSync,rmSync,readFileSync} from 'node:fs';
@@ -26,7 +30,7 @@ import {join} from 'node:path';
 import {decodeAddress} from '../../rules/lib/monero.mjs';
 import {outputSecret,signWithOutputKey} from '../../rules/lib/claim.mjs';
 import {provePayments} from '../../rules/lib/payment.mjs';
-import {wallet,makeTx,ownerEntry,makeInProof,DOMAIN} from '../../rules/tests/helpers.mjs';
+import {wallet,makeTx,makeBurn,ownerEntry,makeInProof,burnParty,feeParty,payFee,DOMAIN} from '../../rules/tests/helpers.mjs';
 import {openReader} from '../lib/reader.mjs';
 import {loadCollections} from '../../xmr20-nfts/lib/collection.mjs';
 import {createRelay} from '../lib/relay.mjs';
@@ -49,10 +53,14 @@ function picture(n,scale=12){
  const back=colour(0.14,0.35),front=colour(0.62),mark=colour(0.82,0.8);
  return png(size,(x,y)=>{const cx=Math.floor(x/scale),cy=Math.floor(y/scale),mx=cx<cells/2?cx:cells-1-cx,bit=h[1+cy*4+mx];return bit>150?front:bit>118&&(cx+cy)%2?mark:back;});}
 
+// An SVG document, as some Mordinals are: the service draws it as a PNG picture.
+const DRAWING='<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="28" fill="#f26822"/><path d="M15 42V21l17 15 17-15v21" fill="none" stroke="#fff" stroke-width="5" stroke-linejoin="round"/></svg>\n';
+
 // mints: the made-up ledger allows minting from its first block, and a collection and a few minted NFTs are added.
 // seed: false leaves the ledger as on its first day (no claims, listings or sales; the 2023 history only).
+// bodies: a Map of number -> inscribed bytes that replace the demo content of those numbers.
 // fees: {mint, collection} in atomic units: the relay charges them, to subaddresses of a made-up relay wallet.
-export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=[],network='mainnet',views=undefined,mints=false,fees=null,seed=true,log=()=>{}}={}){
+export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=[],network='mainnet',views=undefined,mints=false,fees=null,seed=true,bodies=null,burnFrom=null,log=()=>{}}={}){
  const names=['alice','bob','carol','dave','erin'],w=Object.fromEntries([...names,'fee','other'].map(n=>[n,wallet('demo '+n,network)])),by=new Map(Object.values(w).map(x=>[x.address,x]));
  const given=new Map();for(const g of give){const a=decodeAddress(g.address,network);for(const n of g.numbers)given.set(n,{spend:a.spend,view:a.view,sub:a.kind==='sub'});}
  // Who holds what at the start: the demo wallets hold the low numbers, everything else sits with a wallet nobody uses.
@@ -61,8 +69,9 @@ export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=
  for(let n=0;n<count;n++){
   const g=given.get(n),to=g||seeded.get(n)||w.other,t=makeTx('demo owner '+n,[{to,amount:1000+n}],{subaddressKey:Boolean(g?.sub)});
   // Most are pictures; some are text (shown as text: number 4 a short one, the others longer), some are neither (never
-  // shown), some have no known content; picture 11 and text 22 are marked sensitive.
-  const body=n%13===5?null:n%9===4?(n%2?Buffer.from([0,1,2,3,0xff,0xfe,n]):Buffer.from(n===4?'777\n':`Demo text inscription ${n}. A plain text, shown as text in the picture's place.`)):picture(n);
+  // shown), some have no known content; picture 11 and text 22 are marked sensitive; number 23 is an SVG document
+  // (drawn as a picture by the service).
+  const body=bodies?.has(n)?bodies.get(n):n===23?Buffer.from(DRAWING):n%13===5?null:n%9===4?(n%2?Buffer.from([0,1,2,3,0xff,0xfe,n]):Buffer.from(n===4?'777\n':`Demo text inscription ${n}. A plain text, shown as text in the picture's place.`)):picture(n);
   if(body)pictures.set(sha(body),{bytes:body,sensitive:n===11||n===22});
   owners.push({...ownerEntry(n,t),registrationHeight:2850000+n*7,ownerHeight:2850000+n*7,...(body?{bodySha256:sha(body),bodySize:body.length}:{})});}
  const transfers=[{result:'updated',mordinal:3,height:2990123,tx:sha('demo old transfer 3')},{result:'updated',mordinal:8,height:3001200,tx:sha('demo old transfer 8a')},{result:'updated',mordinal:8,height:3014477,tx:sha('demo old transfer 8b')}];
@@ -70,7 +79,7 @@ export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=
 
  const dir=mkdtempSync(join(tmpdir(),'mordinals-demo-')),start=100,story=14;
  const chain=fakeChain({start,time:Math.floor(Date.now()/1000)-story*120});
- const reader=openReader({dir:join(dir,'state'),chain,network,domain:DOMAIN,feeAddress:w.fee.address,owners,start,checkpointEvery:5,...(mints?{mintFrom:start+1}:{}),log});
+ const reader=openReader({dir:join(dir,'state'),chain,network,domain:DOMAIN,feeAddress:w.fee.address,owners,start,checkpointEvery:5,...(mints?{mintFrom:start+1}:{}),...(burnFrom!=null?{burnFrom}:{}),log});
  const relayWallet=wallet('demo relay',network),feeAddresses=new Map();
  const carrier=fakeCarrier(chain,{coins:40,subaddress:n=>{const a=relayWallet.sub(n).address;feeAddresses.set(a,n);return a;}});
  const relay=createRelay({dir:join(dir,'relay'),reader,chain,carrier,network,domain:DOMAIN,limits:{resendMs:60000,settleBlocks:3,holdBlocks:60},...(fees?{fees}:{}),log});
@@ -118,6 +127,11 @@ export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=
    return busy=busy.catch(()=>{}).then(async()=>{await step();for(let i=0;i<n;i++)chain.mine();await step();await step();return {height:reader.height};});}
   if(path==='/test/payment'){if(!Array.isArray(body.pay)||!body.pay.length||body.pay.length>8)throw Error('pay: a list of {to, amount}');
    const t=payment(body.pay);chain.publish({txid:t.txid,tx:t.tx});return {txid:t.txid,keys:t.keys};}
+  // A made-up burning transfer of a numbered demo Mordinal, naming the address that receives it (RULES.md section 10).
+  if(path==='/test/burn'){const n=Number(body.number),label='demo burn '+paid++ +' '+Date.now();
+   const t=makeBurn(label,{output:owners[n]?.ownerOutputIndex,to:String(body.to),...(body.paid===false?{}:{outs:[{to:burnParty,amount:1n},{to:feeParty(n,{network}),amount:10n**9n+30000000n},{to:wallet(label+' change',network),amount:10n**9n}]})});
+   chain.publish({txid:t.txid,tx:t.tx});return {txid:t.txid};}
+  if(path==='/test/fee'){const t=payFee('demo fee '+paid++ +' '+Date.now(),Number(body.number),BigInt(body.amount),{network});chain.publish({txid:t.txid,tx:t.tx});return {txid:t.txid};}
   if(path==='/test/payment/hold'){if(!Array.isArray(body.pay)||!body.pay.length||body.pay.length>3)throw Error('pay: a list of {to, amount}');
    const t=payment(body.pay);held.set(t.txid,t);return {txid:t.txid,keys:t.keys,fee:'30720000',chainHeight:chain.tip+ahead};}
   if(path==='/test/payment/publish'){const t=held.get(body.txid);if(!t)throw Error('This payment is not held.');const mode=failNext;failNext=null;

@@ -142,6 +142,9 @@ test('the gallery pages through the list, filters it, and shows pictures only wh
  assert.match(await text('[data-number="22"] .mtext'),/^Demo text inscription 22\. A plain text/);
  assert.ok(await page.locator('[data-number="4"] .pic .mtext').evaluate(e=>{const b=e.parentElement.getBoundingClientRect(),r=e.getBoundingClientRect();return r.width>0&&r.left>=b.left&&r.right<=b.right&&r.top>=b.top&&r.bottom<=b.bottom&&parseFloat(getComputedStyle(e).fontSize)>20;}),'the short text fills the box without spilling out');
  assert.equal(await text('[data-number="5"] .pic'),'No picture');
+ // An SVG document shows as the picture the service drew from it.
+ await page.locator('[data-number="23"]').scrollIntoViewIfNeeded();await page.locator('[data-number="23"] .pic[data-state=shown] img').waitFor();
+ assert.equal(await page.locator('[data-number="23"] .pic img').evaluate(i=>i.complete&&i.naturalWidth),1024);
  assert.equal(await text('[data-number="3"] .price'),'2 XMR');
  assert.equal(await text('[data-number="3"] [data-claimed]'),'Claimed');assert.equal(await text('[data-number="7"] [data-claimed]'),'Unclaimed');
  // The sensitive picture stays hidden until asked for.
@@ -406,7 +409,7 @@ test('the market shows the newest history beside the listings, and the GENESIS c
  await go('/xmr721');assert.equal(await count('[data-section=steps] .guide > li'),3);
  // Collections: Mordinals as a whole, GENESIS, and the collections of the index (in the demo, real names on made-up numbers).
  await go('/collections');assert.deepEqual((await page.locator('.ccard .n').allTextContents()).slice(0,2),['Mordinals','GENESIS']);
- assert.equal(await count('.ccard[data-kind=group]'),10);assert.match(await text('.ccard[data-kind=group] .n'),/The First 1k NFT collection/);
+ assert.equal(await count('.ccard[data-kind=group]'),10);assert.match(await text('.ccard[data-kind=group] .n'),/Monero Punks/);
  await page.waitForFunction(()=>document.querySelectorAll('.ccard[data-kind=held] .mosaic img').length===3);
  const group=await page.locator('.ccard[data-kind=group]').nth(4).getAttribute('href');await page.locator(`.ccard[href="${group}"]`).click();await shown(group.slice(1));
  assert.match(await text('h1'),/Retarded Rat/);assert.equal(await count('[data-section=group-items] .mcard'),24);

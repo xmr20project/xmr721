@@ -7,10 +7,17 @@
 //        [--start-hash <hash>] [--network mainnet|stagenet] [--port 18951] [--every <ms>] [--transfers <transfers.jsonl>] [--block-times <file>] [--groups <collections.json>]
 //        [--mint-from <height> [--minters <address>,… [--open-from <height>]]]   the ledger's first mint block, and who may mint (everyone when no list is
 //                                                   given; with --open-from everyone from that block on); part of the ledger's setup
+//        [--burn-from <height> [--burn-dead <index>,… (fifteen)] [--burn-fee-wallet <main address>:<secret view key>]]   from that block a
+//                                                   Mordinal is claimed by burning it (RULES.md section 10) and 720 blocks later claim records stop;
+//                                                   the dead outputs and the fee wallet are mainnet's (the project's), and other ones can be named
+//                                                   only on the offline test chain or another network; part of the ledger's setup
+//        (a new or changed --burn-from of an existing state folder has to lie at least 10 blocks above the newest block of the folder and of the node)
 //        [--carrier-bin <path> --carrier-state <dir> --carrier-network offline-fakechain|stagenet|mainnet [--carrier-start <height>] [--relay-limits name=n,…]]   relay on (mainnet also needs MORDINALS_MAINNET=1)
 //        [--mint-fee <atomic units> --collection-fee <atomic units>]   what this relay charges to carry a mint or a collection record
+//        [--token-mint-fee <atomic units>]   what this relay charges to carry a mint of an open XMR20 token (with --xmr20-open-from; without it the relay carries none)
 //        [--content-dir <dir> | --content-archive [url]] [--collections <dir>] [--views <dir>] [--allow-origin <origin>] [--allow-extension <id>] [--behind-proxy] [--test-hooks]
 //        [--xmr20-inscribers <address>,…]   list the XMR20 tokens these addresses inscribed (xmr20-tokens/FORMAT.md)
+//        [--xmr20-open-from <block>]   list the open XMR20 tokens deployed from this block on (xmr20-tokens/OPEN.md, draft)
 //        [--xmr20-earlier <dir> | --no-xmr20-earlier]   the earlier XMR20 deploy inscriptions (xmr20-tokens/EARLIER.md); the list this repository ships is served unless another is named
 //        [--no-xmr20-follow]   do not read the earlier formats on in the blocks this reader follows (lib/earlier.mjs): serve the shipped list and the saved collections as they are
 //
@@ -20,14 +27,18 @@ import {createServer} from 'node:http';
 import {existsSync,readFileSync,statSync} from 'node:fs';
 import {join,normalize,extname,sep} from 'node:path';
 import {RULES,NO_COLLECTION,heldUntil,canonical,decodeRecord} from '../rules/lib/records.mjs';
+import {BURN,CLAIM_PREFIX,isMainnetDead} from '../rules/lib/burn.mjs';
+import {feeWallet,isProjectFeeWallet} from '../rules/lib/burn-fee.mjs';
 import {createChain} from './lib/chain.mjs';
 import {openReader} from './lib/reader.mjs';
 import {createRelay,createCarrier} from './lib/relay.mjs';
 import {createContent,dirContent,archiveContent,pictureType} from './lib/content.mjs';
+import {createDrawer} from './lib/draw.mjs';
 import {served,readOwners} from './lib/owners.mjs';
 import {loadCollections} from '../xmr20-nfts/lib/collection.mjs';
 import {projectDeploys,TYPE_JSON} from '../xmr20-tokens/lib/token.mjs';
 import {loadEarlier,canonical as earlierText} from '../xmr20-tokens/lib/earlier.mjs';
+import {openDeployIn,projectOpen,prepareOpenDeploy,finishOpenDeploy,ID_SHOWN} from '../xmr20-tokens/lib/open.mjs';
 import {openFollower} from './lib/follow.mjs';
 import {picker,earlierTokens,collectionOwners,NAME as EARLIER_NAME} from './lib/earlier.mjs';
 
@@ -39,8 +50,9 @@ const fail=(message,status=400)=>{const e=Error(message);e.status=status;return 
 const isJson=bytes=>{try{JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));return true;}catch{return false;}};
 const int=(v,fallback,min,max)=>{const n=v==null||v===''?NaN:Number(v);return Number.isInteger(n)?Math.min(max,Math.max(min,n)):fallback;};
 
-export function createService({reader,relay=null,owners,transfers=[],blockTimes=null,groups=null,content=null,collections=new Map(),views=null,origins=[],extensions=null,behindProxy=false,testHooks=false,extra=null,xmr20=null,earlier=null,follower=null,followLimit=25,followBudget=1000,chunk=4000,rate={perSecond:2,burst:60},log=()=>{}}){
- const m=reader.meta,list=owners.map(served),numbers=owners.map(o=>o.number),entry=new Map(owners.map(o=>[o.number,o])),byReg=new Map(owners.map(o=>[o.registrationTx,o]));
+export function createService({reader,relay=null,owners,transfers=[],blockTimes=null,groups=null,content=null,collections=new Map(),views=null,origins=[],extensions=null,behindProxy=false,testHooks=false,extra=null,xmr20=null,xmr20Open=null,earlier=null,follower=null,followLimit=25,followBudget=1000,chunk=4000,rate={perSecond:2,burst:60},log=()=>{}}){
+ // On a ledger that claims by burning the list also gives each owner output's global index, so the hash over them can be recomputed.
+ const m=reader.meta,list=owners.map(m0=>reader.meta.burnFrom!=null?{...served(m0),ownerOutputIndex:m0.ownerOutputIndex}:served(m0)),numbers=owners.map(o=>o.number),entry=new Map(owners.map(o=>[o.number,o])),byReg=new Map(owners.map(o=>[o.registrationTx,o]));
  // When the blocks of the original history were made: exact for the blocks in the list, and between two listed blocks
  // from the blocks on either side. Outside the list there is no date.
  const known=blockTimes?Object.entries(blockTimes).map(([h,t])=>[Number(h),Number(t)]).filter(([h,t])=>Number.isInteger(h)&&Number.isFinite(t)).sort((a,b)=>a[0]-b[0]):[];
@@ -53,10 +65,22 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
  const groupList=[],groupOf=new Map(),labelled=new Set();
  if(groups){const open=list=>list.flatMap(x=>Array.isArray(x)?Array.from({length:x[1]-x[0]+1},(_,i)=>x[0]+i):[x]).filter(n=>entry.has(n));
   for(const g of groups.groups||[]){if(!/^[0-9a-f]{24}$/.test(g.id)||typeof g.name!=='string')continue;const members=open(g.numbers||[]);if(members.length<2)continue;
-   groupList.push({id:g.id,name:g.display||g.name,fullName:g.name,basis:g.basis,members});for(const n of members)if(!groupOf.has(n))groupOf.set(n,g.id);}
+   groupList.push({id:g.id,name:g.display||g.name,fullName:g.name,basis:g.basis,named:g.named===true,members});for(const n of members)if(!groupOf.has(n))groupOf.set(n,g.id);}
   const first=new Map((groups.featured||[]).map((id,i)=>[id,i]));groupList.sort((a,b)=>(first.get(a.id)??1e9)-(first.get(b.id)??1e9)||b.members.length-a.members.length||a.name.localeCompare(b.name));
   for(const n of open(groups.sensitiveByLabel||[]))labelled.add(n);}
  const groupById=new Map(groupList.map(g=>[g.id,g]));
+ // A Mordinal's name: the name of its collection when that is a real one (`named`), with "#<edition>" where the creator
+ // numbered it (its list or its own title: Mordinal 2 is Monero Punks #0). An edition counts only for a member of that
+ // same collection. Null outside a named collection; pages then say "Mordinal #n".
+ const editionOf=new Map();
+ if(groups)for(const g of groups.groups||[])if(groupById.get(g.id)&&Array.isArray(g.editions))for(const x of g.editions)
+  if(Array.isArray(x)&&groupOf.get(x[0])===g.id&&Number.isSafeInteger(x[1])&&x[1]>=0&&!editionOf.has(x[0]))editionOf.set(x[0],x[1]);
+ // Where the creator named each member ("Sir Fulton Brown is a distinguished citizen of The Ape Society."), its own title
+ // names it instead: up to 80 printable characters, for a member of that collection only.
+ const titleOf=new Map();
+ if(groups)for(const g of groups.groups||[])if(groupById.get(g.id)&&Array.isArray(g.titles))for(const x of g.titles)
+  if(Array.isArray(x)&&groupOf.get(x[0])===g.id&&typeof x[1]==='string'&&/^[^\x00-\x1f\x7f]{1,80}$/.test(x[1])&&x[1].trim()===x[1]&&!titleOf.has(x[0]))titleOf.set(x[0],x[1]);
+ const nameOf=n=>{const g=groupById.get(groupOf.get(n));if(!g?.named)return null;const t=titleOf.get(n);if(t)return t;const e=editionOf.get(n);return e==null?g.name:`${g.name} #${e}`;};
  // The original Mordinals history, oldest first: every registration and every transfer under the 2023 rules.
  const legacy=[...owners.map(o=>({kind:'inscribed',number:o.number,height:o.registrationHeight??null,time:timeAt(o.registrationHeight),txid:o.registrationTx,size:o.bodySize??null})),
   ...[...old].flatMap(([number,list])=>list.map(t=>({...t,number})))].sort((a,b)=>(a.height??0)-(b.height??0)||a.number-b.number);
@@ -65,9 +89,15 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
  const once=(key,make)=>{const at=reader.height+':'+reader.journal.length+':'+reader.hash;if(at!==memoAt){memoAt=at;memo=new Map();}if(!memo.has(key))memo.set(key,make());return memo.get(key);};
  const L=()=>reader.ledger;
  const lotView=id=>{const l=L().lot(id),r=l.reservations.at(-1)||null;
-  return {id:l.id,number:l.number,nft:l.number==null?l.reg:null,reg:l.reg,seller:l.seller,price:l.price.toString(),until:l.until,status:l.status,body:reader.body(l.id),
+  return {id:l.id,number:l.number,name:l.number==null?null:nameOf(l.number),nft:l.number==null?l.reg:null,reg:l.reg,seller:l.seller,price:l.price.toString(),until:l.until,status:l.status,body:reader.body(l.id),
    reservation:r?{record:r.record,buyer:r.buyer,height:r.height,payBy:r.payBy,rate:r.rate}:null,buyer:l.sale?.buyer||null};};
- const state=n=>{const x=L().mordinal(n);return {number:x.number,reg:x.reg,claimed:x.claimed,owner:x.owner,...(x.burned?{burned:true}:{}),seq:x.seq,lot:x.lot?lotView(x.lot):null};};
+ // A Mordinal burned by a burn claim that waits for its fee is not claimed; `waiting` says so.
+ const state=n=>{const x=L().mordinal(n);return {number:x.number,name:nameOf(x.number),reg:x.reg,claimed:x.claimed,owner:x.owner,...(x.burned?{burned:true}:{}),...(x.waiting?{waiting:true}:{}),seq:x.seq,lot:x.lot?lotView(x.lot):null};};
+ // A burn claim as the routes show it: the Mordinal, the address in its text, its state ('claimed', 'waiting': burned and
+ // waiting for its fee, 'lost': claimed by a record first) and its fee: due (the burn's own fee), paid, missing, and the
+ // Mordinal's fee address.
+ const burnState=id=>{const b=L().burnClaim(id);if(!b)return null;
+  return {number:b.number,to:b.to,state:b.state,...(b.claimedAt!=null?{claimedAt:b.claimedAt}:{}),fee:{due:b.due,paid:b.paid,missing:b.missing,address:L().burnFee(b.number).address}};};
 // A minted NFT. `record` is its mint record, so a page can check every field against the NFT's id itself.
  const minted=id=>{const x=L().nft(id);if(!x)return null;const c=x.minted.collection===NO_COLLECTION?null:L().collection(x.minted.collection),e=reader.entryById(id);
   return {id,...x.minted,collectionName:c?.name??null,owner:x.owner,burned:Boolean(x.burned),seq:x.seq,height:e?.height??null,txid:e?.txid??null,lot:x.lot?lotView(x.lot):null};};
@@ -106,15 +136,34 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
    return {id:e.nft,inscription:firstMinted+i,creator:x.minted.creator,collection:x.minted.collection,type:x.minted.type,burned:Boolean(x.burned),burnedBy:x.burned?x.history.find(h=>h.what==='burn')?.from??null:null,
     owner:x.owner,height:e.height,time:e.time,txid:e.txid,content:()=>contentOf(e.nft)};}),xmr20.inscribers),list=all.filter(t=>t.listed).map(({listed,...t})=>t);
   return {all,list,by:new Map(list.flatMap(t=>[[t.id,t],[String(t.number),t],...(t.mint?[[t.mint,t]]:[])]))};});
+ // Open XMR20 tokens (xmr20-tokens/OPEN.md): the open deploys among every MD1 record carried from the opening block on,
+ // also the records the ledger passed over (a deploy inscribed before the opening block and carried again). The journal
+ // holds them all in chain order. This is the list of announcements: what was minted and who holds it is the token
+ // ledger's to say, and so is the one deploy this list cannot refuse (its asset already had supply there).
+ // Whether a journal entry's record is an open deploy depends on its bytes alone, so it is worked out once per entry.
+ const deployOf=new WeakMap(),openDeployAt=e=>{if(!deployOf.has(e))deployOf.set(e,openDeployIn(Buffer.from(e.record,'hex'),{domain:m.domain,network:m.network}));return deployOf.get(e);};
+ if(xmr20Open&&!(Number.isInteger(xmr20Open.from)&&xmr20Open.from>m.start))throw Error('The opening block of open XMR20 tokens has to be above the start block of this reader.');
+ const openTokens=()=>once('xmr20open',()=>{const records=[];
+   for(const e of reader.journal){if(!e.record||e.height<xmr20Open.from)continue;const d=openDeployAt(e);
+    if(d)records.push({id:d.id,decoded:d.decoded,height:e.height,txid:e.txid,record:e.record});}
+   const list=projectOpen(records).map((t,i)=>({number:i+1,...t})),record=new Map(records.map(r=>[r.id+':'+r.txid,r.record]));
+   return {list,record,by:new Map(list.flatMap(t=>[[t.id,t],[t.id.slice(0,ID_SHOWN),t]]))};});
+ // The relay carries mints of the tokens this service lists (lib/relay.mjs).
+ if(relay&&xmr20Open)relay.useTokens(key=>openTokens().by.get(key)??null);
+ const opened=()=>{if(!xmr20Open)throw fail('This reader lists no open XMR20 tokens.',404);if(reader.height+1<xmr20Open.from)throw fail(`Open XMR20 tokens start at block ${xmr20Open.from}; the ledger is at block ${reader.height}.`,409);};
  const open=()=>once('open',()=>reader.lots.map(lotView).filter(l=>l.status==='open'));
  const claimed=()=>once('claimed',()=>numbers.filter(n=>L().mordinal(n).claimed));
- const card=n=>{const o=entry.get(n),s=state(n);return {number:n,reg:s.reg,claimed:s.claimed,owner:s.owner,...(s.burned?{burned:true}:{}),bodySize:o.bodySize??null,group:groupOf.get(n)??null,
+ const card=n=>{const o=entry.get(n),s=state(n);return {number:n,name:s.name,reg:s.reg,claimed:s.claimed,owner:s.owner,...(s.burned?{burned:true}:{}),...(s.waiting?{waiting:true}:{}),bodySize:o.bodySize??null,group:groupOf.get(n)??null,
   lot:s.lot?{id:s.lot.id,price:s.lot.price,until:s.lot.until,seller:s.lot.seller,reserved:Boolean(s.lot.reservation&&heldUntil(s.lot.reservation)>=reader.height)}:null};};
  const which=text=>{const t=decodeURIComponent(text);const o=/^\d{1,9}$/.test(t)?entry.get(Number(t)):/^[0-9a-f]{64}$/.test(t)?byReg.get(t):null;if(!o)throw fail('This is not a Mordinal on the owner list.',404);return o;};
  const stats=()=>once('stats',()=>{const by={};let volume=0n,fees=0n;for(const e of reader.events){by[e.kind]=(by[e.kind]||0)+1;if(e.kind==='sale'){volume+=BigInt(e.price);fees+=BigInt(e.fee);}}
   return {height:reader.height,mordinals:list.length,claimed:claimed().length,forSale:open().filter(l=>l.until>=reader.height).length,sales:by.sale||0,volume:volume.toString(),fees:fees.toString(),
-   records:reader.journal.filter(e=>e.ok).length,refused:reader.journal.filter(e=>!e.ok).length,byKind:by,checkpoint:reader.checkpoints.at(-1)||null};});
+   records:reader.journal.filter(e=>e.ok&&!feeOnly(e)).length,refused:reader.journal.filter(e=>!e.ok).length,byKind:by,
+   // On a ledger that claims by burning: burns waiting for their fee, and transactions that paid a fee address.
+   ...(m.burnFrom!=null?{burns:{waiting:L().toJSON().waiting?.length??0,feePayments:reader.journal.filter(e=>e.fee).length}}:{}),checkpoint:reader.checkpoints.at(-1)||null};});
  const waitingFor=q=>relay?relay.waitingFor(q):[];
+ // A journal entry that is a fee payment and nothing else (RULES.md section 10).
+ const feeOnly=e=>Boolean(e.fee)&&e.record===undefined&&!e.burn;
  // One sync and relay pass. The loop below runs it on a timer; tests call it directly.
  let stepping=null;
  const step=()=>{if(!stepping)stepping=(async()=>{const r=await reader.sync();const t=relay?await relay.tick():null;const f=await earlierStep();return {...r,relay:t,...(f?{earlier:f}:{})};})().finally(()=>{stepping=null;});return stepping;};
@@ -122,7 +171,13 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
  async function route(method,url,body,req){
   const path=url.pathname,q=url.searchParams,height=reader.height;
   if(method==='GET'){
-   if(path==='/info')return {network:m.network,domain:m.domain,feeAddress:m.feeAddress,height,count:list.length,chunk,test:Boolean(testHooks),owners:m.owners,start:m.start,startHash:m.startHash,mintFrom:m.mintFrom??null,...(m.minters?{minters:m.minters.split(',')}:{}),...(m.openFrom!=null?{openFrom:m.openFrom}:{}),...(xmr20||E?{xmr20:{...(xmr20?{inscribers:xmr20.inscribers}:{}),...(E?{earlier:earlierInfo()}:{})}}:{}),
+   if(path==='/info')return {network:m.network,domain:m.domain,feeAddress:m.feeAddress,height,count:list.length,chunk,test:Boolean(testHooks),owners:m.owners,start:m.start,startHash:m.startHash,mintFrom:m.mintFrom??null,...(m.minters?{minters:m.minters.split(',')}:{}),...(m.openFrom!=null?{openFrom:m.openFrom}:{}),
+    // Claiming by burning: the first block, the first block at which claim records no longer count, where the burned
+    // Mordinal goes, the text that names the new owner, the dead outputs of the ring.
+    // The fee: the fee wallet, its public secret view key, the account of the fee addresses and what is added to a
+    // Mordinal's number to give its index there (1: index 0 takes the wallet's own change).
+    ...(m.burnFrom!=null?{burnFrom:m.burnFrom,burn:{recordsEnd:L().burn.recordsEnd,address:L().burn.address,viewKey:BURN.viewSecret,text:CLAIM_PREFIX+'<address>',dead:L().burn.dead,ownerOutputs:m.ownerOutputs,
+     fee:L().burn.fee}}:{}),...(xmr20||E||xmr20Open?{xmr20:{...(xmr20?{inscribers:xmr20.inscribers}:{}),...(E?{earlier:earlierInfo()}:{}),...(xmr20Open?{open:{from:xmr20Open.from}}:{})}}:{}),
     relay:relay?{networkFee:'relay',perAddress:relay.limits.perSigner,fees:relay.fees,payBlocks:relay.limits.payBlocks}:null,rules:{feeBps:RULES.feeBps,marketFeeCapBps:RULES.marketFeeCapBps,minPrice:RULES.minPrice.toString(),maxReserve:RULES.maxReserve,settle:RULES.settle}};
    if(path==='/owners'){const from=int(q.get('from'),0,0,list.length),limit=int(q.get('limit'),chunk,1,chunk);return {from,total:list.length,entries:list.slice(from,from+limit)};}
    if(path==='/claimed')return {height,numbers:claimed()};
@@ -133,9 +188,23 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
     return {height,mordinals:L().owned(a).map(state),nfts:L().nftsOf(a).map(minted),buying:open().filter(l=>l.reservation?.buyer===a),waiting:waitingFor({signer:a})};}
    if(path==='/listings')return {height,listings:open().filter(l=>l.until>=height)};
    if(path.startsWith('/lot/')){const id=path.slice(5);if(!/^[0-9a-f]{64}$/.test(id)||!L().lot(id))throw fail('This listing does not exist.',404);return {height,lot:lotView(id),waiting:waitingFor({number:L().lot(id).number??L().lot(id).reg})};}
-   if(path==='/records'){const all=reader.journal.filter(e=>e.ok),from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),1000,1,5000);
+   if(path==='/records'){const all=reader.journal.filter(e=>e.ok&&e.record!==undefined),from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),1000,1,5000);
     return {height,total:all.length,from,records:all.slice(from,from+limit).map(e=>e.record)};}
+   // The valid burn claims and the fee payments, in ledger order. /records holds MD1 records only; `before` says how many
+   // of those come before each entry here (a record in the same transaction as a fee payment comes before it), so a
+   // client that replays the ledger applies records[0..before), then the burn claim (applyBurnClaim), then the fee
+   // payments (applyBurnFees). `state` is where a burn claim stands now: 'claimed', 'waiting' for its fee, or 'lost'.
+   if(m.burnFrom!=null&&path==='/burns'){
+    const all=once('burns',()=>{const out=[];let before=0;for(const e of reader.journal){const burn=e.ok&&e.burn;if(e.ok&&e.record!==undefined)before++;
+     if(burn||e.fee)out.push({height:e.height,pos:e.pos,txid:e.txid,...(burn?{id:e.id}:{}),before,...(burn?{burn:e.burn,state:L().burnClaim(e.id).state}:{}),...(e.fee?{fee:e.fee}:{})});}return out;});
+    // (An entry with a fee payment holds the outputs of its transaction, a few kilobytes: pages of at most 500.)
+    const from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),200,1,500);return {height,total:all.length,from,burns:all.slice(from,from+limit)};}
    if(path.startsWith('/status/')){const id=path.slice(8);if(!/^[0-9a-f]{64}$/.test(id))throw fail('A record code is 64 hexadecimal characters.');
+    // A burn claim is done once it claimed its Mordinal; before that it waits for its fee, or it was passed over.
+    {const e=reader.entryById(id),b=e?.burn?burnState(id):null;
+     if(b&&b.state!=='claimed')return {height,id,state:b.state==='waiting'?'waiting':'refused',txid:e.txid,confirmations:0,
+      error:b.state==='lost'?'The Mordinal was claimed by a record before the fee of this burn was paid.':null,fee:b.fee};
+     if(b)return {height,id,state:'done',txid:e.txid,confirmations:height-b.claimedAt+1,error:null};}
     if(relay)return {height,...relay.status(id)};const e=reader.entryById(id);
     return e?{height,id,state:'done',txid:e.txid,confirmations:height-e.height+1,error:null}:{height,id,state:'unknown',txid:null,confirmations:0,error:null};}
    // A transaction as the node gives it, for a wallet that makes payment proofs. In the pool: height null.
@@ -145,7 +214,11 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
    // What became of the record a transaction carried: its entry in this reader's journal, accepted or refused.
    if(path.startsWith('/entry/')){const id=path.slice(7);if(!/^[0-9a-f]{64}$/.test(id))throw fail('A transaction ID is 64 hexadecimal characters.');
     const e=reader.entryByTx(id);if(!e)throw fail('This reader has read no record in this transaction.',404);
-    return {height,entry:{txid:e.txid,height:e.height,pos:e.pos,id:e.id??null,op:e.op??null,ok:e.ok,...(e.ok?{}:{error:e.error})},confirmations:height-e.height+1};}
+    // A claim by burning is a transaction of its own kind: its entry says so, which Mordinal goes to whom, and whether it
+    // waits for its fee. A transaction that pays fee addresses lists what each payment counted for.
+    const burned=e.burn&&e.ok?burnState(e.id):null;
+    return {height,entry:{txid:e.txid,height:e.height,pos:e.pos,id:e.id??null,op:e.op??null,...(e.burn?{kind:'burn claim',...(burned||{})}:feeOnly(e)?{kind:'fee payment'}:{}),ok:e.ok,...(e.ok?{}:{error:e.error}),
+     ...(e.fee?{fees:reader.feesOf(e.txid)}:{})},confirmations:height-e.height+1};}
    if(path==='/pending')return {height,jobs:relay?relay.pending():[],pool:await poolNow()};
    if(path==='/stats')return stats();
    if(path==='/activity'||path==='/sales'){
@@ -154,12 +227,12 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
     const all=reader.events,before=int(q.get('before'),all.length,0,all.length),out=[];let at=before;
     while(at>0&&out.length<limit){const e=all[--at];
      if(kind&&e.kind!==kind)continue;if(number!=null&&e.number!==number)continue;
-     if(address&&![e.to,e.from,e.seller,e.buyer].includes(address))continue;out.push({at,...e,confirmations:height-e.height+1});}
+     if(address&&![e.to,e.from,e.seller,e.buyer].includes(address))continue;out.push({at,...e,...(Number.isInteger(e.number)?{name:nameOf(e.number)}:{}),confirmations:height-e.height+1});}
     return {height,total:all.length,next:at>0?at:null,events:out};}
    // The original history (inscriptions and transfers under the 2023 rules), newest first, by pages.
    if(path==='/history'){const kind=q.get('kind');if(kind&&kind!=='inscribed'&&kind!=='transfer')throw fail('Unknown kind.');
     const limit=int(q.get('limit'),50,1,200),before=int(q.get('before'),legacy.length,0,legacy.length),out=[];let at=before;
-    while(at>0&&out.length<limit){const e=legacy[--at];if(kind&&e.kind!==kind)continue;out.push({at,...e});}
+    while(at>0&&out.length<limit){const e=legacy[--at];if(kind&&e.kind!==kind)continue;out.push({at,...e,name:nameOf(e.number)});}
     return {height,total:legacy.length,inscriptions:owners.length,transfers:legacy.length-owners.length,next:at>0&&(kind?legacy.slice(0,at).some(e=>e.kind===kind):true)?at:null,events:out};}
    // Collections: each with its figures and a few members to show, and one collection's members by pages.
    if(path==='/groups')return once('groups',()=>{const listed=new Map();for(const l of open())if(l.until>=height&&l.number!=null)listed.set(l.number,l);const done=new Set(claimed());
@@ -177,12 +250,24 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
      :filter==='listed'?once('listed',()=>open().filter(l=>l.until>=height&&l.number!=null).map(l=>l.number).sort((a,b)=>a-b)):filter==='all'?numbers:null;
     if(!pick)throw fail('Unknown filter.');const from=int(q.get('from'),0,0,pick.length),limit=int(q.get('limit'),60,1,200);
     return {height,filter,from,total:pick.length,items:pick.slice(from,from+limit).map(card)};}
+   // Names of many Mordinals at once: by number (a wallet's list), or by registration transaction (the archive's pages
+   // know a Mordinal by its transaction). Numbers or transactions that are not on the owner list are left out.
+   if(path==='/names'){const nums=q.get('numbers'),txs=q.get('tx');if((nums===null)===(txs===null))throw fail('Ask by numbers or by tx.');
+    const list=(nums??txs).split(',').filter(Boolean),most=nums!==null?200:100;if(!list.length||list.length>most)throw fail(`Ask for 1 to ${most}.`);
+    const one=n=>{const gid=groupOf.get(n);return {name:nameOf(n),group:gid?{id:gid,name:groupById.get(gid).name}:null};},names={};
+    if(nums!==null)for(const x of list){if(!/^\d{1,9}$/.test(x))throw fail('Not a Mordinal number.');const n=Number(x);if(entry.has(n))names[n]=one(n);}
+    else for(const x of list){if(!/^[0-9a-f]{64}$/.test(x))throw fail('Not a transaction id.');const o=byReg.get(x);if(o)names[x]={number:o.number,...one(o.number)};}
+    return {height,names};}
    if(path.startsWith('/mordinal/')){const o=which(path.slice(10)),s=state(o.number);
     // The whole public story of one Mordinal: inscribed, moved by spending (2023), then claimed and moved by record.
     const history=[{kind:'inscribed',height:o.registrationHeight??null,time:timeAt(o.registrationHeight),txid:o.registrationTx},...(old.get(o.number)||[]),
      ...reader.events.filter(e=>e.number===o.number).map(e=>({...e,confirmations:height-e.height+1}))];
     const gid=groupOf.get(o.number);
-    return {height,mordinal:{...s,group:gid?{id:gid,name:groupById.get(gid).name}:null,registrationHeight:o.registrationHeight??null,ownerTx:o.ownerTx,ownerHeight:o.ownerHeight??null,bodySize:o.bodySize??null,bodySha256:o.bodySha256||null},
+    return {height,mordinal:{...s,edition:editionOf.get(o.number)??null,group:gid?{id:gid,name:groupById.get(gid).name}:null,registrationHeight:o.registrationHeight??null,ownerTx:o.ownerTx,ownerHeight:o.ownerHeight??null,bodySize:o.bodySize??null,bodySha256:o.bodySha256||null,
+      // The owner output's global index: what the ring of a burning transfer names; the Mordinal's fee address and what
+      // was paid to it; a burn claim that waits for its fee.
+      ...(m.burnFrom!=null?(f=>({ownerOutput:Number.isSafeInteger(o.ownerOutputIndex)?o.ownerOutputIndex:null,burnFee:{address:f.address,paid:f.paid},
+       ...(f.waiting?{waiting:{txid:f.waiting.tx,id:f.waiting.id,to:f.waiting.to,height:f.waiting.height,due:f.waiting.due,paid:f.waiting.paid,missing:f.waiting.missing}}:{})}))(L().burnFee(o.number)):{})},
      history,waiting:waitingFor({number:o.number})};}
    if(path==='/log'){const all=reader.journal,from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),200,1,500);
     return {height,hash:reader.hash,from,total:all.length,entries:all.slice(from,from+limit)};}
@@ -206,6 +291,15 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
     return {height,total:all.length,from,range:{from:at.from,to:at.to},deployers:E.deployers,...(at.following?{following:{complete:at.complete}}:{}),items:all.slice().reverse().slice(from,from+limit)};}
    if(E&&path.startsWith('/xmr20/earlier/')){const v=E.view,x=v.by.get(decodeURIComponent(path.slice(15)));if(!x)throw fail('This is not an earlier XMR20 token.',404);
     const d=v.entry.get(x.txid);return {height,token:x,record:d.record,signature:d.signature,text:earlierText({record:d.record,signature:d.signature})};}
+   // The open XMR20 tokens, newest first, and one of them (by its id or the 16 characters signed texts show) with its
+   // deploy record and text.
+   if(xmr20Open&&path==='/xmr20/open'){const all=openTokens().list,from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),60,1,200);
+    return {height,total:all.length,from,openFrom:xmr20Open.from,items:all.slice().reverse().slice(from,from+limit).map(t=>({...t,confirmations:height-t.height+1}))};}
+   if(xmr20Open&&path.startsWith('/xmr20/open/')){const o=openTokens(),t=o.by.get(decodeURIComponent(path.slice(12)));if(!t)throw fail('This is not an open XMR20 token on this ledger.',404);
+    const record=o.record.get(t.id+':'+t.txid);return {height,token:{...t,confirmations:height-t.height+1},record,text:Buffer.from(decodeRecord(Buffer.from(record,'hex'),m.network).body.content).toString('utf8')};}
+   // What became of a mint the relay was asked to carry (POST /xmr20/open/mints).
+   if(xmr20Open&&relay&&path.startsWith('/xmr20/open-mint/')){const id=path.slice(17);if(!/^[0-9a-f]{64}$/.test(id))throw fail('A mint is named by its id.',400);
+    const s=relay.status(id);if(s.op!=='token-mint')throw fail('The relay knows no such mint.',404);return {height,...s};}
    if(xmr20&&path.startsWith('/xmr20/token/')){const t=tokens().by.get(decodeURIComponent(path.slice(13)));if(!t)throw fail('This is not an XMR20 token on this ledger.',404);
     return {height,token:{...t,confirmations:height-t.height+1},record:reader.entryById(t.id).record,text:Buffer.from(contentOf(t.id)).toString('utf8')};}
    // Every deploy inscription that names one Solana mint, listed as a token or not (burned by its inscriber, or behind an
@@ -227,6 +321,24 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
    if(!allow(caller(req)))throw fail('Too many requests. Try again in a minute.',429);
    // `anew`: the sender means to inscribe again a launch whose earlier inscription its signer burned (xmr20-tokens/FORMAT.md).
    return {height,...await relay.submit(body.record,{caller:caller(req),anew:body.anew===true})};}
+  // Open XMR20 tokens for wallets that only sign messages (Feather, Cake Wallet): the text of a deploy to sign and the
+  // record the signature makes of it, which then goes the way of every record; and a mint, which needs no signature.
+  if(method==='POST'&&path==='/xmr20/open/deploy-text'){opened();if(!allow(caller(req)))throw fail('Too many requests. Try again in a minute.',429);
+   let p;try{const {creator,...fields}=body||{};p=prepareOpenDeploy({creator:canonical(creator,m.network),fields,domain:m.domain,network:m.network});}catch(e){throw fail(String(e.message).slice(0,200),400);}
+   const there=openTokens().by.get(p.id.slice(0,ID_SHOWN));
+   if(there)throw fail(there.id===p.id?'This token is deployed already.':'Another token\'s id starts with the same 16 characters. Change a field, the name for example.',409);
+   if(reader.entryById(p.id))throw fail('This deploy is on the ledger as an NFT from before the opening block: it is no token. Change a field of the token.',409);
+   return {height,id:p.id,label:p.label,body:Buffer.from(p.body).toString('hex'),text:p.text,signer:canonical(body.creator,m.network),fields:p.fields};}
+  if(method==='POST'&&path==='/xmr20/open/deploys'){opened();
+   if(!relay)throw fail('This reader does not relay records. Publish the record yourself or use a relay.',503);
+   if(!allow(caller(req)))throw fail('Too many requests. Try again in a minute.',429);
+   let record;try{if(typeof body?.body!=='string'||!/^([0-9a-f]{2}){1,1000}$/.test(body.body)||typeof body.signature!=='string'||body.signature.length>200)throw Error('Give the body and the signature.');
+    record=finishOpenDeploy({body:Buffer.from(body.body,'hex'),signature:body.signature,domain:m.domain,network:m.network});}catch(e){throw fail(String(e.message).slice(0,200),400);}
+   return {height,...await relay.submit(Buffer.from(record).toString('hex'),{caller:caller(req)})};}
+  if(method==='POST'&&path==='/xmr20/open/mints'){opened();
+   if(!relay)throw fail('This reader does not relay records. Mint from your own wallet with the xmr721 command.',503);
+   if(!allow(caller(req)))throw fail('Too many requests. Try again in a minute.',429);
+   return {height,...await relay.submitMint({token:body?.token,amount:body?.amount,address:body?.address,wallet:body?.wallet??null,salt:body?.salt??null,caller:caller(req)})};}
   if(testHooks&&method==='POST'&&path==='/test/step')return step();
   if(testHooks&&extra){const out=await extra(method,path,body,step);if(out!==undefined)return out;}
   throw fail('Not found',404);}
@@ -244,7 +356,9 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
   const o=which(text),got=content?await content(o):{status:404,error:'This service has no pictures.'};
   const head={'x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox",'cross-origin-resource-policy':'cross-origin'};
   if(got.status!==200){res.writeHead(got.status,{...head,'content-type':'application/json','cache-control':got.status===502?'no-store':'public, max-age=3600'});res.end(JSON.stringify({error:got.error}));return;}
-  res.writeHead(200,{...head,'content-type':got.type,'content-length':got.bytes.length,'cache-control':'public, max-age=31536000, immutable','x-mordinal-sensitive':got.sensitive||labelled.has(o.number)?'1':'0','x-mordinal-sha256':o.bodySha256});res.end(got.bytes);}
+  // A picture drawn from an SVG document (lib/draw.mjs) says so: its bytes are not the inscribed bytes that
+  // x-mordinal-sha256 names, and a later service may draw it better, so it is kept for a day, not for good.
+  res.writeHead(200,{...head,'content-type':got.type,'content-length':got.bytes.length,'cache-control':got.drawn?'public, max-age=86400':'public, max-age=31536000, immutable','x-mordinal-sensitive':got.sensitive||labelled.has(o.number)?'1':'0','x-mordinal-sha256':o.bodySha256,...(got.drawn?{'x-mordinal-drawn':got.drawn}:{})});res.end(got.bytes);}
  // A Mordinal whose content is a short plain text (lib/content.mjs plainText): its bytes as text/plain, for a page to
  // show as text. A picture, or content that is neither, answers 415; the rest as /content/ answers.
  async function words(res,text){
@@ -301,10 +415,18 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
   follow(every=5000){if(timer)return;const turn=()=>step().catch(e=>log({sync:String(e.message).slice(0,200)}));turn();timer=setInterval(turn,every);timer.unref?.();},
   close:()=>new Promise(done=>{if(timer)clearInterval(timer);timer=null;server.closeAllConnections?.();server.close(()=>done());})};}
 
-// Everything from command-line style options: used by the command below and by tests.
+// Everything from command-line style options: used by the command below and by tests (which may hand in `chain`, a
+// made-up node, in place of `node`).
 export async function startService(o){
- const owners=readOwners(o.owners),chain=createChain(o.node),network=o.network||'mainnet';
- const reader=openReader({dir:o.state,chain,network,domain:o.domain,feeAddress:o.feeAddress,owners,start:Number(o.start),startHash:o.startHash||null,mintFrom:o.mintFrom==null?null:Number(o.mintFrom),minters:o.minters??null,openFrom:o.openFrom==null?null:Number(o.openFrom),checkpointEvery:o.checkpointEvery??720,log:o.log});
+ const owners=readOwners(o.owners),chain=o.chain??createChain(o.node),network=o.network||'mainnet';
+ // Dead outputs of one's own are for the offline test chain. On mainnet they are refused here, before anything is
+ // opened (the reader refuses them again whenever it reads).
+ if(o.burnDead!=null&&network==='mainnet'&&!isMainnetDead([...o.burnDead].map(Number).sort((x,y)=>x-y))&&(await chain.info()).nettype!=='fakechain')throw Error('--burn-dead: on mainnet the dead outputs are fixed; other ones can be named only on the offline test chain.');
+ if(o.burnFee!=null&&network==='mainnet'&&!isProjectFeeWallet(feeWallet(o.burnFee,network,{testChain:true}))&&(await chain.info()).nettype!=='fakechain')throw Error('--burn-fee-wallet: on mainnet the fee wallet is the project\'s; another one can be named only on the offline test chain.');
+ const reader=openReader({dir:o.state,chain,network,domain:o.domain,feeAddress:o.feeAddress,owners,start:Number(o.start),startHash:o.startHash||null,mintFrom:o.mintFrom==null?null:Number(o.mintFrom),minters:o.minters??null,openFrom:o.openFrom==null?null:Number(o.openFrom),burnFrom:o.burnFrom==null?null:Number(o.burnFrom),burnDead:o.burnDead??null,burnFee:o.burnFee??null,checkpointEvery:o.checkpointEvery??720,log:o.log});
+ // A first burn block that this start takes in, or changes, has to lie at least 10 blocks above the node's newest block.
+ // It is checked here, before anything is served: otherwise the pages would announce a setting the folder refuses.
+ if(reader.burnPending!=null){const info=await chain.info();try{reader.confirmBurn(info);}catch(e){throw Error('--burn-from: '+e.message);}}
  let relay=null;
  if(o.carrierBin){const carrier=createCarrier({bin:o.carrierBin,stateDir:o.carrierState,node:o.node,network:o.carrierNetwork||'offline-fakechain',start:Number(o.carrierStart||o.start)});
   relay=createRelay({dir:join(o.state,'relay'),reader,chain,carrier,network,domain:o.domain,limits:o.limits,fees:o.fees,lane:o.minters||[],...(o.now?{now:o.now}:{}),log:o.log});}
@@ -321,7 +443,7 @@ export async function startService(o){
  // A follower that cannot be opened (its folder cannot be written, say) is done without: the shipped files are then served as they are.
  let follower=null;
  if(network==='mainnet'&&o.xmr20Follow!==false&&(earlier||full.length)){try{follower=openFollower({dir:join(o.state,EARLIER_NAME),chain,reader,pick:choice.pick,name:choice.name,log:o.log});}catch(e){o.log?.({earlier:'not read on: '+String(e?.message||e).slice(0,200)});}}
- const service=createService({reader,relay,owners,transfers:o.transfers?readOwners(o.transfers):[],blockTimes:times?JSON.parse(readFileSync(times,'utf8')).times:null,groups:groupFile?JSON.parse(readFileSync(groupFile,'utf8')):null,content:source?createContent({source}):null,collections,views:o.views||(existsSync(VIEWS)?VIEWS:null),xmr20:o.xmr20Inscribers?.length?{inscribers:o.xmr20Inscribers.map(a=>canonical(a,network))}:null,
+ const service=createService({reader,relay,owners,transfers:o.transfers?readOwners(o.transfers):[],blockTimes:times?JSON.parse(readFileSync(times,'utf8')).times:null,groups:groupFile?JSON.parse(readFileSync(groupFile,'utf8')):null,content:source?createContent({source,draw:createDrawer({log:o.log})}):null,collections,views:o.views||(existsSync(VIEWS)?VIEWS:null),xmr20:o.xmr20Inscribers?.length?{inscribers:o.xmr20Inscribers.map(a=>canonical(a,network))}:null,xmr20Open:o.xmr20OpenFrom!=null?{from:o.xmr20OpenFrom}:null,
   earlier,follower,...(o.followLimit?{followLimit:o.followLimit}:{}),origins:o.origins||[],extensions:o.extensions?.length?o.extensions:null,behindProxy:Boolean(o.behindProxy),testHooks:Boolean(o.testHooks),...(o.rate?{rate:o.rate}:{}),log:o.log});
  // The views are made from what the follower's folder holds before anything is served; a few seconds at most are waited for it.
  await Promise.race([service.ready,new Promise(done=>{setTimeout(done,5000).unref?.();})]);const port=await service.listen(o.port==null?18951:Number(o.port));return {...service,port,chain,owners};}
@@ -330,8 +452,8 @@ if(process.argv[1]===import.meta.filename){
  // Every word that begins with a dash is an option this program knows, written "--name value", and given once (the
  // two lists of allowed origins and extensions may repeat). A misspelt option stops the start: an ignored
  // --open-from or --minters would make this another ledger than the one that was meant.
- {const KNOWN=new Set(['owners','transfers','block-times','groups','domain','fee-address','node','start','start-hash','mint-from','minters','open-from','state','network','port','every','xmr20-inscribers','xmr20-earlier','no-xmr20-earlier','no-xmr20-follow',
-   'mint-fee','collection-fee','carrier-bin','carrier-state','carrier-start','carrier-network','relay-limits','content-dir','content-archive','collections','views','allow-origin','allow-extension','behind-proxy','test-hooks']),MANY=new Set(['allow-origin','allow-extension']),seen=new Set();
+ {const KNOWN=new Set(['owners','transfers','block-times','groups','domain','fee-address','node','start','start-hash','mint-from','minters','open-from','burn-from','burn-dead','burn-fee-wallet','state','network','port','every','xmr20-inscribers','xmr20-open-from','xmr20-earlier','no-xmr20-earlier','no-xmr20-follow',
+   'mint-fee','collection-fee','token-mint-fee','carrier-bin','carrier-state','carrier-start','carrier-network','relay-limits','content-dir','content-archive','collections','views','allow-origin','allow-extension','behind-proxy','test-hooks']),MANY=new Set(['allow-origin','allow-extension']),seen=new Set();
   for(const a of process.argv.slice(2)){if(!a.startsWith('-'))continue;
    if(a.includes('='))throw Error(`Write "${a.split('=')[0]} <value>", with a space: ${a}`);
    const name=a.startsWith('--')?a.slice(2):null;if(!name||!KNOWN.has(name))throw Error(`There is no option ${a}. See the top of this file.`);
@@ -343,8 +465,12 @@ if(process.argv[1]===import.meta.filename){
  const limits=Object.fromEntries((arg('relay-limits')||'').split(',').filter(Boolean).map(kv=>{const [k,v]=kv.split('=');if(!/^[a-zA-Z]+$/.test(k)||!/^\d{1,12}$/.test(v||''))throw Error('--relay-limits: name=number,…');return [k,Number(v)];}));
  const s=await startService({...(Object.keys(limits).length?{limits}:{}),owners:arg('owners'),transfers:arg('transfers'),...(arg('block-times')?{blockTimes:arg('block-times')}:{}),...(arg('groups')?{groups:arg('groups')}:{}),domain:arg('domain'),feeAddress:arg('fee-address'),node:arg('node'),start:arg('start'),startHash:arg('start-hash'),mintFrom:arg('mint-from'),
   // --minters given means a list: an empty value is refused, never read as "everyone".
-  ...(has('minters')?{minters:(arg('minters')||'').split(',').filter(Boolean)}:{}),...(has('open-from')?{openFrom:(v=>{if(!/^[1-9]\d{0,9}$/.test(v||''))throw Error('--open-from <height>: the opening block is a whole number');return Number(v);})(arg('open-from'))}:{}),state:arg('state'),network:arg('network'),xmr20Inscribers:(arg('xmr20-inscribers')||'').split(',').filter(Boolean),...(has('no-xmr20-earlier')?{xmr20Earlier:false}:arg('xmr20-earlier')?{xmr20Earlier:arg('xmr20-earlier')}:{}),...(has('no-xmr20-follow')?{xmr20Follow:false}:{}),
-  port:arg('port'),fees:{mint:arg('mint-fee')||0,collection:arg('collection-fee')||0},carrierBin:arg('carrier-bin'),carrierState:arg('carrier-state'),carrierStart:arg('carrier-start'),carrierNetwork:arg('carrier-network'),contentDir:arg('content-dir'),collections:arg('collections'),contentArchive:archive,views:arg('views'),
+  ...(has('minters')?{minters:(arg('minters')||'').split(',').filter(Boolean)}:{}),...(has('open-from')?{openFrom:(v=>{if(!/^[1-9]\d{0,9}$/.test(v||''))throw Error('--open-from <height>: the opening block is a whole number');return Number(v);})(arg('open-from'))}:{}),
+  // The same care for the burn setting: a height that does not read as one, or a list that is not fifteen indexes, stops the start.
+  ...(has('burn-from')?{burnFrom:(v=>{if(!/^[1-9]\d{0,9}$/.test(v||''))throw Error('--burn-from <height>: the first burn block is a whole number');return Number(v);})(arg('burn-from'))}:{}),
+  ...(has('burn-dead')?{burnDead:(v=>{if(!/^\d{1,15}(,\d{1,15}){14}$/.test(v||''))throw Error('--burn-dead <index>,…: fifteen global output indexes');return v.split(',').map(Number);})(arg('burn-dead'))}:{}),
+  ...(has('burn-fee-wallet')?{burnFee:(v=>{const m=/^([1-9A-HJ-NP-Za-km-z]{95}):([0-9a-f]{64})$/.exec(v||'');if(!m)throw Error('--burn-fee-wallet <main address>:<secret view key>');return {address:m[1],viewKey:m[2]};})(arg('burn-fee-wallet'))}:{}),state:arg('state'),network:arg('network'),xmr20Inscribers:(arg('xmr20-inscribers')||'').split(',').filter(Boolean),...(has('xmr20-open-from')?{xmr20OpenFrom:(v=>{if(!/^[1-9][0-9]{0,8}$/.test(v||''))throw Error('--xmr20-open-from <block>');return Number(v);})(arg('xmr20-open-from'))}:{}),...(has('no-xmr20-earlier')?{xmr20Earlier:false}:arg('xmr20-earlier')?{xmr20Earlier:arg('xmr20-earlier')}:{}),...(has('no-xmr20-follow')?{xmr20Follow:false}:{}),
+  port:arg('port'),fees:{mint:arg('mint-fee')||0,collection:arg('collection-fee')||0,tokenMint:arg('token-mint-fee')||0},carrierBin:arg('carrier-bin'),carrierState:arg('carrier-state'),carrierStart:arg('carrier-start'),carrierNetwork:arg('carrier-network'),contentDir:arg('content-dir'),collections:arg('collections'),contentArchive:archive,views:arg('views'),
   origins:process.argv.flatMap((a,i)=>a==='--allow-origin'?[process.argv[i+1]]:[]),extensions:process.argv.flatMap((a,i)=>a==='--allow-extension'?[process.argv[i+1]]:[]),behindProxy:has('behind-proxy'),testHooks:has('test-hooks'),log:v=>console.log(new Date().toISOString(),JSON.stringify(v))});
  console.log(`Mordinals reader on http://127.0.0.1:${s.port} (${s.owners.length} Mordinals, block ${s.reader.height}${s.relay?', relay on':', reader only'})`);
  s.follow(Number(arg('every'))||5000);

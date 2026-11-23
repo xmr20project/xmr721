@@ -96,7 +96,7 @@ export async function explorer(ctx){
      el('p',{class:'card-sub',text:`${count(legacy.inscriptions)} inscriptions and ${count(legacy.transfers)} transfers under the original Mordinals rules, newest first.`})),
     pills(LEGACY,hKind,k=>{location.hash=at({hk:k,hb:''});},'Kind of event')),
    table([
-    {label:'Mordinal',cell:e=>el('div',{class:'with-thumb'},pic(e.number,{size:'thumb'}),mordinalLink(e.number))},
+    {label:'Mordinal',cell:e=>el('div',{class:'with-thumb'},pic(e.number,{size:'thumb'}),mordinalLink(e.number,e.name))},
     {label:'Event',cell:e=>kindPill(e.kind==='transfer'?'transfer':'inscribed')},
     {label:'Date',cell:e=>el('span',{class:'nowrap',text:day(e.time)})},
     {label:'Block',num:true,cell:e=>e.height==null?'':count(e.height)},
@@ -117,7 +117,7 @@ export async function address(ctx,a){
   el('div',{class:'head'},el('a',{class:'crumb',href:'#/',text:'Explorer'}),el('h1',{class:'small',text:'Address'}),
    el('div',{class:'section'},exact(me,{what:'address'}))),
   buying.length?el('section',{class:'section','data-section':'buying'},el('div',{class:'section-head'},el('h2',{text:'Purchases to continue'})),
-   table([{label:'NFT',cell:t=>mordinalLink(t.number??t.nft)},{label:'Price',cell:t=>strong(xmr(t.price)+' XMR')},
+   table([{label:'NFT',cell:t=>mordinalLink(t.number??t.nft,t.name)},{label:'Price',cell:t=>strong(xmr(t.price)+' XMR')},
     {label:'Reservation',cell:t=>t.reservation.payBy<height?'Ran out at block '+count(t.reservation.payBy):'Pay by block '+count(t.reservation.payBy)},
     {label:'',cell:t=>el('a',{class:'btn small',href:`#/buy/${t.id}/${me}`,text:'Continue'})}],buying)):null,
   own.waiting.length?el('section',{class:'section','data-section':'waiting'},el('div',{class:'section-head'},el('h2',{text:'Waiting for a block'}),

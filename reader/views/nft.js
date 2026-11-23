@@ -2,7 +2,7 @@
 // Create page. Everything that is signed is built here from the records themselves; the service's plain fields are
 // only used for reading.
 import {OP,RULES,MAX_RECORD,NO_COLLECTION,MAX_NAME,MAX_EDITIONS,encodeBody,decodeRecord,recordId,codeOf,renderText,nftLabel,splitOf,formatXmr,parseXmr,canonical,unhex} from './rules.js';
-import {el,add,api,service,count,xmr,relayFee,addr,txid,code,notice,pill,strong,table,field,textInput,eventColumns,waitingList,terms,running,draft,ROOT,pills} from './ui.js';
+import {el,add,api,service,count,xmr,relayFee,addr,txid,code,notice,pill,strong,table,field,textInput,eventColumns,waitingList,terms,running,draft,ROOT,mordinalName,pills} from './ui.js';
 import {signPanel,signingWallet} from './sign.js';
 import {walletLink,watchWallet} from './wallet.js';
 // An origin as RULES.md describes it: kind 1 with 36 bytes is a Bitcoin inscription id, txid then the index (u32 little-endian).
@@ -26,17 +26,17 @@ export async function loadNft(ctx,id){
  catch{throw Error('The service sent an NFT that does not fit its code.');}
  const b=d.body,what=nftLabel(id,b,c?.body.name??null);
  return {...v,id,mint:b,collectionName:c?.body.name??null,what,title:b.name||(c?`${c.body.name} #${b.edition}`:'NFT '+codeOf(id).slice(0,8))};}
-// The content: a picture, a text, or a line saying it is not shown.
+// The content: a picture, a text (JSON is shown as its text), or a line saying it is not shown.
 export function nftPicture(ctx,id,type,{size=''}={}){
  const box=el('div',{class:('pic nftpic '+size).trim(),'data-nft':id}),src=new URL(`nft/${id}/content`,ROOT).href;
  if(type>=1&&type<=4){const img=el('img',{alt:'',loading:'lazy',src});img.addEventListener('error',()=>box.replaceChildren(el('span',{text:'Picture not available'})));box.append(img);}
- else if(type===5){const text=el('span',{class:'nfttext'});box.append(text);
+ else if(type===5||type===6){const text=el('span',{class:'nfttext'});box.append(text);
   fetch(src,{signal:ctx.signal}).then(r=>r.ok?r.text():'').then(t=>{text.textContent=t.slice(0,900);}).catch(()=>{});}
  else box.append(el('span',{text:(TYPES[type]||'This content')+' is not shown'}));
  return box;}
 // What a listing is about, for the market's listing and buying pages: a Mordinal or a minted NFT.
 export async function subject(ctx,t,pic){
- if(t.nft==null)return {name:'Mordinal #'+count(t.number),href:'#/mordinal/'+t.number,what:undefined,key:t.number,picture:size=>pic(t.number,{size})};
+ if(t.nft==null)return {name:mordinalName(t.number,t.name),href:'#/mordinal/'+t.number,what:undefined,key:t.number,picture:size=>pic(t.number,{size})};
  const n=await loadNft(ctx,t.nft);return {name:n.title,href:'#/nft/'+t.nft,what:n.what,key:t.nft,picture:size=>nftPicture(ctx,t.nft,n.mint.type,{size})};}
 export const nftCard=(ctx,x)=>el('article',{class:'mcard','data-nft-card':x.id},
  el('a',{class:'cardpic',href:'#/nft/'+x.id},nftPicture(ctx,x.id,x.type)),

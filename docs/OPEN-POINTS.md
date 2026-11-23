@@ -251,6 +251,30 @@ Service:
 - Many visitors asking for waiting records share one look at the node's pool.
   `GET /records` is paged. Extensions can be limited to listed ids (`--allow-extension`).
 
+## Claiming by burning (15 November 2026)
+
+A draft of a ledger setting (RULES.md section 10): from a chosen block a Mordinal is claimed
+by burning it under the original rules, and 720 blocks later claim records no longer count.
+Since 16 November a burn claim completes only once its fee is paid (the burn's own fee once
+more, to the Mordinal's fee address, subaddress (1, number + 1) of the project's fee wallet);
+two reviews read that addition, and what they found is changed (`BURN-CLAIM-DRAFT.md`).
+Read twice inside the project, not in use. What was built, what is decided and what is open is in
+[`BURN-CLAIM-DRAFT.md`](BURN-CLAIM-DRAFT.md). The open points in short:
+
+- a holder whose owner coin was already spent by an ordinary wallet, or whose burn was
+  refused, cannot claim by burning, and this draft gives them no other way once claim
+  records have stopped;
+- the one Mordinal claimed before the rule (#42,875) stays claimed and its old Mordinal is
+  not burned;
+- the rule rests on nobody finding a secret key for the one key the fifteen dead outputs
+  share (a break would allow one theft in total); 70499745, the ordinary sixteenth output of
+  the same transaction, is left out, and who holds it is unknown;
+- what an indexer of the original rules shows after a burn (the claim text as the
+  Mordinal's text) is not consulted here;
+- a fee paid by mistake (without a burn, for another Mordinal, too much) is not refunded,
+  every fee payment is public with the Mordinal it is for, and a reader now scans every
+  transaction from the first burn block on (about 37 ms per block).
+
 ## Still open
 
 Rules:
@@ -372,8 +396,9 @@ What a reader operator has to know:
   of the listed ledger that has not read the opening block takes the opening in at the next start; one that has read
   it has to be made again from the start block. The service refuses an option it does not know, so a misspelt
   `--open-from` stops the start instead of being ignored.
-- **A relay with a lane carries collections and mints of its own minters only.** Everyone else's go out from wallets
-  of their own.
+- **A relay with a lane carries its own minters' collections and mints without its fee.** Everyone else's it carries
+  only when it charges for them (`--mint-fee`, `--collection-fee`), once paid; without a fee they go out from wallets of
+  their own.
 
 Known limits:
 

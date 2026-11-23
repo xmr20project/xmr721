@@ -1,0 +1,13 @@
+{
+ "name":"The Eternal Monero Bubbles",
+ "id":"eac08c7a0fbe512a047f80c9",
+ "basis":"matching numbered names",
+ "about":"Five pictures titled \"The eternal monero bubble(s) - Bubble 1 of 5\" to \"5 of 5\", each naming https://deus.finance/ and xdeus.eth.",
+ "members":[
+  {"edition":1,"number":42857,"registrationTx":"627fd991374aa19ad7627185326191b5c027e936516567898b3dda7a181b10e1","bodyKeccak256":"ad6926e7c0c525a47c0de263a6b7dd7cdee8bd9f74b2ba949d539e7e5395c6ed"},
+  {"edition":2,"number":42858,"registrationTx":"eb8896d2a5e14cbe38c141741d68bc6eb2420cc868a9970de28e4db1076732ba","bodyKeccak256":"0fd51f54d9e79c897e64b86132c7159615281c22901d67d852a172dccb7cec32"},
+  {"edition":3,"number":42859,"registrationTx":"564a9c8b7b13b03ee71a92d89b77f3e3156bcb18511b580c09654eb35abc9b10","bodyKeccak256":"69540142446992610518b08cb19466e9de6be362f706db8700824e9be8cfd71d"},
+  {"edition":4,"number":42860,"registrationTx":"07faadb67820c3d59a684f034a684520387ff9bba3c16a8708acc7566e4f4a04","bodyKeccak256":"6cae3b2c6d8efce964453cb8510a086bce44240a61e0b8b8ed973fe9f8cf32c9"},
+  {"edition":5,"number":42861,"registrationTx":"f1dbcf33f9ba3c69447b054fd24a836f640e5ae76921401c67bce51d3c3340d6","bodyKeccak256":"0ba3211dd4fa85c68c256abe890eaa6b9e04ae24b6da680f8b2abbcb9d78a908"}
+ ]
+}

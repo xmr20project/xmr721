@@ -1,0 +1,20 @@
+{
+ "name":"Deus.finance 10 Piece Torus Collection",
+ "display":"Deus.finance Torus",
+ "id":"9255c6f3e1029cace79f158e",
+ "basis":"matching numbered names",
+ "about":"Pictures titled \"Deus.finance 10 Piece Torus Collection: 1/10\" to \"10/10\".",
+ "repeatedEditions":true,
+ "members":[
+  {"edition":1,"number":9605,"registrationTx":"2fef92835a7834acb1a74d4981fe97eac4b7c1ce86acbac26cfcde8aa26590d1","bodyKeccak256":"f225b4d20e48e71078eb9f2d7508c1ea441bd87e298adf8a6afea9c3bd7c2a34"},
+  {"edition":2,"number":9619,"registrationTx":"e44681c43bb5a5702c33493a10a6dd23baedd3119f4ef4ab63527a8f03eb1a9a","bodyKeccak256":"8ee71d8fddc9191cd246aa31c3932d6024a27dce20a3800c497be3cae5abf2d2"},
+  {"edition":3,"number":9632,"registrationTx":"a342a2ff3388a9b1aed1fb4978409c5972b5f307edc4ee46bda83de7bae528e1","bodyKeccak256":"a87234dbabb981124c41334dded25a1c273ad10e652a5bcf073beed1a9be545c"},
+  {"edition":4,"number":9665,"registrationTx":"f02d1f96d09143f65179de1fa61c979b0520cb8952ea50d791e38a4d943d7bdf","bodyKeccak256":"a134a0ae77fdb1002476cdc37a4351bae6ad91895ea38a756b2af7ddcd4ff940"},
+  {"edition":5,"number":9684,"registrationTx":"2d409e04dcbef87fe0dc5c9687047eb91525b137e01d71926aa532f40d276b41","bodyKeccak256":"a3aacf1ad575ef5da61e43bb3d8ad7b1e3f52add9f69d03536bb04ec491f0c57"},
+  {"edition":6,"number":9693,"registrationTx":"baf08136e57c5b76f74c28aafade1808ddbc9edaf94657c5f1658d5f5d573797","bodyKeccak256":"373e10e03e7750f70ae3fe4fd02e04a2eaafa1f97aba9fc74e3940104bb3393c"},
+  {"edition":7,"number":9702,"registrationTx":"8b3fa6e4c5264ce9c9822698328c26491ed2242fa85fb467ecd4f6a2407436cb","bodyKeccak256":"745335daad0539a0c281abb0ccfde694ff1111a1d16f3bab59a903fa0816a2b2"},
+  {"edition":8,"number":9708,"registrationTx":"8d5898a66f2f7f26784166516c6e7531beef9fc83b3b155d026a7816dd6d551b","bodyKeccak256":"646eeb48bfffc65a0700b1068fbfc90062aafd765aea5d96b9381043fded1bf8"},
+  {"edition":9,"number":9725,"registrationTx":"8762404262206723d95e2285a8a7189f40e506fbc1732ae51e03fff3b75647f8","bodyKeccak256":"c729c8bc0447db698e5d08f65997ca803c463f8fdb68b151dbebca9368e699ec"},
+  {"edition":10,"number":9736,"registrationTx":"1e8568a98178360a120d9f24bdac4516771cef422c6d90408c2ce31fbe6a61fa","bodyKeccak256":"81a04f63fe9c2c0fe9c5e4079e51e0d25cb2949cdacd710d2bb4ed56279c2e81"}
+ ]
+}

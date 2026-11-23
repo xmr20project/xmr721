@@ -14,8 +14,12 @@ then moved and sold by signed records, with 5% of every sale going to a fee addr
 | `lib/claim.mjs` | One-time-key signature, payment-proof check, "find my Mordinals", payment proof from the view key |
 | `lib/ledger.mjs` | The rules: owners, listings, reservations, sales |
 | `lib/monero.mjs`, `lib/payment.mjs` | Addresses, wallet message signatures, payment check, payment proofs for buy records |
+| `lib/burn.mjs` | Claiming by burning (RULES.md section 10, draft): the burn address, the dead outputs, the checks of a burning transfer |
+| `lib/burn-fee.mjs` | The fee of a burn claim: the fee wallet, each Mordinal's fee address (subaddress (1, n + 1)), finding fee payments with the public view key as wallet2 finds them |
 | `tests/rules.test.mjs` | Offline tests with made-up keys, plus a replay of the saved lab cases |
 | `tests/mint.test.mjs` | Offline tests of collections, mints and burns (RULES.md section 9) |
+| `tests/burn.test.mjs`, `tests/fixtures-burn.json` | Offline tests of claiming by burning, with one real pair of mainnet transactions; `tests/original-rules.mjs` is the 2023 rule for a transfer, written again, that every accepted case is held against |
+| `tests/burn-fee.test.mjs` | Offline tests of the fee: fee addresses against monero-wallet-rpc, payments found with the transaction key and with additional keys, forged amounts, waiting and completing, claim records while a burn waits |
 | `tests/lab.test.mjs` | The same rules against real wallet software on a local test chain |
 | `tests/fixtures.json` | 49 saved cases from the lab (22 accepted, 27 refused) with the expected result. Public data only |
 | `lab-results.json` | Summary of the last lab run |

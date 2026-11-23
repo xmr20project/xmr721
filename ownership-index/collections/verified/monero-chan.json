@@ -1,0 +1,18 @@
+{
+ "name":"Monero Chan Morbinal",
+ "id":"0f52cf83801673e12edfae15",
+ "basis":"matching numbered names, checked by hand",
+ "about":"Monero Chan pictures titled \"Monero Chan Morbinal #2\" to \"#10\", and Mordinal 144, registered just before #2 and titled \"The first ever Monero Chan Morbinal.\"",
+ "members":[
+  {"edition":2,"number":145,"registrationTx":"1a31ef59f8277fc7d0c353c4449566cb90a9cf6c5d3b64b3fff645567d97d4f4","bodyKeccak256":"1772b2c56ebc70c9577ca668b2582fdc79040cd0424d6bd94f6bc7b14890c268"},
+  {"edition":3,"number":148,"registrationTx":"bae59bf440875111807fbfa908278757ac46146cc79af506b2450b9407ba38c7","bodyKeccak256":"a0404807e06f6c782ccbdfc8f0c8c57a0cf74fd2f465cd69d01c57d9668910f7"},
+  {"edition":4,"number":150,"registrationTx":"8af106940138921e28a43ea97c0fa0fc1aa2a7cd20a24da6f2c326316d418182","bodyKeccak256":"c907646d8632fa874da75c330caa07ab535fa2fec94ef94b280c89289e81ab2f"},
+  {"edition":5,"number":155,"registrationTx":"483063f7c915b5c83f0e2e4d3fe3e9f3ecdb826117b1b124e28da495c57eb19b","bodyKeccak256":"f2ad6c650db9749c9d2fa755a63f425ee767c4e052ba931ff8d29d18f51687a6"},
+  {"edition":6,"number":162,"registrationTx":"aa1583be77d0402281984aa74265908c5c8764016e0f659a054823623e3d82bc","bodyKeccak256":"7457d824f74b1ce6541175cce54a660cbeb4f6dbeb01084b0edc220a2ebf7144"},
+  {"edition":7,"number":185,"registrationTx":"c2312048d37bebc23104d2ca5901b114ff1a8bdd5c5304f9b31deb2d0e40a404","bodyKeccak256":"52643e042612cab41002d4a6b0bf319e696b4b3ab997e139f1914cd474c79eb0"},
+  {"edition":8,"number":250,"registrationTx":"57ee14193fd8a8754f166c2444baaf3e2ff63e4b7ddb84a97ecf36f27dcd2647","bodyKeccak256":"dfd374ea5013fd247717fca94466488948f9d3fe1ffff486ca66fbcc80a13c4e"},
+  {"edition":9,"number":254,"registrationTx":"17d2a20a805b449e761681e7c3a005422e56db161e441e872b88e53b26538915","bodyKeccak256":"db5a810da65a292d1db09242ed3eedac5696901e042854d2bd69466a9c63957e"},
+  {"edition":10,"number":257,"registrationTx":"6f4e749fe80f76a2b1d2e3abd8cdd2fcd6a68c794b8e90ff59f52474fc5a9f44","bodyKeccak256":"c1a3a37979df2e8bcc3e71d841a19d67fa6781ec580d3a051c34c837462438c3"},
+  {"number":144,"registrationTx":"4e9fed54c9a41e6076de4bf64a89c7bc4251d1bde483f9fce427990868a7f536","bodyKeccak256":"5b71fc42f31ae1ff0ee043c0b28943adad92ef29b0851dccae90500fbbcec664","note":"titled \"The first ever Monero Chan Morbinal.\""}
+ ]
+}

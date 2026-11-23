@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,writeFileSync,readFileSync,existsSync,mkdirSync,statSync,chmodSync,readdirSync} from 'node:fs';
-import {randomBytes} from 'node:crypto';
+import {randomBytes,createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
@@ -41,16 +41,20 @@ function carrierIn(dir,chain,{coins=5}={}){
   status:async()=>{await wait();if(!existsSync(state)){x.scans++;writeFileSync(state,'{}');}return c.status();},
   carry:async r=>{await wait();const how=x.die;x.die=false;if(how==='no')throw Error('The network fee of this transaction (9) is above the limit (5); nothing was sent');const t=await c.carry(r);if(how==='silent')throw Error('The carrier tool did not answer in time.');return real(t);},
   split:async n=>real(await c.split(n)),
+  // A mint record as the real tool lays it out; the asset and the owner key are stand-ins (the real ones are the
+  // carrier tool's own test, against the token ledger's values).
+  mintRecord:async arg=>{const [token,units,kind,spend,view,salt]=arg.split(':'),asset=createHash('sha256').update('asset '+token).digest('hex'),owner=createHash('sha256').update('owner '+kind+spend+view).digest('hex');
+   return {record:'584f31fe'+asset+hex(leBytes(BigInt(units),8))+owner+salt,asset,owner};},
   init:async()=>{mkdirSync(dir,{recursive:true});const f=join(dir,'carrier.keys.json');if(!existsSync(f))writeFileSync(f,JSON.stringify({spend:scalar(),view:scalar()}));return {address:keysOf(dir,NET).address};}};
  return x;}
 
 // `spent`: the key images the made-up node shows as spent by a transaction in a block.
-async function world({openFrom=106}={}){
+async function world({openFrom=106,tokensFrom=null}={}){
  const launchpad=testWallet('launchpad',NET),bob=testWallet('bob',NET),fee=testWallet('fee',NET),holder=testWallet('holder',NET);
  const owners=[makeTx('reg0',[{to:holder,amount:10n**9n}])].map((t,i)=>({...ownerEntry(i,t),registrationHeight:50,ownerHeight:50}));
  const chain=fakeChain({start:100}),spent=new Set();chain.spent=async images=>images.map(i=>spent.has(i)?1:0);
  const reader=openReader({dir:temp('wallet-reader-'),chain,network:NET,domain:DOMAIN,feeAddress:fee.address,owners,start:100,mintFrom:101,minters:[launchpad.address],openFrom});
- await reader.sync();const service=createService({reader,owners}),base='http://127.0.0.1:'+await service.listen(0);
+ await reader.sync();const service=createService({reader,owners,...(tokensFrom?{xmr20Open:{from:tokensFrom}}:{})}),base='http://127.0.0.1:'+await service.listen(0);
  const make=(name,o={})=>{const dir=join(temp('wallet-'),name),carrier=carrierIn(dir,chain,o),notes=[];
   // The node as this wallet reaches it. `carrier.lose` sets what happens when the next transaction is handed to it:
   // 'refused' (the node answers no), 'silent' (no answer, and the node does not have it), 'after' (the node has it and
@@ -613,3 +617,56 @@ test('the command line refuses what it does not understand instead of skipping i
  assert.deepEqual(plainly('inscribe','--file',file,'--dry-run'),[2,'On stagenet, give --reader <url> of your own reader.']);
  assert.deepEqual(plainly('inscribe','--file',file,'--dry-run','--reader','http://127.0.0.1:9'),[2,'On stagenet, give --domain <hex>: the domain of the ledger to inscribe on.']);
  const r=o('wallet','inscribe','--file',file,'--dry-run');assert.equal(r[0],2);assert.match(r[1],/^The reader at http:\/\/127\.0\.0\.1:9 does not answer \(.+\)\.$/);});
+
+test('open XMR20 tokens: a deploy from the opening block on, one per 16 characters; mints by anyone, bounded, settled by the node alone',async()=>{
+ const x=await world({tokensFrom:108}),get=async path=>(await fetch(x.base+path)).json();
+ try{
+  const a=x.make('a'),b=x.make('b');await a.wallet.create({height:x.reader.height});await b.wallet.create({height:x.reader.height});
+  const fields={tick:'PEPE',max:'1000',lim:'100',pre:'10'};
+  // Before the opening block of open tokens nothing is inscribed: it would be an NFT and never a token.
+  await x.until(106);await assert.rejects(a.wallet.deploy(fields),/Open tokens start at block 108/);assert.equal(a.carrier.made.length,0);
+  await assert.rejects(a.wallet.deploy({tick:'PEPE',max:'1000'}),/lim is required/);await assert.rejects(a.wallet.deploy({...fields,pre:'1000'}),/lim is left out/);
+  // The deploy text inscribed as an NFT before the opening block is no token, and the wallet says so instead of answering with one.
+  const early={tick:'EARLY',max:'5',lim:'1'},nft=await a.wallet.inscribe({content:Buffer.from('{"p":"xmr20","op":"deploy","tick":"EARLY","max":"5","dec":"6","mode":"open","lim":"1"}'),type:6});
+  await x.until(107);
+  await assert.rejects(a.wallet.deploy(early),/NFT from before the opening block/);assert.equal(a.carrier.made.length,1);
+  const dry=await a.wallet.deploy({...fields,dryRun:true});
+  assert.equal(dry.token.text,'{"p":"xmr20","op":"deploy","tick":"PEPE","max":"1000","dec":"6","mode":"open","lim":"100","pre":"10"}');
+  assert.equal(dry.token.label,`PEPE (token ${dry.token.id.slice(0,16)})`);assert.equal(dry.dryRun,true);assert.equal(a.carrier.made.length,1);
+  const made=await a.wallet.deploy(fields);assert.equal(made.kind,'mint');assert.equal(made.id,made.token.id);assert.equal(made.type,6);assert.equal(made.owner,a.wallet.address);
+  // A token has to be in a block before it is minted.
+  await assert.rejects(b.wallet.mint({token:made.id,amount:'1'}),/not an open token/);
+  await x.block();
+  const listed=(await get('/xmr20/open')).items;assert.deepEqual(listed.map(t=>[t.id,t.creator,t.label]),[[made.id,a.wallet.address,made.token.label]]);
+  // The same deploy again is the same record; another address deploys another token with the same ticker.
+  const again=await a.wallet.deploy(fields);assert.deepEqual([again.again,again.id,a.carrier.made.length],[true,made.id,2]);
+  const other=await b.wallet.deploy(fields);assert.notEqual(other.id,made.id);await x.block();assert.equal((await get('/xmr20/open')).total,2);
+  // All of a token to its creator: nothing to mint.
+  const all=await a.wallet.deploy({tick:'ALL',max:'5',pre:'5'});await x.block();
+  await assert.rejects(b.wallet.mint({token:all.id,amount:'1'}),/whole supply went to its creator/);
+  // Minting: by anyone, by the id or its first 16 characters, to the wallet's own address or another.
+  for(const bad of ['0','-1','1.0000001','abc',''])await assert.rejects(b.wallet.mint({token:made.id,amount:bad}),/amount of tokens/);
+  await assert.rejects(b.wallet.mint({token:made.id,amount:'100.000001'}),/at most 100/);
+  await assert.rejects(b.wallet.mint({token:'ab'.repeat(8),amount:'1'}),/not an open token/);await assert.rejects(b.wallet.mint({token:'xyz',amount:'1'}),/token's id/);
+  const before=b.carrier.made.length,preview=await b.wallet.mint({token:made.id,amount:'50.5',dryRun:true});
+  assert.deepEqual([preview.kind,preview.amount,preview.to,preview.label,preview.bytes,preview.dryRun],['token-mint','50.5',b.wallet.address,made.token.label,84,true]);assert.equal(b.carrier.made.length,before);
+  const m1=await b.wallet.mint({token:made.id.slice(0,16),amount:'50.5'}),m2=await b.wallet.mint({token:made.id,amount:'100',to:x.bob.address});
+  assert.deepEqual([m1.token,m1.amount,m1.to,m2.to,tidy(m1.state)],[made.id,'50.5',b.wallet.address,x.bob.address,'waiting for a block']);assert.match(m1.notes[0],/token ledger/);
+  assert.equal(b.carrier.made.length,before+2);
+  const entries=journal(b.dir).entries.filter(e=>e.kind==='token-mint');assert.equal(entries.length,2);assert.notEqual(entries[0].txid,entries[1].txid);
+  // The XMR721 ledger has nothing to say about a mint: the node's word settles it, 10 blocks deep.
+  await x.block();assert.deepEqual((await states(b.wallet)).filter(s=>s[0]==='token-mint'),[['token-mint','in block N (n of 10 confirmations)'],['token-mint','in block N (n of 10 confirmations)']]);
+  assert.equal((await get('/entry/'+entries[0].txid)).entry,undefined);
+  await x.blocks(10);assert.deepEqual((await states(b.wallet)).filter(s=>s[0]==='token-mint'),[['token-mint','in block N for good; the token ledger says what it credited'],['token-mint','in block N for good; the token ledger says what it credited']]);
+  assert.deepEqual((await states(a.wallet)).map(s=>s[1]),['on the ledger (block N)','on the ledger (block N)','on the ledger (block N)']);assert.ok(nft.id);
+  await assert.rejects(a.wallet.deploy(fields),/on the ledger already/);
+  await assert.rejects(a.wallet.forget(undefined),/no such entry/);
+ }finally{await x.close();}});
+
+test('open XMR20 tokens: a ledger whose reader names no opening block takes no deploy and no mint from this wallet',async()=>{
+ const x=await world();
+ try{
+  const a=x.make('a');await a.wallet.create({height:x.reader.height});await x.until(106);
+  await assert.rejects(a.wallet.deploy({tick:'PEPE',max:'1000',lim:'100'}),/no opening block/);
+  await assert.rejects(a.wallet.mint({token:'ab'.repeat(32),amount:'1'}),/no opening block/);assert.equal(a.carrier.made.length,0);
+ }finally{await x.close();}});

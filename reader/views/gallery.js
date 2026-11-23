@@ -1,5 +1,5 @@
 // The gallery: every Mordinal as a card, one page of the list at a time.
-import {el,add,api,count,xmr,pills,pictures,service} from './ui.js';
+import {el,add,api,count,xmr,pills,pictures,service,mordinalName} from './ui.js';
 
 const FILTERS=[['all','All'],['claimed','Claimed'],['unclaimed','Unclaimed'],['listed','For sale']],PAGE=60;
 
@@ -11,8 +11,8 @@ export function card(pic,m,height){
  box.addEventListener('click',e=>{if(!e.target.closest('button'))location.hash='#/mordinal/'+m.number;});
  return el('article',{class:'mcard','data-number':m.number},box,
   el('a',{class:'meta',href:'#/mordinal/'+m.number},
-   el('span',{class:'n',text:'#'+count(m.number)}),
-   el('span',{class:'s'},el('span',{'data-claimed':String(Boolean(m.claimed)),text:m.burned?'Burned':m.claimed?'Claimed':'Unclaimed'}),
+   el('span',{class:'n',title:mordinalName(m.number,m.name),text:mordinalName(m.number,m.name)}),
+   el('span',{class:'s'},el('span',{'data-claimed':String(Boolean(m.claimed)),text:(m.name?'#'+count(m.number)+' · ':'')+(m.burned?'Burned':m.claimed?'Claimed':m.waiting?'Waiting for its fee':'Unclaimed')}),
     lot?el('span',{class:'price',text:xmr(lot.price)+' XMR'}):null),
    reserved?el('span',{class:'s'},el('span',{text:'Reserved'})):null));}
 

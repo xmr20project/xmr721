@@ -46,7 +46,7 @@ export function terms(l){
  // A Mordinal is known by its number; a minted NFT has none and is known by its id, which the listing itself names.
  if(!d||d.op!==OP.list||recordId(info.domain,bytes)!==l.id||!(Number.isInteger(l.number)||(l.number===null&&l.nft===d.body.reg)))throw Error('The service sent a listing that does not fit its code.');
  return {id:l.id,number:l.number,nft:l.number===null?d.body.reg:null,reg:d.body.reg,seq:d.body.seq,price:d.body.price,until:d.body.until,seller:d.body.seller,
-  status:l.status,reservation:l.reservation||null,buyer:l.buyer||null};}
+  status:l.status,reservation:l.reservation||null,buyer:l.buyer||null,name:typeof l.name==='string'?l.name:null};}
 // The reservation that holds a listing now, or null.
 // The reservation that holds this listing now: until it runs out and 10 blocks more, nobody else can reserve it.
 export const running=(t,height)=>t.reservation&&heldUntil(t.reservation)>=height?t.reservation:null;
@@ -75,7 +75,10 @@ export const addr=a=>el('span',{class:'chip'},el('a',{class:'v',href:'#/address/
 export const txid=t=>el('span',{class:'chip'},el('span',{class:'v',title:t,text:short(t)}),copyButton(t,'Copy','transaction id'));
 export const code=id=>el('span',{class:'chip'},el('a',{class:'v',href:'#/record/'+id,title:id,text:short(id)}),copyButton(id,'Copy','record code'));
 // A link to what a row is about: a Mordinal by number, a minted NFT by its id (64 hex), nothing when there is neither.
-export const mordinalLink=n=>n==null?'':typeof n==='string'?el('a',{class:'strong',href:'#/nft/'+n,title:n,text:'NFT '+n.slice(0,8)}):el('a',{class:'strong',href:'#/mordinal/'+n,text:'#'+count(n)});
+// A Mordinal's name as the service gives it ("Monero Punks #0": its collection and the edition its creator gave it), or
+// "Mordinal #n" outside a named collection. For reading only: signed texts always name a Mordinal by its number.
+export const mordinalName=(n,name)=>typeof name==='string'&&name.trim()?name:'Mordinal #'+count(n);
+export const mordinalLink=(n,name)=>n==null?'':typeof n==='string'?el('a',{class:'strong',href:'#/nft/'+n,title:n,text:'NFT '+n.slice(0,8)}):el('a',{class:'strong',href:'#/mordinal/'+n,text:mordinalName(n,name)});
 // A value that must be copied exactly (an amount, an address, a text to sign), shown in full.
 export const exact=(value,{big=false,what='',label='Copy'}={})=>el('div',{class:'exact'+(big?' big':'')},el('span',{class:'v',text:value}),copyButton(value,label,what));
 
@@ -104,7 +107,7 @@ export function eventText(e){
  switch(e.kind){
   case 'inscribed':return ['Inscribed on Monero'];
   case 'transfer':return ['Moved by spending its coin, under the 2023 rules'];
-  case 'claim':return ['Claimed by ',addr(e.to)];
+  case 'claim':return e.proof==='burn'?['Claimed by burning the old Mordinal, by ',addr(e.to)]:['Claimed by ',addr(e.to)];
   case 'move':return ['Sent by ',addr(e.from),' to ',addr(e.to)];
   case 'list':return ['Put up for sale by ',addr(e.seller),' for ',strong(xmr(e.price)+' XMR'),', until block '+count(e.until)];
   case 'cancel':return ['Sale stopped by ',addr(e.seller)];
@@ -117,7 +120,7 @@ export function eventText(e){
 // Columns shared by every list of events.
 export const eventColumns=({number=true}={})=>[
  {label:'Event',cell:e=>kindPill(e.kind)},
- ...(number?[{label:'NFT',cell:e=>mordinalLink(e.number??e.nft)}]:[]),
+ ...(number?[{label:'NFT',cell:e=>mordinalLink(e.number??e.nft,e.name)}]:[]),
  {label:'What happened',cell:eventText},
  {label:'Transaction',cell:e=>e.txid?txid(e.txid):''},
  {label:'Block',num:true,cell:e=>e.height==null?'':count(e.height)},
@@ -125,7 +128,7 @@ export const eventColumns=({number=true}={})=>[
 
 export const OPNAME={1:'Claim',2:'Send',3:'Listing',4:'Stop selling',5:'Reservation',6:'Purchase',7:'Collection',8:'Mint',9:'Burn'};
 export const JOB={unpaid:['Waiting for the relay fee','yellow'],queued:['Waiting to be sent','yellow'],built:['Waiting to be sent','yellow'],held:['Waiting for a payment to be in a block','yellow'],
- sent:['Sent, waiting for a block','yellow'],done:['In a block','green'],refused:['Refused','red'],stuck:['Did not reach a block','red'],unknown:['Not known to this service','']};
+ sent:['Sent, waiting for a block','yellow'],waiting:['Burned, waiting for its fee','yellow'],done:['In a block','green'],refused:['Refused','red'],stuck:['Did not reach a block','red'],unknown:['Not known to this service','']};
 export const jobPill=state=>pill(...(JOB[state]||[state,'']));
 // Records the relay holds that are not in a block yet. They do not count until they are.
 export function waitingList(jobs){

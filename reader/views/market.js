@@ -1,6 +1,6 @@
 // The market: open listings, recent sales, one listing, and buying it by signing a message and paying from any wallet.
 import {OP,RULES,heldUntil,encodeBody,renderText,recordId,codeOf,amounts,splitOf,formatXmr,canonical,parseTxKey,provePayments,hex} from './rules.js';
-import {el,add,fill,api,service,count,xmr,addr,code,exact,notice,pill,pills,strong,table,when,pictures,terms,running,field,textInput,mordinalLink,draft,kindPill,eventText,ROOT} from './ui.js';
+import {el,add,fill,api,service,count,xmr,addr,code,exact,notice,pill,pills,strong,table,when,pictures,terms,running,field,textInput,mordinalLink,mordinalName,draft,kindPill,eventText,ROOT} from './ui.js';
 import {tutorial} from './xmr721.js';
 import {collectionGrid} from './collection.js';
 import {walletPanel,watchWallet} from './wallet.js';
@@ -40,24 +40,24 @@ function history(events,pic,legacy=[]){
   el('div',{class:'section-head'},el('h2',{text:'Mordinals history'}),el('a',{class:'more',href:'#/',text:'View all'})),
   el('p',{class:'card-sub rail-note',text:'No XMR721 activity yet. These are the newest inscriptions and transfers under the original rules.'}),
   el('ul',{class:'feed'},legacy.map(e=>el('li',{'data-kind':e.kind},pic(e.number,{size:'thumb'}),
-   el('div',{class:'feed-body'},el('div',{class:'feed-top'},kindPill(e.kind),mordinalLink(e.number),el('span',{class:'dim',text:e.time?new Date(e.time*1000).toISOString().slice(0,10):''})),
+   el('div',{class:'feed-body'},el('div',{class:'feed-top'},kindPill(e.kind),mordinalLink(e.number,e.name),el('span',{class:'dim',text:e.time?new Date(e.time*1000).toISOString().slice(0,10):''})),
     el('div',{class:'feed-text'},'Block '+(e.height==null?'?':count(e.height))))))));
  return el('aside',{class:'side card stack','data-section':'history'},
   el('div',{class:'section-head'},el('h2',{},el('span',{class:'live-dot','aria-hidden':'true'}),'Activity'),el('a',{class:'more',href:'#/',text:'View all'})),
   events.length?el('ul',{class:'feed'},events.map(e=>el('li',{'data-kind':e.kind},
    Number.isInteger(e.number)?pic(e.number,{size:'thumb'}):el('span',{class:'pic thumb'}),
    el('div',{class:'feed-body'},
-    el('div',{class:'feed-top'},kindPill(e.kind),mordinalLink(e.number??e.nft),el('span',{class:'dim',text:when(e.time).slice(5,16)})),
+    el('div',{class:'feed-top'},kindPill(e.kind),mordinalLink(e.number??e.nft,e.name),el('span',{class:'dim',text:when(e.time).slice(5,16)})),
     el('div',{class:'feed-text'},brief(e)))))):el('p',{class:'empty',text:'Nothing has happened yet.'}));}
 // One listing as a card: picture, number, price and the way to buy it.
 function lotCard(t,height,pic){
  if(t.unfit)return el('article',{class:'lotcard unfit','data-lot':t.id},el('div',{class:'lot-meta'},el('span',{class:'dim',text:'This listing does not fit its code and cannot be bought here.'})));
- const held=running(t,height),name=Number.isInteger(t.number)?'#'+count(t.number):'NFT '+String(t.nft).slice(0,8);
+ const held=running(t,height),name=Number.isInteger(t.number)?mordinalName(t.number,t.name):'NFT '+String(t.nft).slice(0,8);
  const box=Number.isInteger(t.number)?pic(t.number):el('div',{class:'pic'},el('img',{alt:'',loading:'lazy',src:new URL(`nft/${t.nft}/content`,ROOT).href}));
  return el('article',{class:'lotcard','data-lot':t.id,'data-state':held?'reserved':'open'},
   el('a',{class:'lot-pic',href:'#/lot/'+t.id,'aria-label':'Listing of '+name},box,el('span',{class:'lot-flag '+(held?'reserved':'open'),text:held?'Reserved':'Open'})),
   el('div',{class:'lot-meta'},
-   el('div',{class:'lot-top'},el('span',{class:'lot-name'},mordinalLink(t.number??t.nft)),el('span',{class:'lot-end',title:'The sale ends at this block',text:'Ends '+count(t.until)})),
+   el('div',{class:'lot-top'},el('span',{class:'lot-name'},mordinalLink(t.number??t.nft,t.name)),el('span',{class:'lot-end',title:'The sale ends at this block',text:'Ends '+count(t.until)})),
    el('div',{class:'lot-seller'},el('span',{text:'Seller'}),el('a',{class:'who',href:'#/address/'+t.seller,title:t.seller,text:short(t.seller)})),
    el('div',{class:'lot-buy'},el('div',{class:'lot-price'},el('span',{text:'Price'}),strong(xmr(t.price)+' XMR')),
     el('a',{class:'btn primary small',href:'#/lot/'+t.id,text:held?'See':'Buy now'}))));}
@@ -92,7 +92,7 @@ export async function market(ctx){
   el('section',{class:'section','data-section':'collections'},el('div',{class:'section-head'},el('h2',{text:'Collections'}),el('a',{class:'more',href:'#/collections',text:'View all'})),
    el('div',{class:'cgrid strip'},strip.cards)),
   el('section',{class:'section card catalog','data-section':'sales'},el('div',{class:'cat-head'},el('div',{},el('h2',{text:'Recent sales'}),el('p',{class:'card-sub',text:'Sales recorded on the Monero chain.'}))),
-   table([{label:'NFT',cell:e=>el('div',{class:'with-thumb'},Number.isInteger(e.number)?pic(e.number,{size:'thumb'}):null,mordinalLink(e.number??e.nft))},{label:'Price',cell:e=>strong(xmr(e.price)+' XMR')},{label:'Seller',cell:e=>addr(e.seller)},
+   table([{label:'NFT',cell:e=>el('div',{class:'with-thumb'},Number.isInteger(e.number)?pic(e.number,{size:'thumb'}):null,mordinalLink(e.number??e.nft,e.name))},{label:'Price',cell:e=>strong(xmr(e.price)+' XMR')},{label:'Seller',cell:e=>addr(e.seller)},
     {label:'Buyer',cell:e=>addr(e.buyer)},{label:'Block',num:true,cell:e=>count(e.height)},{label:'Time',num:true,cell:e=>when(e.time)}],s.events,'No sales yet.')),
   el('section',{class:'section card catalog stack'},el('div',{},el('h2',{text:'How buying works'}),el('p',{class:'card-sub',text:'The buyer pays the seller directly. No one holds the money or the NFT in between.'})),
    el('ol',{class:'steps-row'},
@@ -141,7 +141,8 @@ export async function lot(ctx,id){
    el('p',{class:'dim',text:'Nothing is paid in this step.'}));}
  add(ctx.main,
   el('div',{class:'head'},el('a',{class:'crumb',href:'#/market',text:'Market'}),
-   el('h1',{class:'small'},about.name)),
+   el('h1',{class:'small'},about.name),
+    Number.isInteger(t.number)&&about.name!=='Mordinal #'+count(t.number)?el('p',{class:'item-of'},el('span',{class:'num',text:'Mordinal #'+count(t.number)})):null),
   el('div',{class:'split'},about.picture('large'),
    el('div',{class:'stack'},
     el('div',{class:'card stack answer','data-section':'terms'},el('div',{class:'section-head'},el('p',{class:'label',text:'Price'}),state),
@@ -170,7 +171,7 @@ export async function buy(ctx,id,address){
 
  if(!info.relay)set('read-only',notice('note',READ_ONLY));
  else if(t.status==='sold')set('sold',v.lot.buyer===me
-  ?[el('h2',{text:NAME+' is yours'}),notice('good','The purchase is in a block. It belongs to your address now.'),el('p',{},el('a',{class:'btn',href:about.href,text:'See Mordinal #'+count(n)}))]
+  ?[el('h2',{text:NAME+' is yours'}),notice('good','The purchase is in a block. It belongs to your address now.'),el('p',{},el('a',{class:'btn',href:about.href,text:'See '+NAME}))]
   :[el('h2',{text:'Sold'}),el('p',{class:'muted',text:NAME+' was sold to another buyer.'}),back]);
  else if(t.status!=='open')set('stopped',el('h2',{text:'Not for sale'}),el('p',{class:'muted',text:'The seller stopped this sale.'}),back);
  else if(buyJob)set('finishing',el('h2',{text:'Finishing the purchase'}),
@@ -186,7 +187,8 @@ export async function buy(ctx,id,address){
  else reserve();
 
  add(ctx.main,
-  el('div',{class:'head'},el('a',{class:'crumb',href:'#/lot/'+t.id,text:'Market · listing'}),el('h1',{class:'small',text:'Buy '+NAME})),
+  el('div',{class:'head'},el('a',{class:'crumb',href:'#/lot/'+t.id,text:'Market · listing'}),el('h1',{class:'small',text:'Buy '+NAME}),
+   Number.isInteger(t.number)&&NAME!=='Mordinal #'+count(t.number)?el('p',{class:'item-of'},el('span',{class:'num',text:'Mordinal #'+count(t.number)})):null),
   el('div',{class:'card tight with-thumb','data-section':'summary'},about.picture('thumb'),
    el('div',{},el('p',{},strong(xmr(t.price)+' XMR'),' from ',addr(t.seller)),el('p',{class:'muted'},'Buying as ',addr(me)))),
   stage);

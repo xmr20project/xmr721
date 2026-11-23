@@ -8,6 +8,10 @@
 //!     status                scan new blocks; balance, how many coins can carry a record now, and the payments
 //!                           received at subaddresses given out with `address`
 //!     carry <record hex>    build the carrier (not sent): {txid, blob, fee, extraBytes}
+//!     mint-record <token id>:<units>:<address kind 0|1>:<spend key>:<view key>:<salt>
+//!     mint-record <token id>:<units>:k:<owner key>:<salt>     the same for an XMR20 wallet's owner key
+//!                           the XO1 mint record of an open XMR20 token for that address (xmr20-tokens/OPEN.md); no node,
+//!                           no keys: {record, asset, owner}. `carry` takes such a record like an MD1 one.
 //!     split <n>             one transaction paying n coins of 0.01 XMR (MORDINALS_SPLIT_COIN) to this wallet (more carriers per block)
 //!     publish <blob hex>    send a built transaction to the node
 //!     address <n>           subaddress n of this wallet, for a fee payment; from then on every scan looks for it
@@ -46,7 +50,84 @@ const SPLIT_COIN: u64 = 10_000_000_000;
 const MIN_INPUT: u64 = 400_000_000;
 const MAX_SUBADDRESSES: u32 = 100_000;
 
+// An open XMR20 token's mint record (xmr20-tokens/OPEN.md, section 6): magic, asset 32, amount 8, owner 32, salt 8.
+const MINT_MAGIC: &[u8; 4] = b"XO1\xfe";
+const MINT_BYTES: usize = 84;
+/// The asset id of the open token with this id: the id of the denom "uxmr20open" + the id in hex, as the token ledger
+/// derives every asset id (BLAKE2b-512 personalised "Penumbra_AssetID", reduced into the decaf377 field).
+fn open_asset(token: &[u8; 32]) -> [u8; 32] {
+    let denom = format!("uxmr20open{}", hex::encode(token));
+    decaf377::Fq::from_le_bytes_mod_order(blake2b_simd::Params::default().personal(b"Penumbra_AssetID").hash(denom.as_bytes()).as_bytes()).to_bytes()
+}
+/// The token ledger's owner key of a Monero address (its sign to move rule): a decaf377 point from
+/// BLAKE2b-512("XMR20-ADDRESS-OWNER-v1" 0x00 || spend key || view key), which nobody holds a key for.
+fn address_owner(spend: &[u8; 32], view: &[u8; 32]) -> [u8; 32] {
+    let h = blake2b_simd::Params::new().hash_length(64).to_state().update(b"XMR20-ADDRESS-OWNER-v1\0").update(spend).update(view).finalize();
+    let b = h.as_bytes();
+    decaf377::Element::hash_to_curve(&decaf377::Fq::from_le_bytes_mod_order(&b[..32]), &decaf377::Fq::from_le_bytes_mod_order(&b[32..])).vartime_compress().0
+}
+fn usable_key(k: &[u8; 32]) -> bool {
+    use curve25519_dalek::{edwards::CompressedEdwardsY, traits::IsIdentity};
+    CompressedEdwardsY(*k).decompress().is_some_and(|p| !p.is_identity() && p.is_torsion_free() && p.compress().0 == *k)
+}
+fn mint_record(arg: &str) -> Result<J> {
+    let f: Vec<&str> = arg.split(':').collect();
+    let to_key = f.len() == 5 && f[2] == "k";
+    ensure!(f.len() == 6 || to_key, "mint-record <token id>:<units>:<address kind>:<spend key>:<view key>:<salt>, or <token id>:<units>:k:<owner key>:<salt>");
+    let h32 = |s: &str, what: &str| -> Result<[u8; 32]> { hex::decode(s).ok().and_then(|b| b.try_into().ok()).with_context(|| format!("{what}: 64 hex characters")) };
+    let token = h32(f[0], "token id")?;
+    ensure!(!f[1].is_empty() && f[1].len() <= 20 && !f[1].starts_with('0') && f[1].bytes().all(|c| c.is_ascii_digit()), "units: a whole number, 1 or more");
+    let amount: u64 = f[1].parse().context("units: too large")?;
+    let salt: [u8; 8] = hex::decode(f[f.len() - 1]).ok().and_then(|b| b.try_into().ok()).context("salt: 16 hex characters")?;
+    let owner = if to_key {
+        // An XMR20 wallet's owner key, as the token ledger takes one in a mint: the canonical encoding of a group element.
+        let k = h32(f[3], "owner key")?;
+        ensure!(decaf377::Encoding(k).vartime_decompress().is_ok_and(|e| e.vartime_compress().0 == k), "This is not an owner key of an XMR20 wallet");
+        k
+    } else {
+        ensure!(f[2] == "0" || f[2] == "1", "address kind: 0 (main address) or 1 (subaddress)");
+        let (spend, view) = (h32(f[3], "spend key")?, h32(f[4], "view key")?);
+        ensure!(usable_key(&spend) && usable_key(&view), "This address has a key no wallet can use");
+        // (The owner key is of the two keys alone, for a main address and a subaddress alike, as the token ledger has it.)
+        address_owner(&spend, &view)
+    };
+    let asset = open_asset(&token);
+    let mut record = MINT_MAGIC.to_vec();
+    record.extend(asset);
+    record.extend(amount.to_le_bytes());
+    record.extend(owner);
+    record.extend(salt);
+    Ok(json!({"record":hex::encode(record),"asset":hex::encode(asset),"owner":hex::encode(owner)}))
+}
+#[cfg(test)]
+mod open_tests {
+    /// The same values as the token ledger's core gives (its open_tests.rs, vectors_for_other_implementations).
+    #[test]
+    fn mint_records_are_the_token_ledgers() {
+        let arg = "5f92229b4507fd196051e64a5b8af2bc00112233445566778899aabbccddeeff:1000000000:0:b862409fb5c4c4123df2abf7462b88f041ad36dd6864ce872fd5472be363c5b1:1337036ac32d8f30d4589c3c1c595812ce0fff40e37c6f5a97ab213f318290ad:0102030405060708";
+        let r = super::mint_record(arg).unwrap();
+        assert_eq!(r["asset"], "0c042cf95628c99c19d3a686b9d43957d60669ba1555640d5d07a3180777090f");
+        assert_eq!(r["owner"], "22c3a5926232f2f1d394b49295cdab8d8c0af663edaa7c44d0f622deb8c46b04");
+        assert_eq!(r["record"], "584f31fe0c042cf95628c99c19d3a686b9d43957d60669ba1555640d5d07a3180777090f00ca9a3b0000000022c3a5926232f2f1d394b49295cdab8d8c0af663edaa7c44d0f622deb8c46b040102030405060708");
+        assert_eq!(super::parts(&hex::decode(r["record"].as_str().unwrap()).unwrap()).unwrap().len(), 1);
+        // To an owner key given as such: the same record as for the address with that owner.
+        let key = arg.split(':').take(2).collect::<Vec<_>>().join(":") + ":k:22c3a5926232f2f1d394b49295cdab8d8c0af663edaa7c44d0f622deb8c46b04:0102030405060708";
+        assert_eq!(super::mint_record(&key).unwrap()["record"], r["record"]);
+        for bad in [key.replace(":k:22", ":k:ff").replace("6b04:", "ffff:"), key.replace(":k:", ":K:"), key.replace(":0102030405060708", "")] {
+            assert!(super::mint_record(&bad).is_err(), "{bad}");
+        }
+        for bad in ["", "00:1:0:00:00:00", &arg.replace(":1000000000:", ":0:"), &arg.replace(":1000000000:", ":01:"), &arg.replace(":1000000000:", ":18446744073709551616:"), &arg.replace(":0:b8", ":2:b8"), &arg.replace("b862409f", "00000000"), &format!("{arg}00")] {
+            assert!(super::mint_record(bad).is_err(), "{bad}");
+        }
+        assert!(super::parts(&[super::MINT_MAGIC.as_slice(), &[0u8; 81]].concat()).is_err());
+    }
+}
+
 fn parts(record: &[u8]) -> Result<Vec<Vec<u8>>> {
+    if record.starts_with(MINT_MAGIC) {
+        ensure!(record.len() == MINT_BYTES, "A mint record is {MINT_BYTES} bytes");
+        return Ok(vec![record.to_vec()]);
+    }
     ensure!(record.len() > 5 && record.len() <= MAX_RECORD, "Record size out of range");
     ensure!(record.starts_with(MAGIC), "Not a Mordinals record");
     Ok(record.chunks(CHUNK).map(|c| c.to_vec()).collect())
@@ -312,6 +393,9 @@ async fn run(dir: &Path, op: &str, arg: Option<&str>) -> Result<J> {
         }
         return Ok(json!({"address":Wallet::open(dir, &network, start)?.address().to_string()}));
     }
+    if op == "mint-record" {
+        return mint_record(arg.context("mint-record needs its argument")?);
+    }
     let url = std::env::var("MORDINALS_NODE").context("MORDINALS_NODE is not set")?;
     ensure!(url.starts_with("http://") || url.starts_with("https://"), "MORDINALS_NODE must be an http(s) address");
     let r = SimpleRequestTransport::new(url).await?;
@@ -362,7 +446,7 @@ async fn run(dir: &Path, op: &str, arg: Option<&str>) -> Result<J> {
 async fn main() {
     let a: Vec<String> = std::env::args().collect();
     let out = if a.len() < 3 {
-        json!({"error":"usage: mordinals-carrier <state dir> <init|status|carry|split|publish|address> [argument]"})
+        json!({"error":"usage: mordinals-carrier <state dir> <init|status|carry|split|publish|address|mint-record> [argument]"})
     } else {
         match run(Path::new(&a[1]), &a[2], a.get(3).map(|s| s.as_str())).await {
             Ok(result) => json!({"result":result}),
