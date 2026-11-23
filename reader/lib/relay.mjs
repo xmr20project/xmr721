@@ -22,13 +22,19 @@
 //   done     the reader accepted the record from a block
 //   refused  the rules refused it (before sending, or in the block)
 //   stuck    not mined after a long time; needs a person
+//
+// Mint records of open XMR20 tokens (xmr20-tokens/OPEN.md) are carried too, when the relay charges for them
+// (`fees.tokenMint`). Such a record is no MD1 record and carries no signature: whoever asks names the token, the amount
+// and the Monero address the tokens go to, the relay has the carrier tool make the record and sends it once its fee is
+// paid. The XMR721 ledger has nothing to say about it, so the job is done when the node shows its transaction 10 blocks
+// deep. What the mint credited is the token ledger's to say.
 import {execFile} from 'node:child_process';
 import {createHash,randomBytes} from 'node:crypto';
 import {existsSync,mkdirSync,readdirSync,readFileSync,renameSync,unlinkSync,openSync,writeSync,fsyncSync,closeSync} from 'node:fs';
 import {join} from 'node:path';
 import {OP,NO_COLLECTION,decodeRecord,recordId,signerOf,canonical} from '../../rules/lib/records.mjs';
 import {readDeploy,TYPE_JSON} from '../../xmr20-tokens/lib/token.mjs';
-import {unhex} from '../../rules/lib/monero.mjs';
+import {unhex,hex,leBytes,decodeAddress} from '../../rules/lib/monero.mjs';
 import {MAX_RECORD} from './transport.mjs';
 
 // The carrier tool, one call at a time (it keeps one state file).
@@ -41,10 +47,13 @@ export function createCarrier({bin,stateDir,node,network='offline-fakechain',sta
    let v=null;try{v=JSON.parse(String(stdout).trim().split('\n').at(-1));}catch{}
    if(v&&'result' in v)done(v.result);else fail(Error(v?.error?String(v.error).slice(0,300):'The carrier tool did not answer'+(err?.killed?' in time':'')));})));
   queue=next.catch(()=>{});return next;};
- return {init:()=>run('init'),status:()=>run('status'),carry:record=>run('carry',record),split:n=>run('split',n),publish:blob=>run('publish',blob),address:n=>run('address',n)};}
+ return {init:()=>run('init'),status:()=>run('status'),carry:record=>run('carry',record),split:n=>run('split',n),publish:blob=>run('publish',blob),address:n=>run('address',n),mintRecord:arg=>run('mint-record',arg)};}
 
 const FINAL=new Set(['done','refused','stuck']);
-export const DEFAULT_LIMITS={perSigner:3,waiting:200,perDay:2000,margin:5,resendMs:600000,stuckBlocks:720,holdBlocks:60,settleBlocks:10,sendAgain:2,minReady:3,splitInto:8,keepMs:7*86400000,payBlocks:30,unpaid:2000,payAddresses:5000,buyReserve:2,laneReserve:2,perCallerDay:200};
+// The kind of a job that carries a token mint record (every other job's `op` is its record's number).
+export const TOKEN_MINT='token-mint';
+const UNIT=1000000n;
+export const DEFAULT_LIMITS={perSigner:3,waiting:200,perDay:2000,margin:5,resendMs:600000,stuckBlocks:720,holdBlocks:60,settleBlocks:10,sendAgain:2,minReady:3,splitInto:8,keepMs:7*86400000,payBlocks:30,unpaid:2000,mintUnpaid:500,mintWaiting:200,mintPerDay:2000,mintDepth:10,mintIdleMs:6*3600000,payAddresses:5000,buyReserve:2,laneReserve:2,perCallerDay:200};
 // A purchase is never held back by the shared limits: once a buyer has paid, the record that makes the Mordinal
 // theirs goes first, with coins kept back for it (buyReserve), so nobody can crowd it out until the reservation runs out.
 
@@ -70,7 +79,7 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
  // Coins kept for the lane (none on a relay without one), and how many ready coins the relay keeps so that ordinary
  // records never wait on a count that starts no new split.
  const laneReserve=laneOf.size?limits.laneReserve:0,keepReady=Math.max(limits.minReady,limits.buyReserve+laneReserve+1);
- const fees={collection:BigInt(asked.collection||0),mint:BigInt(asked.mint||0)},priceOf=op=>op===OP.collection?fees.collection:op===OP.mint?fees.mint:0n;
+ const fees={collection:BigInt(asked.collection||0),mint:BigInt(asked.mint||0),tokenMint:BigInt(asked.tokenMint||0)},priceOf=op=>op===OP.collection?fees.collection:op===OP.mint?fees.mint:0n;
  mkdirSync(jobsDir,{recursive:true});
  const write=(file,value)=>{const tmp=file+'.tmp',fd=openSync(tmp,'w',0o600);try{writeSync(fd,JSON.stringify(value)+'\n');fsyncSync(fd);}finally{closeSync(fd);}renameSync(tmp,file);};
  const jobs=new Map();
@@ -79,22 +88,31 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
  // Fee payments: which record each subaddress was given to (and from which block its payments count), and the
  // payments already counted for a record that was sent.
  const pay=existsSync(payFile)?JSON.parse(readFileSync(payFile,'utf8')):{addresses:{},used:[]};const used=new Set(pay.used);
+ // (A job is saved as paid before its payments are marked used; one that was cut off in between is made whole here.)
+ for(const j of jobs.values())for(const k of j.paid||[])used.add(k);
  // Callers are counted by a salted hash of their address, never by the address itself.
  const saltFile=join(dir,'caller-salt');if(!existsSync(saltFile))write(saltFile,randomBytes(16).toString('hex'));const salt=JSON.parse(readFileSync(saltFile,'utf8'));
  const callerKey=c=>c?createHash('sha256').update(salt+':'+c).digest('hex').slice(0,24):null;
  let ready=null;   // spendable coins at the last check; null until the first one
  function payAddress(id,tip,t){
-  for(const [n,e] of Object.entries(pay.addresses))if(e.id===id)return Number(n);
+  for(const [n,e] of Object.entries(pay.addresses))if(e.id===id){if(e.idleAt){delete e.idleAt;write(payFile,pay);}return Number(n);}
   for(let n=1;n<=limits.payAddresses;n++){const e=pay.addresses[n],j=e&&jobs.get(e.id);
    // A subaddress is given out again only when its record is long gone, so a late payment is not counted for another record.
-   if(!e||(!j&&t-e.at>limits.keepMs)){pay.addresses[n]={id,from:tip,at:t};write(payFile,pay);return n;}}
+   // The address of a token mint that nobody paid anything for is given out again sooner (`idleAt`): asking for a mint
+   // costs nothing, so such addresses must not stay taken for a week. Its job goes with it.
+   const idle=e?.idleAt&&t-e.idleAt>limits.mintIdleMs&&(!j||(j.op===TOKEN_MINT&&j.state==='refused'));
+   if(!e||(!j&&t-e.at>limits.keepMs)||idle){if(idle&&j)drop(j);pay.addresses[n]={id,from:tip,at:t};write(payFile,pay);return n;}}
   throw bad('The relay is busy. Try again in a few minutes.',503);}
  // A fee payment is one output of a transaction: one transaction may pay several records' fees.
  const outKey=p=>p.txid+':'+(p.out??0);
  const paidFor=(j,payments)=>{const e=pay.addresses[j.pay.index];return e&&e.id===j.id?payments.filter(p=>p.index===j.pay.index&&p.height>=e.from&&!used.has(outKey(p))):[];};
  const save=j=>write(join(jobsDir,j.id+'.json'),j),drop=j=>{jobs.delete(j.id);try{unlinkSync(join(jobsDir,j.id+'.json'));}catch{}};
  const waiting=()=>[...jobs.values()].filter(j=>!FINAL.has(j.state));
- const view=j=>({id:j.id,state:j.state,op:j.op,number:j.number,txid:j.txid||null,error:j.error||null,note:j.note||null,...(j.state==='unpaid'?{pay:{address:j.pay.address,amount:j.pay.amount,payBy:j.payBy}}:{})});
+ const view=j=>({id:j.id,state:j.state,op:j.op,number:j.number,txid:j.txid||null,error:j.error||null,note:j.note||null,...(j.mint?{mint:{token:j.mint.token,amount:j.mint.amount,asset:j.mint.asset}}:{}),...(j.state==='unpaid'&&!j.mint?{pay:{address:j.pay.address,amount:j.pay.amount,payBy:j.payBy}}:{})});
+ // What the one who asked for a mint is told: also the address the tokens go to, the record, and where to pay. The
+ // public answers (status, pending) leave those out: the chain shows an owner key, never the address behind it.
+ const mintView=j=>({...view(j),mint:j.mint,record:j.record,...(j.state==='unpaid'?{pay:{address:j.pay.address,amount:j.pay.amount,payBy:j.payBy}}:{}),
+  notice:'The fee pays for carrying the mint. What it credits is the token ledger\'s to say: less than asked when less is left of the token, nothing when it is minted out.'});
  const refuse=(j,error)=>{j.state='refused';j.error=String(error).slice(0,300);j.endedAt=now();save(j);};
  // One thing at a time: a new record and the regular check never interleave.
  let chainOf=Promise.resolve();
@@ -173,7 +191,8 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
    if(onItsWay||standing)throw Object.assign(bad('Another record for this launch is with the relay or on the ledger already.',409),{held:(onItsWay||standing).id});
    if(before.length&&!anew)throw Object.assign(bad('This launch was inscribed before and its inscription was burned. To inscribe it again, hand the record over with "anew".',409),{held:before.at(-1).id});}
   // The listed minters' collections and mints go without the fee.
-  const all=waiting(),open=all.filter(j=>j.state!=='unpaid'),price=ownLane?0n:priceOf(d.op);
+  // (Token mints have limits of their own, so they neither fill nor use up the records' limits.)
+  const all=waiting().filter(j=>j.op!==TOKEN_MINT),open=all.filter(j=>j.state!=='unpaid'),price=ownLane?0n:priceOf(d.op);
   if(number!=null&&open.some(j=>j.number===number))throw bad('Another record for this Mordinal is waiting for a block. Try again in a few minutes.',429);
   if(price&&all.length-open.length>=limits.unpaid)throw bad('The relay is busy. Try again in a few minutes.',503);
   if(all.filter(j=>j.signer===signer).length>=limits.perSigner)throw bad('This address already has '+limits.perSigner+' records waiting for a block. Try again in a few minutes.',429);
@@ -183,7 +202,7 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   // everyone else's daily limits. The per-address limit still applies.
   if(d.op!==OP.buy&&!ownLane){
    if(open.length>=limits.waiting)throw bad('The relay is busy. Try again in a few minutes.',503);
-   if([...jobs.values()].filter(j=>j.createdAt>day&&j.txid&&j.op!==OP.buy&&!j.lane).length>=limits.perDay)throw bad('The relay reached its daily limit. Try again later, or publish the record yourself.',503);
+   if([...jobs.values()].filter(j=>j.createdAt>day&&j.txid&&j.op!==OP.buy&&j.op!==TOKEN_MINT&&!j.lane).length>=limits.perDay)throw bad('The relay reached its daily limit. Try again later, or publish the record yourself.',503);
    if(who&&[...jobs.values()].filter(j=>j.caller===who&&j.createdAt>day&&!j.lane).length>=limits.perCallerDay)throw bad('This connection sent many records today. Try again tomorrow, or publish the record yourself.',429);}
   if(known)drop(known);
   const j={id,record:recordHex,op:d.op,number,signer,caller:who,state:isReady?'queued':'held',createdAt:now(),createdHeight:tip,...(ownLane?{lane:true}:{}),...(launch?{launch}:{})};
@@ -194,14 +213,99 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   jobs.set(id,j);save(j);
   if(j.state==='queued')await send(j);return view(j);}
 
+ // ---- Mint records of open XMR20 tokens
+ // The open token with this id, as the service that runs this relay lists it ({id, tick, lim}), or null.
+ let tokenOf=null;
+ const NO_MINTS='This relay does not carry mints of open XMR20 tokens. Mint from your own wallet with the xmr721 command.';
+ // May this token be minted now? -> null, or why not. Asked when a mint is taken and again when its fee has arrived.
+ const unmintable=(t,units)=>!t?'This is not an open token on this ledger. A new token has to be in a block before it is minted.'
+  :reader.height-t.height+1<limits.mintDepth?`This token's deploy is ${Math.max(1,reader.height-t.height+1)} blocks deep; the relay mints a token once its deploy is ${limits.mintDepth} blocks deep.`
+  :t.lim==null?'Nothing of this token can be minted: its whole supply went to its creator.':units>BigInt(t.lim)*UNIT?`One mint of this token takes at most ${t.lim}.`:null;
+ async function submitMint({token,amount,address,wallet=null,salt=null,caller=null}={}){
+  if(!fees.tokenMint||!tokenOf)throw bad(NO_MINTS,503);
+  if(typeof token!=='string'||!/^(?:[0-9a-f]{16}|[0-9a-f]{64})$/.test(token))throw bad('token: the token\'s id (64 hex characters), or the 16 characters signed texts show.');
+  const m=typeof amount==='string'?/^([0-9]{1,14})(?:\.([0-9]{1,6}))?$/.exec(amount):null,units=m?BigInt(m[1])*UNIT+BigInt((m[2]||'').padEnd(6,'0')):0n;
+  if(units<1n||units>=1n<<64n)throw bad('amount: a number of tokens with up to 6 decimals, above 0, written as text.');
+  // The tokens go to a Monero address, or to an XMR20 wallet named by its owner key: one of the two.
+  let to=null,k=null;
+  if(wallet!=null){if(address!=null)throw bad('Give the address or the wallet the tokens go to, not both.');if(typeof wallet!=='string'||!/^[0-9a-f]{64}$/.test(wallet)||/^0+$/.test(wallet))throw bad('wallet: the owner key of the XMR20 wallet the tokens go to (64 hex characters).');}
+  else try{to=canonical(address,network);k=decodeAddress(to,network);}catch{throw bad('address: the Monero address the tokens go to (a main address or a subaddress).');}
+  if(salt!=null&&!(typeof salt==='string'&&/^[0-9a-f]{16}$/.test(salt)))throw bad('salt: 16 hex characters, or leave it out.');
+  const t=tokenOf(token),why=unmintable(t,units);if(why)throw bad(why,t?400:404);
+  // The limits come before the carrier tool is asked for anything: a request that is refused costs the relay nothing.
+  const mints=[...jobs.values()].filter(j=>j.op===TOKEN_MINT),live=mints.filter(j=>!FINAL.has(j.state)),tip=reader.height,day=now()-86400000,who=callerKey(caller);
+  const full=live.filter(j=>j.state==='unpaid').length>=limits.mintUnpaid||live.filter(j=>j.state!=='unpaid').length>=limits.mintWaiting||mints.filter(j=>j.createdAt>day&&j.txid).length>=limits.mintPerDay;
+  const many=who&&[...jobs.values()].filter(j=>j.caller===who&&j.createdAt>day&&!j.lane).length>=limits.perCallerDay;
+  // The same mint asked for again (same token, amount, address and salt) is the same job, whatever the limits say; so a
+  // salt is needed to find it before the tool runs. Without one the mint is new.
+  const s=salt??randomBytes(8).toString('hex');
+  if(salt==null&&(full||many))throw bad(many?'This connection sent many records today. Try again tomorrow, or mint from your own wallet.':'The relay is busy. Try again in a few minutes.',many?429:503);
+  let made;
+  try{made=await carrier.mintRecord((wallet!=null?[t.id,units,'k',wallet,s]:[t.id,units,k.kind==='sub'?1:0,hex(k.spend),hex(k.view),s]).join(':'));}
+  catch(e){if(wallet!=null&&/not an owner key/.test(e.message))throw bad('wallet: that is not the owner key of an XMR20 wallet.');throw bad('The relay cannot make the mint record right now. Try again in a few minutes.',503);}
+  if(wallet!=null&&made?.owner!==wallet)throw bad('The relay cannot make the mint record right now. Try again in a few minutes.',503);
+  // What the tool made is the record that was asked for: this amount, this salt, and nothing after them.
+  if(!(made&&typeof made.record==='string'&&/^[0-9a-f]{64}$/.test(made.asset||'')&&/^[0-9a-f]{64}$/.test(made.owner||'')&&made.record===`584f31fe${made.asset}${hex(leBytes(units,8))}${made.owner}${s}`))throw bad('The relay cannot make the mint record right now. Try again in a few minutes.',503);
+  const id=createHash('sha256').update(Buffer.from(made.record,'hex')).digest('hex'),known=jobs.get(id);
+  // A job found again is shown with the receiver as this caller named it: the record's owner key is public once it is
+  // in a transaction, the Monero address behind an address owner is not, and asking by the key must not give it out.
+  const shown=j=>{const v=mintView(j),{wallet:_,...rest}=v.mint;return {...v,mint:{...rest,to,...(wallet!=null?{wallet}:{})}};};
+  if(known&&known.state!=='refused'&&known.state!=='stuck')return shown(known);
+  // A mint the relay gave up on as stuck was paid for: it goes on from where it stood (its own transaction when it has
+  // one, wherever that is by now), never as a new job with a new fee.
+  if(known?.state==='stuck'){known.state=known.blob?'built':'queued';known.note=null;known.endedAt=null;known.createdHeight=tip;save(known);await mintStep(known,tip,now(),async()=>[]);return shown(known);}
+  // One that was refused (its fee did not arrive in time) starts over, and a fee that arrived late counts for it.
+  if(full||many)throw bad(many?'This connection sent many records today. Try again tomorrow, or mint from your own wallet.':'The relay is busy. Try again in a few minutes.',many?429:503);
+  if(known)drop(known);
+  // (No signer: the address the tokens go to did not ask for anything, so the mint does not count against its records.)
+  const j={id,record:made.record,op:TOKEN_MINT,number:null,signer:null,caller:who,state:'unpaid',createdAt:now(),createdHeight:tip,mint:{token:t.id,amount:units.toString(),to,...(wallet!=null?{wallet}:{}),asset:made.asset,salt:s}};
+  const index=payAddress(id,tip,j.createdAt),{address:payTo}=await carrier.address(index);
+  j.pay={index,address:payTo,amount:fees.tokenMint.toString()};j.payBy=tip+limits.payBlocks;jobs.set(id,j);save(j);return mintView(j);}
+ // One step of a mint job. The node alone says where its transaction is.
+ async function mintStep(j,tip,t,received){
+  const where=async()=>{const s=(await chain.txs([j.txid])).get(j.txid);return !s?'unknown':s.inPool?'pool':s.height;};
+  const finish=height=>{j.state='done';j.doneHeight=height;j.endedAt=t;j.note=null;save(j);};
+  if(j.state==='done'){
+   // A block that held it can still be replaced for a while: if the node no longer shows it in a block, it goes out again.
+   if(tip-j.doneHeight<limits.settleBlocks*2){const at=await where();if(!Number.isInteger(at)){j.state='sent';j.sentAt=0;j.sentHeight=tip;j.doneHeight=null;j.endedAt=null;save(j);}return;}
+   if(t-j.endedAt>limits.keepMs)drop(j);return;}
+  if(j.state==='refused'){if(t-j.endedAt>limits.keepMs)drop(j);return;}
+  if(j.state==='stuck'){const at=j.txid?await where():null;if(Number.isInteger(at)&&tip-at+1>=limits.settleBlocks)finish(at);
+   // (Given up on before it was ever built, by an earlier version: it is paid for, so it waits for a coin again.)
+   else if(!j.txid&&j.paid){j.state='queued';j.endedAt=null;save(j);await send(j);}return;}
+  if(j.state==='unpaid'){
+   const got=paidFor(j,await received()),sum=got.reduce((a,p)=>a+BigInt(p.amount),0n);
+   if(sum<BigInt(j.pay.amount)){if(tip>j.payBy){refuse(j,'The relay fee was not paid in time. Nothing was sent. A payment that arrives late counts when the same mint is asked for again with the same salt.');
+     // Nothing at all was paid: the address can be given to someone else after a while.
+     if(!got.length&&pay.addresses[j.pay.index]?.id===j.id){pay.addresses[j.pay.index].idleAt=t;write(payFile,pay);}}return;}
+   const why=tokenOf?unmintable(tokenOf(j.mint.token),BigInt(j.mint.amount)):NO_MINTS;
+   if(why){refuse(j,why);log({job:j.id,paidButRefused:got.map(p=>p.txid)});return;}
+   j.state='queued';j.paid=got.map(outKey);j.createdHeight=tip;save(j);
+   for(const p of got)used.add(outKey(p));pay.used=[...used];write(payFile,pay);await send(j);return;}
+  // A mint that is paid for waits for a coin as long as it takes: it is never given up on before it was sent.
+  if(j.state==='queued'){await send(j);return;}
+  // A transaction that was built may be with the node, or in a block, already (it was sent once and given up on, or the
+  // node did not show it for a moment): then it is not handed over again, it is watched.
+  if(j.state==='built'){const at=j.txid&&j.sentAt!=null?await where():'unknown';
+   if(at!=='unknown'){j.state='sent';j.sentAt=t;j.sentHeight=tip;j.note=null;save(j);if(Number.isInteger(at)&&tip-at+1>=limits.settleBlocks)finish(at);return;}
+   await send(j);return;}
+  if(j.state==='sent'){
+   const at=await where();
+   if(Number.isInteger(at)){if(tip-at+1>=limits.settleBlocks)finish(at);return;}
+   if(tip-j.sentHeight>limits.stuckBlocks){j.state='stuck';j.endedAt=t;save(j);log({job:j.id,stuck:true});return;}
+   // The node dropped the transaction, or a block that held it was replaced: the very same transaction goes out again.
+   if(at==='unknown'&&t-j.sentAt>limits.resendMs){j.state='built';save(j);await send(j);}}}
+
  // After each reader pass: settle what reached a block, send again what did not, keep coins ready.
  async function tick(){
   const tip=reader.height,t=now();let asked=null,unknown=null,payments=null;
-  const received=async()=>payments??=((await carrier.status()).payments||[]);
+  // (One look at the relay's wallet per pass, also when it fails: then every unpaid job waits for the next pass.)
+  let unseen=null;const received=async()=>{if(unseen)throw unseen;try{return payments??=((await carrier.status()).payments||[]);}catch(e){unseen=e;throw e;}};
   const missing=async txid=>{if(!asked?.has(txid)){const ids=[...new Set([...jobs.values()].filter(j=>j.state==='sent').map(j=>j.txid).concat([txid]))],got=await chain.txs(ids);asked=new Set(ids);unknown=new Set(ids.filter(i=>!got.has(i)));}return unknown.has(txid);};
   // Purchases first.
   for(const j of [...jobs.values()].sort((a,b)=>(b.op===OP.buy)-(a.op===OP.buy))){
    try{
+    if(j.op===TOKEN_MINT){await mintStep(j,tip,t,received);continue;}
     if(j.state==='done'){
      // A block that held this record can still be replaced for a while.
      if(tip-j.doneHeight<limits.settleBlocks&&!reader.entryById(j.id)){j.state='sent';j.sentAt=0;j.sentHeight=tip;j.doneHeight=null;j.endedAt=null;save(j);}
@@ -261,11 +365,14 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
    return {tip,waiting:waiting().length,ready:status.ready,balance:status.balance};}
   catch(e){log({coins:String(e.message).slice(0,200)});return {tip,waiting:waiting().length,ready:null,balance:null};}}
 
- return {limits,fees:{collection:fees.collection.toString(),mint:fees.mint.toString()},
+ return {limits,fees:{collection:fees.collection.toString(),mint:fees.mint.toString(),...(fees.tokenMint?{tokenMint:fees.tokenMint.toString()}:{})},
+  // Mints of open XMR20 tokens: the token list is the service's (it knows the opening block), handed over once.
+  useTokens(lookup){tokenOf=lookup;},submitMint:o=>alone(()=>submitMint(o)),
   submit:(recordHex,o)=>alone(()=>submit(recordHex,o)),tick:()=>alone(tick),
   // What became of a record: a waiting job, or an accepted record in a block.
   status(id){const j=jobs.get(id),e=reader.entryById(id);
    if(e)return {id,state:'done',txid:e.txid,height:e.height,confirmations:reader.height-e.height+1,error:null};
+   if(j&&j.op===TOKEN_MINT)return {...view(j),height:j.doneHeight??null,confirmations:j.doneHeight!=null?Math.max(0,reader.height-j.doneHeight+1):0};
    if(j)return {...view(j),state:j.state==='done'?'sent':j.state,height:null,confirmations:0};
    return {id,state:'unknown',txid:null,height:null,confirmations:0,error:null};},
   pending:()=>waiting().map(view),

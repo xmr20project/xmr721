@@ -14,8 +14,10 @@
 //        (a new or changed --burn-from of an existing state folder has to lie at least 10 blocks above the newest block of the folder and of the node)
 //        [--carrier-bin <path> --carrier-state <dir> --carrier-network offline-fakechain|stagenet|mainnet [--carrier-start <height>] [--relay-limits name=n,…]]   relay on (mainnet also needs MORDINALS_MAINNET=1)
 //        [--mint-fee <atomic units> --collection-fee <atomic units>]   what this relay charges to carry a mint or a collection record
+//        [--token-mint-fee <atomic units>]   what this relay charges to carry a mint of an open XMR20 token (with --xmr20-open-from; without it the relay carries none)
 //        [--content-dir <dir> | --content-archive [url]] [--collections <dir>] [--views <dir>] [--allow-origin <origin>] [--allow-extension <id>] [--behind-proxy] [--test-hooks]
 //        [--xmr20-inscribers <address>,…]   list the XMR20 tokens these addresses inscribed (xmr20-tokens/FORMAT.md)
+//        [--xmr20-open-from <block>]   list the open XMR20 tokens deployed from this block on (xmr20-tokens/OPEN.md, draft)
 //        [--xmr20-earlier <dir> | --no-xmr20-earlier]   the earlier XMR20 deploy inscriptions (xmr20-tokens/EARLIER.md); the list this repository ships is served unless another is named
 //        [--no-xmr20-follow]   do not read the earlier formats on in the blocks this reader follows (lib/earlier.mjs): serve the shipped list and the saved collections as they are
 //
@@ -36,6 +38,7 @@ import {served,readOwners} from './lib/owners.mjs';
 import {loadCollections} from '../xmr20-nfts/lib/collection.mjs';
 import {projectDeploys,TYPE_JSON} from '../xmr20-tokens/lib/token.mjs';
 import {loadEarlier,canonical as earlierText} from '../xmr20-tokens/lib/earlier.mjs';
+import {openDeployIn,projectOpen,prepareOpenDeploy,finishOpenDeploy,ID_SHOWN} from '../xmr20-tokens/lib/open.mjs';
 import {openFollower} from './lib/follow.mjs';
 import {picker,earlierTokens,collectionOwners,NAME as EARLIER_NAME} from './lib/earlier.mjs';
 
@@ -47,7 +50,7 @@ const fail=(message,status=400)=>{const e=Error(message);e.status=status;return 
 const isJson=bytes=>{try{JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));return true;}catch{return false;}};
 const int=(v,fallback,min,max)=>{const n=v==null||v===''?NaN:Number(v);return Number.isInteger(n)?Math.min(max,Math.max(min,n)):fallback;};
 
-export function createService({reader,relay=null,owners,transfers=[],blockTimes=null,groups=null,content=null,collections=new Map(),views=null,origins=[],extensions=null,behindProxy=false,testHooks=false,extra=null,xmr20=null,earlier=null,follower=null,followLimit=25,followBudget=1000,chunk=4000,rate={perSecond:2,burst:60},log=()=>{}}){
+export function createService({reader,relay=null,owners,transfers=[],blockTimes=null,groups=null,content=null,collections=new Map(),views=null,origins=[],extensions=null,behindProxy=false,testHooks=false,extra=null,xmr20=null,xmr20Open=null,earlier=null,follower=null,followLimit=25,followBudget=1000,chunk=4000,rate={perSecond:2,burst:60},log=()=>{}}){
  // On a ledger that claims by burning the list also gives each owner output's global index, so the hash over them can be recomputed.
  const m=reader.meta,list=owners.map(m0=>reader.meta.burnFrom!=null?{...served(m0),ownerOutputIndex:m0.ownerOutputIndex}:served(m0)),numbers=owners.map(o=>o.number),entry=new Map(owners.map(o=>[o.number,o])),byReg=new Map(owners.map(o=>[o.registrationTx,o]));
  // When the blocks of the original history were made: exact for the blocks in the list, and between two listed blocks
@@ -133,6 +136,21 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
    return {id:e.nft,inscription:firstMinted+i,creator:x.minted.creator,collection:x.minted.collection,type:x.minted.type,burned:Boolean(x.burned),burnedBy:x.burned?x.history.find(h=>h.what==='burn')?.from??null:null,
     owner:x.owner,height:e.height,time:e.time,txid:e.txid,content:()=>contentOf(e.nft)};}),xmr20.inscribers),list=all.filter(t=>t.listed).map(({listed,...t})=>t);
   return {all,list,by:new Map(list.flatMap(t=>[[t.id,t],[String(t.number),t],...(t.mint?[[t.mint,t]]:[])]))};});
+ // Open XMR20 tokens (xmr20-tokens/OPEN.md): the open deploys among every MD1 record carried from the opening block on,
+ // also the records the ledger passed over (a deploy inscribed before the opening block and carried again). The journal
+ // holds them all in chain order. This is the list of announcements: what was minted and who holds it is the token
+ // ledger's to say, and so is the one deploy this list cannot refuse (its asset already had supply there).
+ // Whether a journal entry's record is an open deploy depends on its bytes alone, so it is worked out once per entry.
+ const deployOf=new WeakMap(),openDeployAt=e=>{if(!deployOf.has(e))deployOf.set(e,openDeployIn(Buffer.from(e.record,'hex'),{domain:m.domain,network:m.network}));return deployOf.get(e);};
+ if(xmr20Open&&!(Number.isInteger(xmr20Open.from)&&xmr20Open.from>m.start))throw Error('The opening block of open XMR20 tokens has to be above the start block of this reader.');
+ const openTokens=()=>once('xmr20open',()=>{const records=[];
+   for(const e of reader.journal){if(!e.record||e.height<xmr20Open.from)continue;const d=openDeployAt(e);
+    if(d)records.push({id:d.id,decoded:d.decoded,height:e.height,txid:e.txid,record:e.record});}
+   const list=projectOpen(records).map((t,i)=>({number:i+1,...t})),record=new Map(records.map(r=>[r.id+':'+r.txid,r.record]));
+   return {list,record,by:new Map(list.flatMap(t=>[[t.id,t],[t.id.slice(0,ID_SHOWN),t]]))};});
+ // The relay carries mints of the tokens this service lists (lib/relay.mjs).
+ if(relay&&xmr20Open)relay.useTokens(key=>openTokens().by.get(key)??null);
+ const opened=()=>{if(!xmr20Open)throw fail('This reader lists no open XMR20 tokens.',404);if(reader.height+1<xmr20Open.from)throw fail(`Open XMR20 tokens start at block ${xmr20Open.from}; the ledger is at block ${reader.height}.`,409);};
  const open=()=>once('open',()=>reader.lots.map(lotView).filter(l=>l.status==='open'));
  const claimed=()=>once('claimed',()=>numbers.filter(n=>L().mordinal(n).claimed));
  const card=n=>{const o=entry.get(n),s=state(n);return {number:n,name:s.name,reg:s.reg,claimed:s.claimed,owner:s.owner,...(s.burned?{burned:true}:{}),...(s.waiting?{waiting:true}:{}),bodySize:o.bodySize??null,group:groupOf.get(n)??null,
@@ -159,7 +177,7 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
     // The fee: the fee wallet, its public secret view key, the account of the fee addresses and what is added to a
     // Mordinal's number to give its index there (1: index 0 takes the wallet's own change).
     ...(m.burnFrom!=null?{burnFrom:m.burnFrom,burn:{recordsEnd:L().burn.recordsEnd,address:L().burn.address,viewKey:BURN.viewSecret,text:CLAIM_PREFIX+'<address>',dead:L().burn.dead,ownerOutputs:m.ownerOutputs,
-     fee:L().burn.fee}}:{}),...(xmr20||E?{xmr20:{...(xmr20?{inscribers:xmr20.inscribers}:{}),...(E?{earlier:earlierInfo()}:{})}}:{}),
+     fee:L().burn.fee}}:{}),...(xmr20||E||xmr20Open?{xmr20:{...(xmr20?{inscribers:xmr20.inscribers}:{}),...(E?{earlier:earlierInfo()}:{}),...(xmr20Open?{open:{from:xmr20Open.from}}:{})}}:{}),
     relay:relay?{networkFee:'relay',perAddress:relay.limits.perSigner,fees:relay.fees,payBlocks:relay.limits.payBlocks}:null,rules:{feeBps:RULES.feeBps,marketFeeCapBps:RULES.marketFeeCapBps,minPrice:RULES.minPrice.toString(),maxReserve:RULES.maxReserve,settle:RULES.settle}};
    if(path==='/owners'){const from=int(q.get('from'),0,0,list.length),limit=int(q.get('limit'),chunk,1,chunk);return {from,total:list.length,entries:list.slice(from,from+limit)};}
    if(path==='/claimed')return {height,numbers:claimed()};
@@ -273,6 +291,15 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
     return {height,total:all.length,from,range:{from:at.from,to:at.to},deployers:E.deployers,...(at.following?{following:{complete:at.complete}}:{}),items:all.slice().reverse().slice(from,from+limit)};}
    if(E&&path.startsWith('/xmr20/earlier/')){const v=E.view,x=v.by.get(decodeURIComponent(path.slice(15)));if(!x)throw fail('This is not an earlier XMR20 token.',404);
     const d=v.entry.get(x.txid);return {height,token:x,record:d.record,signature:d.signature,text:earlierText({record:d.record,signature:d.signature})};}
+   // The open XMR20 tokens, newest first, and one of them (by its id or the 16 characters signed texts show) with its
+   // deploy record and text.
+   if(xmr20Open&&path==='/xmr20/open'){const all=openTokens().list,from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),60,1,200);
+    return {height,total:all.length,from,openFrom:xmr20Open.from,items:all.slice().reverse().slice(from,from+limit).map(t=>({...t,confirmations:height-t.height+1}))};}
+   if(xmr20Open&&path.startsWith('/xmr20/open/')){const o=openTokens(),t=o.by.get(decodeURIComponent(path.slice(12)));if(!t)throw fail('This is not an open XMR20 token on this ledger.',404);
+    const record=o.record.get(t.id+':'+t.txid);return {height,token:{...t,confirmations:height-t.height+1},record,text:Buffer.from(decodeRecord(Buffer.from(record,'hex'),m.network).body.content).toString('utf8')};}
+   // What became of a mint the relay was asked to carry (POST /xmr20/open/mints).
+   if(xmr20Open&&relay&&path.startsWith('/xmr20/open-mint/')){const id=path.slice(17);if(!/^[0-9a-f]{64}$/.test(id))throw fail('A mint is named by its id.',400);
+    const s=relay.status(id);if(s.op!=='token-mint')throw fail('The relay knows no such mint.',404);return {height,...s};}
    if(xmr20&&path.startsWith('/xmr20/token/')){const t=tokens().by.get(decodeURIComponent(path.slice(13)));if(!t)throw fail('This is not an XMR20 token on this ledger.',404);
     return {height,token:{...t,confirmations:height-t.height+1},record:reader.entryById(t.id).record,text:Buffer.from(contentOf(t.id)).toString('utf8')};}
    // Every deploy inscription that names one Solana mint, listed as a token or not (burned by its inscriber, or behind an
@@ -294,6 +321,24 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
    if(!allow(caller(req)))throw fail('Too many requests. Try again in a minute.',429);
    // `anew`: the sender means to inscribe again a launch whose earlier inscription its signer burned (xmr20-tokens/FORMAT.md).
    return {height,...await relay.submit(body.record,{caller:caller(req),anew:body.anew===true})};}
+  // Open XMR20 tokens for wallets that only sign messages (Feather, Cake Wallet): the text of a deploy to sign and the
+  // record the signature makes of it, which then goes the way of every record; and a mint, which needs no signature.
+  if(method==='POST'&&path==='/xmr20/open/deploy-text'){opened();if(!allow(caller(req)))throw fail('Too many requests. Try again in a minute.',429);
+   let p;try{const {creator,...fields}=body||{};p=prepareOpenDeploy({creator:canonical(creator,m.network),fields,domain:m.domain,network:m.network});}catch(e){throw fail(String(e.message).slice(0,200),400);}
+   const there=openTokens().by.get(p.id.slice(0,ID_SHOWN));
+   if(there)throw fail(there.id===p.id?'This token is deployed already.':'Another token\'s id starts with the same 16 characters. Change a field, the name for example.',409);
+   if(reader.entryById(p.id))throw fail('This deploy is on the ledger as an NFT from before the opening block: it is no token. Change a field of the token.',409);
+   return {height,id:p.id,label:p.label,body:Buffer.from(p.body).toString('hex'),text:p.text,signer:canonical(body.creator,m.network),fields:p.fields};}
+  if(method==='POST'&&path==='/xmr20/open/deploys'){opened();
+   if(!relay)throw fail('This reader does not relay records. Publish the record yourself or use a relay.',503);
+   if(!allow(caller(req)))throw fail('Too many requests. Try again in a minute.',429);
+   let record;try{if(typeof body?.body!=='string'||!/^([0-9a-f]{2}){1,1000}$/.test(body.body)||typeof body.signature!=='string'||body.signature.length>200)throw Error('Give the body and the signature.');
+    record=finishOpenDeploy({body:Buffer.from(body.body,'hex'),signature:body.signature,domain:m.domain,network:m.network});}catch(e){throw fail(String(e.message).slice(0,200),400);}
+   return {height,...await relay.submit(Buffer.from(record).toString('hex'),{caller:caller(req)})};}
+  if(method==='POST'&&path==='/xmr20/open/mints'){opened();
+   if(!relay)throw fail('This reader does not relay records. Mint from your own wallet with the xmr721 command.',503);
+   if(!allow(caller(req)))throw fail('Too many requests. Try again in a minute.',429);
+   return {height,...await relay.submitMint({token:body?.token,amount:body?.amount,address:body?.address,wallet:body?.wallet??null,salt:body?.salt??null,caller:caller(req)})};}
   if(testHooks&&method==='POST'&&path==='/test/step')return step();
   if(testHooks&&extra){const out=await extra(method,path,body,step);if(out!==undefined)return out;}
   throw fail('Not found',404);}
@@ -398,7 +443,7 @@ export async function startService(o){
  // A follower that cannot be opened (its folder cannot be written, say) is done without: the shipped files are then served as they are.
  let follower=null;
  if(network==='mainnet'&&o.xmr20Follow!==false&&(earlier||full.length)){try{follower=openFollower({dir:join(o.state,EARLIER_NAME),chain,reader,pick:choice.pick,name:choice.name,log:o.log});}catch(e){o.log?.({earlier:'not read on: '+String(e?.message||e).slice(0,200)});}}
- const service=createService({reader,relay,owners,transfers:o.transfers?readOwners(o.transfers):[],blockTimes:times?JSON.parse(readFileSync(times,'utf8')).times:null,groups:groupFile?JSON.parse(readFileSync(groupFile,'utf8')):null,content:source?createContent({source,draw:createDrawer({log:o.log})}):null,collections,views:o.views||(existsSync(VIEWS)?VIEWS:null),xmr20:o.xmr20Inscribers?.length?{inscribers:o.xmr20Inscribers.map(a=>canonical(a,network))}:null,
+ const service=createService({reader,relay,owners,transfers:o.transfers?readOwners(o.transfers):[],blockTimes:times?JSON.parse(readFileSync(times,'utf8')).times:null,groups:groupFile?JSON.parse(readFileSync(groupFile,'utf8')):null,content:source?createContent({source,draw:createDrawer({log:o.log})}):null,collections,views:o.views||(existsSync(VIEWS)?VIEWS:null),xmr20:o.xmr20Inscribers?.length?{inscribers:o.xmr20Inscribers.map(a=>canonical(a,network))}:null,xmr20Open:o.xmr20OpenFrom!=null?{from:o.xmr20OpenFrom}:null,
   earlier,follower,...(o.followLimit?{followLimit:o.followLimit}:{}),origins:o.origins||[],extensions:o.extensions?.length?o.extensions:null,behindProxy:Boolean(o.behindProxy),testHooks:Boolean(o.testHooks),...(o.rate?{rate:o.rate}:{}),log:o.log});
  // The views are made from what the follower's folder holds before anything is served; a few seconds at most are waited for it.
  await Promise.race([service.ready,new Promise(done=>{setTimeout(done,5000).unref?.();})]);const port=await service.listen(o.port==null?18951:Number(o.port));return {...service,port,chain,owners};}
@@ -407,8 +452,8 @@ if(process.argv[1]===import.meta.filename){
  // Every word that begins with a dash is an option this program knows, written "--name value", and given once (the
  // two lists of allowed origins and extensions may repeat). A misspelt option stops the start: an ignored
  // --open-from or --minters would make this another ledger than the one that was meant.
- {const KNOWN=new Set(['owners','transfers','block-times','groups','domain','fee-address','node','start','start-hash','mint-from','minters','open-from','burn-from','burn-dead','burn-fee-wallet','state','network','port','every','xmr20-inscribers','xmr20-earlier','no-xmr20-earlier','no-xmr20-follow',
-   'mint-fee','collection-fee','carrier-bin','carrier-state','carrier-start','carrier-network','relay-limits','content-dir','content-archive','collections','views','allow-origin','allow-extension','behind-proxy','test-hooks']),MANY=new Set(['allow-origin','allow-extension']),seen=new Set();
+ {const KNOWN=new Set(['owners','transfers','block-times','groups','domain','fee-address','node','start','start-hash','mint-from','minters','open-from','burn-from','burn-dead','burn-fee-wallet','state','network','port','every','xmr20-inscribers','xmr20-open-from','xmr20-earlier','no-xmr20-earlier','no-xmr20-follow',
+   'mint-fee','collection-fee','token-mint-fee','carrier-bin','carrier-state','carrier-start','carrier-network','relay-limits','content-dir','content-archive','collections','views','allow-origin','allow-extension','behind-proxy','test-hooks']),MANY=new Set(['allow-origin','allow-extension']),seen=new Set();
   for(const a of process.argv.slice(2)){if(!a.startsWith('-'))continue;
    if(a.includes('='))throw Error(`Write "${a.split('=')[0]} <value>", with a space: ${a}`);
    const name=a.startsWith('--')?a.slice(2):null;if(!name||!KNOWN.has(name))throw Error(`There is no option ${a}. See the top of this file.`);
@@ -424,8 +469,8 @@ if(process.argv[1]===import.meta.filename){
   // The same care for the burn setting: a height that does not read as one, or a list that is not fifteen indexes, stops the start.
   ...(has('burn-from')?{burnFrom:(v=>{if(!/^[1-9]\d{0,9}$/.test(v||''))throw Error('--burn-from <height>: the first burn block is a whole number');return Number(v);})(arg('burn-from'))}:{}),
   ...(has('burn-dead')?{burnDead:(v=>{if(!/^\d{1,15}(,\d{1,15}){14}$/.test(v||''))throw Error('--burn-dead <index>,…: fifteen global output indexes');return v.split(',').map(Number);})(arg('burn-dead'))}:{}),
-  ...(has('burn-fee-wallet')?{burnFee:(v=>{const m=/^([1-9A-HJ-NP-Za-km-z]{95}):([0-9a-f]{64})$/.exec(v||'');if(!m)throw Error('--burn-fee-wallet <main address>:<secret view key>');return {address:m[1],viewKey:m[2]};})(arg('burn-fee-wallet'))}:{}),state:arg('state'),network:arg('network'),xmr20Inscribers:(arg('xmr20-inscribers')||'').split(',').filter(Boolean),...(has('no-xmr20-earlier')?{xmr20Earlier:false}:arg('xmr20-earlier')?{xmr20Earlier:arg('xmr20-earlier')}:{}),...(has('no-xmr20-follow')?{xmr20Follow:false}:{}),
-  port:arg('port'),fees:{mint:arg('mint-fee')||0,collection:arg('collection-fee')||0},carrierBin:arg('carrier-bin'),carrierState:arg('carrier-state'),carrierStart:arg('carrier-start'),carrierNetwork:arg('carrier-network'),contentDir:arg('content-dir'),collections:arg('collections'),contentArchive:archive,views:arg('views'),
+  ...(has('burn-fee-wallet')?{burnFee:(v=>{const m=/^([1-9A-HJ-NP-Za-km-z]{95}):([0-9a-f]{64})$/.exec(v||'');if(!m)throw Error('--burn-fee-wallet <main address>:<secret view key>');return {address:m[1],viewKey:m[2]};})(arg('burn-fee-wallet'))}:{}),state:arg('state'),network:arg('network'),xmr20Inscribers:(arg('xmr20-inscribers')||'').split(',').filter(Boolean),...(has('xmr20-open-from')?{xmr20OpenFrom:(v=>{if(!/^[1-9][0-9]{0,8}$/.test(v||''))throw Error('--xmr20-open-from <block>');return Number(v);})(arg('xmr20-open-from'))}:{}),...(has('no-xmr20-earlier')?{xmr20Earlier:false}:arg('xmr20-earlier')?{xmr20Earlier:arg('xmr20-earlier')}:{}),...(has('no-xmr20-follow')?{xmr20Follow:false}:{}),
+  port:arg('port'),fees:{mint:arg('mint-fee')||0,collection:arg('collection-fee')||0,tokenMint:arg('token-mint-fee')||0},carrierBin:arg('carrier-bin'),carrierState:arg('carrier-state'),carrierStart:arg('carrier-start'),carrierNetwork:arg('carrier-network'),contentDir:arg('content-dir'),collections:arg('collections'),contentArchive:archive,views:arg('views'),
   origins:process.argv.flatMap((a,i)=>a==='--allow-origin'?[process.argv[i+1]]:[]),extensions:process.argv.flatMap((a,i)=>a==='--allow-extension'?[process.argv[i+1]]:[]),behindProxy:has('behind-proxy'),testHooks:has('test-hooks'),log:v=>console.log(new Date().toISOString(),JSON.stringify(v))});
  console.log(`Mordinals reader on http://127.0.0.1:${s.port} (${s.owners.length} Mordinals, block ${s.reader.height}${s.relay?', relay on':', reader only'})`);
  s.follow(Number(arg('every'))||5000);

@@ -44,6 +44,9 @@ export function fakeCarrier(chain,{coins=5,subaddress=n=>'relay subaddress '+n}=
   carry:async recordHex=>{if(ready<1)throw Error('No coin of this wallet can pay for a transaction now (coins unlock 10 blocks after they arrive)');ready--;
    const t=tx([...frame(unhex(recordHex),randomBytes(32))]);made.push(t.txid);return t;},
   split:async k=>{ready+=k-1;return tx([1,...randomBytes(32)]);},
+  // A mint record laid out as the real tool lays it out; the asset and the owner key are stand-ins.
+  mintRecord:async arg=>{const f=String(arg).split(':'),[token,units]=f,salt=f.at(-1),asset=sha('asset '+token);if(f[2]==='k'&&/^ff/.test(f[3]))throw Error('This is not an owner key of an XMR20 wallet');const owner=f[2]==='k'?f[3]:sha('owner '+f[3]+f[4]);
+   return {record:'584f31fe'+asset+BigInt(units).toString(16).padStart(16,'0').match(/../g).reverse().join('')+owner+salt,asset,owner};},
   publish:async blob=>{const t=JSON.parse(Buffer.from(blob,'hex').toString('utf8'));chain.publish({txid:t.txid,tx:{version:2,extra:t.extra,vout:[]}});return {txid:t.txid};}};}
 
 // A record in a transaction of its own, as anyone could publish it without the relay.

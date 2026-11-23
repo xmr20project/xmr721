@@ -40,12 +40,14 @@
 //   carrier.state.json  the tool's view of the chain and of its coins
 //   journal.json        what the wallet built and what became of it, and notes for its owner
 //   lock/               who is working on the wallet right now (cli/lib/lock.mjs)
-import {createHash} from 'node:crypto';
+import {createHash,randomBytes} from 'node:crypto';
 import {existsSync,readFileSync,mkdirSync,chmodSync,openSync,writeSync,fsyncSync,closeSync,renameSync,unlinkSync,statSync} from 'node:fs';
 import {join,extname,dirname} from 'node:path';
 import {ed25519} from '@noble/curves/ed25519';
 import {OP,NO_COLLECTION,MAX_RECORD,MAX_EDITIONS,encodeBody,decodeRecord,recordId,codeOf,renderText,nftLabel,attachSignature,canonical,formatXmr} from '../../rules/lib/records.mjs';
-import {le,hex,unhex,encodeAddress,signWithSpendKey} from '../../rules/lib/monero.mjs';
+import {le,leBytes,hex,unhex,encodeAddress,decodeAddress,signWithSpendKey} from '../../rules/lib/monero.mjs';
+import {TYPE_JSON} from '../../xmr20-tokens/lib/token.mjs';
+import {openDeployText,tokenLabel,ID_SHOWN} from '../../xmr20-tokens/lib/open.mjs';
 import {openLock} from './lock.mjs';
 import {clean} from './text.mjs';
 export {clean,plain,ascii} from './text.mjs';
@@ -58,6 +60,14 @@ export const FINAL=10,KEEP=100,BEHIND=3;
 const SIGNATURE=65;
 // What the ledger says of a record it holds already (rules/lib/ledger.mjs).
 const DUPLICATE='This record is already on the ledger.';
+// Transactions the XMR721 ledger has nothing to say about: they are settled by the node's word alone.
+const PLAIN=new Set(['split','token-mint']);
+// Open XMR20 tokens (xmr20-tokens/OPEN.md): amounts are written in whole tokens with up to 6 decimals.
+const UNIT=1000000n,WHOLE=/^[1-9][0-9]{0,13}$/;
+const unitsOf=text=>{const m=/^([0-9]{1,14})(?:\.([0-9]{1,6}))?$/.exec(String(text??''));if(!m)throw Error('An amount of tokens is a number with up to 6 decimals, like 1000 or 0.5.');
+ const v=BigInt(m[1])*UNIT+BigInt((m[2]||'').padEnd(6,'0'));if(v<1n||v>=1n<<64n)throw Error('An amount of tokens is above 0 and fits the token ledger.');return v;};
+const tokensOf=units=>{const s=units.toString().padStart(7,'0'),f=s.slice(-6).replace(/0+$/,'');return s.slice(0,-6)+(f?'.'+f:'');};
+const MINT_NOTE="How much a mint credits is the token ledger's to say, and it can be less than asked or nothing: the last mint of a token gets what is left of it, a mint after that gets nothing, and so does a mint that ends up in a block before its token's deploy or of a token the token ledger did not take. This list shows where the transaction is.";
 const need=(ok,why)=>{if(!ok)throw Error(why);};
 // A collection's name as the rules allow it: printable ASCII, no double quote, no space at either end.
 const NAME=/^[!#-~]([ !#-~]{0,62}[!#-~])?$/;
@@ -124,8 +134,12 @@ export function readerAt(url,{fetch:f=fetch,timeout=30000,limit=16<<20}={}){
  return {url:base,
   async info(network){const i=await get('/info');need(i&&typeof i.network==='string','The reader gave no settings.');
    need(i.network===network,`The reader is for ${clean(i.network,20)}, the wallet for ${network}.`);need(HEX64.test(i.domain||''),'The reader gives no ledger domain.');
-   return {network,domain:i.domain,height:int(i.height,'height',1),mintFrom:i.mintFrom==null?null:int(i.mintFrom,'first mint block',1),openFrom:i.openFrom==null?null:int(i.openFrom,'opening block',1),
+   return {network,domain:i.domain,height:int(i.height,'height',1),mintFrom:i.mintFrom==null?null:int(i.mintFrom,'first mint block',1),openFrom:i.openFrom==null?null:int(i.openFrom,'opening block',1),tokensFrom:i.xmr20?.open?.from==null?null:int(i.xmr20.open.from,'opening block of open tokens',1),
     minters:i.minters==null?null:(need(Array.isArray(i.minters),'The reader gave no usable minter list.'),i.minters.map(a=>address(a,'minter list',network)))};},
+  // An open XMR20 token, by its id or the 16 characters signed texts show.
+  async token(key){const v=await get('/xmr20/open/'+key);if(!v)return null;const t=v.token||{};
+   need(HEX64.test(t.id||'')&&t.id.startsWith(key)&&typeof t.tick==='string'&&t.tick.length>=1&&t.tick.length<=64&&WHOLE.test(t.max||'')&&(t.lim===undefined||WHOLE.test(t.lim))&&(t.pre===undefined||WHOLE.test(t.pre)),'The reader gave no usable token.');
+   return {id:t.id,tick:t.tick,max:t.max,lim:t.lim??null,pre:t.pre??null,height:int(t.height,'block',1)};},
   async collection(id,network){const v=await get('/nft-collection/'+id);if(!v)return null;const c=v.collection||{};
    need(c.id===id&&typeof c.name==='string'&&NAME.test(c.name)&&Array.isArray(v.items),'The reader gave no usable collection.');
    const max=int(c.max,'number of editions',1,MAX_EDITIONS);need(v.items.length<=max,'The reader lists more NFTs than the collection has editions.');
@@ -221,7 +235,7 @@ export function openWallet({dir,carrier,reader=null,chain,network='mainnet',nett
   let ledger=null;
   const deaf=e=>{if(!e?.reader)throw e;if(ledger!==false)warn(`${clean(e.message,200)} What follows is what your node alone shows.`);ledger=false;};
   const ask=async e=>{
-   if(e.kind==='split'||!reader||ledger===false)return [null,false];
+   if(PLAIN.has(e.kind)||!reader||ledger===false)return [null,false];
    if(ledger===null){try{ledger=(await reader.info(network)).domain;}catch(x){deaf(x);return [null,false];}}
    if(ledger!==(e.domain??want))return [null,false];
    try{return [await reader.entry(e.txid),true];}catch(x){deaf(x);return [null,false];}};
@@ -244,7 +258,7 @@ export function openWallet({dir,carrier,reader=null,chain,network='mainnet',nett
    // A transaction the node has was sent, whatever was written down.
    if(where!=='unknown'){if(e.state==='built'){e.state='sent';e.sent??=stamp();}delete e.refusal;delete e.spentSeen;delete e.spentHash;}
    if(Number.isInteger(where)){
-    if(e.kind==='split'){if(depth>=FINAL){Object.assign(e,{state:'done',height:where});if(depth>=KEEP)delete e.blob;}else live.set(e,{where,tip,depth});continue;}
+    if(PLAIN.has(e.kind)){if(depth>=FINAL){Object.assign(e,{state:'done',height:where});if(depth>=KEEP)delete e.blob;}else live.set(e,{where,tip,depth});continue;}
     const [seen,asked]=await ask(e),view={where,tip,depth,seen:seen&&seen.height===where?seen:null,asked};
     if(depth>=FINAL&&view.seen&&seen.confirmations>=FINAL){
      // A record the ledger refused because it holds that very record already got there before, in someone else's
@@ -267,7 +281,7 @@ export function openWallet({dir,carrier,reader=null,chain,network='mainnet',nett
    live.set(e,{where,tip,depth});}
   save(j);return live;}
  const describe=(e,v)=>{
-  if(e.state==='done')return e.kind==='split'?`done (block ${e.height})`:e.other?`on the ledger, carried by another transaction (this one, in block ${e.height}, was refused as a duplicate)`:`on the ledger (block ${e.height})`;
+  if(e.state==='done')return e.kind==='token-mint'?`in block ${e.height} for good; the token ledger says what it credited`:PLAIN.has(e.kind)?`done (block ${e.height})`:e.other?`on the ledger, carried by another transaction (this one, in block ${e.height}, was refused as a duplicate)`:`on the ledger (block ${e.height})`;
   if(e.state==='refused')return 'refused by the ledger: '+e.error;
   if(e.state==='dead')return 'its coin was spent by another transaction, 10 blocks deep: this one cannot get into a block any more, and what it carried is not on the ledger';
   const where=v?.where??null,again='"xmr721 wallet resend"';
@@ -276,7 +290,7 @@ export function openWallet({dir,carrier,reader=null,chain,network='mainnet',nett
   if(where===null)return 'sent; your node cannot be asked right now';
   if(Number.isInteger(where)){
    const of=`${Math.min(v.depth,FINAL)} of ${FINAL} confirmations`;
-   if(e.kind==='split')return `in block ${where} (${of})`;
+   if(PLAIN.has(e.kind))return `in block ${where} (${of})`;
    if(v.seen)return v.seen.ok?`on the ledger (block ${where}, ${of})`:`refused by the ledger (block ${where}, ${of}): ${v.seen.error}`;
    return v.asked?`in block ${where} (${of}); the reader has not read it yet`:`in block ${where} (${of}); no reader was asked what the ledger made of it`;}
   if(where==='pool')return 'waiting for a block';
@@ -370,7 +384,7 @@ export function openWallet({dir,carrier,reader=null,chain,network='mainnet',nett
  const balanceOf=s=>({address:me().address,balance:formatXmr(BigInt(s.balance)),coins:s.coins,ready:s.ready,scanned:s.tip});
  // The newest block of the node, or null when it does not answer.
  const tipNow=async()=>{try{const t=(await chain.info()).height;return Number.isSafeInteger(t)?t:null;}catch{return null;}};
- return {
+ const api={
   dir,
   get address(){return me().address;},
   // What the journal holds for the wallet's owner to read (a build that was cut short).
@@ -428,6 +442,40 @@ export function openWallet({dir,carrier,reader=null,chain,network='mainnet',nett
    need(dryRun||!j.entries.some(e=>e.id===id&&e.state==='done'),once);
    need(dryRun||j.entries.some(e=>e.id===id&&KEPT.has(e.state))||!await reader.nft(id,network),once);
    return carry(j,'mint',bodyBytes,ctx,{dryRun,live,extra:{type,size:content.length,sha:digest,name,...(col!==NO_COLLECTION?{collection:col,edition:ed}:{}),owner}});}),
+  // An open XMR20 token (xmr20-tokens/OPEN.md): its deploy is one NFT in no collection, with no name of its own, whose
+  // content is the deploy text. The wallet's address is the token's creator.
+  deploy:async({tick,name=null,max,lim=null,pre=null,col=null,dryRun=false})=>{
+   const fields=Object.fromEntries(Object.entries({tick,name,max,lim,pre,col}).filter(([,v])=>v!=null)),text=openDeployText(fields),content=Buffer.from(text,'utf8'),address=me().address;
+   const info=await ledgerNow();
+   need(info.tokensFrom!=null,'Open tokens have no opening block on this ledger (its reader names none). A deploy inscribed now would be an NFT and no token.');
+   need(info.height+1>=info.tokensFrom,`Open tokens start at block ${info.tokensFrom}; the ledger is at block ${info.height}. A deploy inscribed before that block is an NFT and no token.`);
+   const id=recordId(info.domain,encodeBody(OP.mint,{collection:NO_COLLECTION,edition:0,creator:address,name:'',type:TYPE_JSON,content},network));
+   // A signed text shows the first 16 characters of a token's id, so no two tokens share them.
+   const there=await reader.token(id.slice(0,ID_SHOWN));
+   need(!there||there.id===id,`Another token's id starts with the same 16 characters (${id.slice(0,ID_SHOWN)}), so this deploy would be refused. Change a field, the name for example.`);
+   // The same text inscribed before the opening block is an NFT and no token, and this wallet does not carry a record twice.
+   need(there||!await reader.nft(id,network),'This deploy is on the ledger as an NFT from before the opening block of open tokens: it is no token. Change a field of the token (its name, for example) and deploy that.');
+   const out=await api.inscribe({content,type:TYPE_JSON,dryRun});
+   return {...out,token:{id,label:tokenLabel(fields.tick,id),text}};},
+  // Mints an open XMR20 token to this wallet's address, or to another one. A mint record carries no signature: this
+  // wallet's transaction carries it and pays the network fee, and the tokens belong to the address the record names.
+  mint:({token,amount,to=null,dryRun=false})=>locked(async()=>{
+   const address=me().address,j=load();clear(j);const owner=to==null?address:canonical(to,network);
+   need(/^(?:[0-9a-f]{16}|[0-9a-f]{64})$/.test(token||''),'Give the token\'s id (64 hex characters), or the 16 characters signed texts show.');
+   const units=unitsOf(amount),info=await ledgerNow();
+   need(info.tokensFrom!=null&&info.height+1>=info.tokensFrom,info.tokensFrom==null?'Open tokens have no opening block on this ledger (its reader names none).':`Open tokens start at block ${info.tokensFrom}; the ledger is at block ${info.height}.`);
+   const t=await reader.token(token);need(t,'This is not an open token on the ledger the reader follows. A new token has to be in a block before it is minted.');
+   need(t.lim!=null,'Nothing of this token can be minted: its whole supply went to its creator.');
+   need(units<=BigInt(t.lim)*UNIT,`One mint of this token takes at most ${t.lim}.`);
+   const k=decodeAddress(owner,network),salt=randomBytes(8),made=await carrier.mintRecord([t.id,units,k.kind==='sub'?1:0,hex(k.spend),hex(k.view),hex(salt)].join(':'));
+   // What the tool made is the record that was asked for: this amount, this salt, and nothing after them.
+   need(made&&typeof made.record==='string'&&/^584f31fe[0-9a-f]{160}$/.test(made.record)&&HEX64.test(made.asset||'')&&HEX64.test(made.owner||'')
+    &&made.record===`584f31fe${made.asset}${hex(leBytes(units,8))}${made.owner}${hex(salt)}`,'The carrier tool did not answer with the mint record.');
+   const out={kind:'token-mint',token:t.id,label:tokenLabel(t.tick,t.id),amount:tokensOf(units),to:owner,asset:made.asset,ownerKey:made.owner,bytes:made.record.length/2};
+   const depth=info.height-t.height+1,notes=[MINT_NOTE,...(depth<FINAL?[`This token's deploy is ${Math.max(depth,1)} of ${FINAL} blocks deep. Should its block be replaced, this mint can come before the deploy and credit nothing.`]:[])];
+   if(dryRun)return {...out,dryRun:true,notes};
+   await refresh(j);
+   return first(j,await build(j,{...out,domain:info.domain},()=>carrier.carry(made.record)),notes);}),
   collection:({name,max,dryRun=false})=>locked(async()=>{
    const address=me().address,j=load();clear(j);
    const made=()=>encodeBody(OP.collection,{creator:address,name,max},network);made();
@@ -465,7 +513,7 @@ export function openWallet({dir,carrier,reader=null,chain,network='mainnet',nett
   // that was never sent, which frees what it held; or one the wallet has let go of, 100 blocks after the chain settled
   // it. Any other stays: a sent transaction cannot be taken back, and a settled one is kept for 100 blocks in case its
   // block is replaced.
-  forget:ref=>locked(async()=>{const j=load();clear(j);const live=await refresh(j),e=j.entries.find(e=>String(e.n)===String(ref)||e.id===ref||e.txid===ref);
+  forget:ref=>locked(async()=>{const j=load();clear(j);const live=await refresh(j),e=ref==null||ref===''?null:j.entries.find(e=>String(e.n)===String(ref)||e.id===ref||e.txid===ref);
    need(e,'There is no such entry. See: xmr721 wallet inscriptions');
    const v=live.get(e),off=why=>{j.entries=j.entries.filter(x=>x!==e);save(j);return {...shown(e,v),forgotten:why};};
    const later=(from,what)=>`It can leave the list at block ${from+KEEP}: until then the wallet keeps it, ${what}.`;
@@ -488,4 +536,5 @@ export function openWallet({dir,carrier,reader=null,chain,network='mainnet',nett
   // What this wallet built, each with what the node and the reader know of it now.
   inscriptions:()=>locked(async()=>{const j=load();clear(j);const live=await refresh(j);return j.entries.map(e=>shown(e,live.get(e)));}),
   // For the command line: the folder and its files are the owner's alone, also when they were copied from elsewhere.
-  tighten(){try{chmodSync(dir,0o700);for(const f of ['carrier.keys.json','wallet.json','journal.json','carrier.state.json'])if(existsSync(join(dir,f))&&statSync(join(dir,f)).isFile())chmodSync(join(dir,f),0o600);}catch{}}};}
+  tighten(){try{chmodSync(dir,0o700);for(const f of ['carrier.keys.json','wallet.json','journal.json','carrier.state.json'])if(existsSync(join(dir,f))&&statSync(join(dir,f)).isFile())chmodSync(join(dir,f),0o600);}catch{}}};
+ return api;}

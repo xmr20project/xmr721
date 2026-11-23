@@ -13,6 +13,14 @@
 //                                                a collection whose editions only this wallet mints
 //   xmr721 wallet send <nft id> <address> [--dry-run]
 //                                                sends an NFT the wallet owns
+//   xmr721 wallet deploy --tick <ticker> --max <supply> [--lim <most per mint>] [--pre <creator's share>]
+//                        [--token-name <text>] [--col <collection id>] [--dry-run]
+//                                                an open XMR20 token (xmr20-tokens/OPEN.md, draft): anyone mints it, up to
+//                                                --lim at a time; --pre goes to this wallet's address at once (with --pre
+//                                                equal to --max, all of it, and there is no --lim). Whole tokens.
+//   xmr721 wallet mint <token id> <amount> [--to <address>] [--dry-run]
+//                                                mints an open XMR20 token to this wallet's address or to another one;
+//                                                the token by its id or the 16 characters signed texts show
 //   xmr721 wallet inscriptions                   what the wallet built, and where each transaction is now
 //   xmr721 wallet resend                         hands the node, as they are, the kept transactions it does not have
 //   xmr721 wallet forget <n>                     takes an entry off the list (its number in "inscriptions"): a transaction
@@ -40,6 +48,7 @@ import {openWallet,readerAt,typeOf} from './lib/wallet.mjs';
 import {createTool} from './lib/tool.mjs';
 import {openLock} from './lib/lock.mjs';
 import {clean,plain,ascii} from './lib/text.mjs';
+import {openDeployText} from '../xmr20-tokens/lib/open.mjs';
 
 const HERE=import.meta.dirname;
 // The header of this file is the help text.
@@ -52,10 +61,10 @@ const show=v=>console.log(ascii(JSON.stringify(v,null,1)));
 
 // Options are "--name value"; flags stand alone. Anything else that begins with "--" is refused, not skipped, and a
 // value does not begin with "--" (a forgotten value would otherwise swallow the next option).
-const VALUES=new Set(['wallet','network','node','reader','domain','carrier','max-fee','file','type','name','to','collection','edition','max','height']),FLAGS=new Set(['dry-run','help']);
+const VALUES=new Set(['wallet','network','node','reader','domain','carrier','max-fee','file','type','name','to','collection','edition','max','height','tick','token-name','lim','pre','col']),FLAGS=new Set(['dry-run','help']);
 // Which options a command takes beside the ones every command takes, and how many words follow it.
-const COMMANDS={create:[],receive:[],balance:[],split:[],inscribe:['file','type','name','to','collection','edition','dry-run'],collection:['name','max','dry-run'],send:['dry-run'],inscriptions:[],resend:[],forget:[],rescan:[],restore:['height']};
-const WORDS={split:['xmr721 wallet split <n>',1],send:['xmr721 wallet send <nft id> <address>',2],forget:['xmr721 wallet forget <n>',1]};
+const COMMANDS={create:[],receive:[],balance:[],split:[],inscribe:['file','type','name','to','collection','edition','dry-run'],collection:['name','max','dry-run'],deploy:['tick','token-name','max','lim','pre','col','dry-run'],mint:['to','dry-run'],send:['dry-run'],inscriptions:[],resend:[],forget:[],rescan:[],restore:['height']};
+const WORDS={mint:['xmr721 wallet mint <token id> <amount>',2],split:['xmr721 wallet split <n>',1],send:['xmr721 wallet send <nft id> <address>',2],forget:['xmr721 wallet forget <n>',1]};
 const EVERY=['wallet','network','node','reader','domain','carrier','max-fee','help'];
 function parse(argv){
  const options=new Map(),words=[];
@@ -71,7 +80,7 @@ function parse(argv){
  return {options,words};}
 const {options,words}=parse(process.argv.slice(2));
 if(options.has('help')||!words.length){console.log(HELP);process.exit(options.has('help')?0:2);}
-if(words[0]!=='wallet'||!Object.hasOwn(COMMANDS,words[1]??''))stop('xmr721 wallet <create | receive | balance | split | inscribe | collection | send | inscriptions | resend | forget | rescan | restore>. See: xmr721 --help');
+if(words[0]!=='wallet'||!Object.hasOwn(COMMANDS,words[1]??''))stop('xmr721 wallet <create | receive | balance | split | inscribe | collection | deploy | mint | send | inscriptions | resend | forget | rescan | restore>. See: xmr721 --help');
 const command=words[1],rest=words.slice(2);
 for(const name of options.keys())if(!EVERY.includes(name)&&!COMMANDS[command].includes(name))stop(`"wallet ${command}" takes no --${name}.`);
 if(rest.length!==(WORDS[command]?.[1]??0))stop(WORDS[command]?.[0]??`"wallet ${command}" takes no "${rest[0]}".`);
@@ -85,6 +94,11 @@ const dry=options.has('dry-run');
 const asked={};
 if(command==='split'){asked.n=whole(rest[0],'The number of coins');if(asked.n<2||asked.n>14)stop('Split into 2 to 14 coins.');}
 if(command==='restore')asked.height=whole(opt('height'),'--height');
+if(command==='deploy'){for(const k of ['tick','max'])if(!text(k))stop(`Give --${k}.`);
+ Object.assign(asked,{tick:text('tick'),name:text('token-name'),max:text('max'),lim:text('lim'),pre:text('pre'),col:text('col')});
+ try{openDeployText(Object.fromEntries(Object.entries(asked).filter(([,v])=>v!=null)));}catch(e){stop(e.message);}}
+if(command==='mint'){if(!/^(?:[0-9a-f]{16}|[0-9a-f]{64})$/.test(rest[0]))stop('The token is its id (64 hex characters), or the 16 characters signed texts show.');
+ if(!/^[0-9]{1,14}(?:\.[0-9]{1,6})?$/.test(rest[1])||!/[1-9]/.test(rest[1]))stop('The amount is a number of tokens with up to 6 decimals, above 0.');Object.assign(asked,{token:rest[0],amount:rest[1],to:text('to')});}
 if(command==='collection'){asked.name=text('name');if(!asked.name)stop('Give --name <text>.');asked.max=whole(opt('max'),'--max');}
 if(command==='inscribe'){const file=text('file');if(!file)stop('Give --file <path>.');if(!existsSync(file)||!statSync(file).isFile())stop('There is no file at '+file+'.');
  if(statSync(file).size>MAX_RECORD)stop(`The file is ${statSync(file).size} bytes. A record is at most ${MAX_RECORD} bytes with everything in it: 824 bytes of content at most, less with --to and a name.`);
@@ -106,7 +120,7 @@ else if(!has('carrier.keys.json'))stop(command==='restore'?'There are no wallet 
 if(command==='restore'&&!settings&&!options.has('network'))stop('Say which network this wallet is for: add --network mainnet or --network stagenet.');
 // The commands that make a record need a reader and the ledger's domain. The others ask a reader, when one is given,
 // what the ledger made of the wallet's records, and go by the node alone without one.
-const makes=['inscribe','collection','send'].includes(command),looks=['inscriptions','balance','resend','forget','rescan','restore'].includes(command);
+const makes=['inscribe','collection','deploy','mint','send'].includes(command),looks=['inscriptions','balance','resend','forget','rescan','restore'].includes(command);
 const readerUrl=makes||looks?text('reader')||(network==='mainnet'?'https://api.xmr20.org/xmr721':null):null;if(makes&&!readerUrl)stop('On stagenet, give --reader <url> of your own reader.');
 const domain=text('domain');if(domain&&!/^[0-9a-f]{64}$/.test(domain))stop('--domain is 64 hex characters.');
 if(network!=='mainnet'&&!domain&&makes)stop('On stagenet, give --domain <hex>: the domain of the ledger to inscribe on.');
@@ -117,7 +131,7 @@ if(opt('max-fee')!=null){const m=/^([0-9]{1,3})(?:\.([0-9]{1,12}))?$/.exec(opt('
 process.env.MORDINALS_MAX_FEE=limit.toString();delete process.env.MORDINALS_SPLIT_COIN;
 // The carrier tool sends on mainnet only when its own environment says so: running this command on mainnet is that.
 if(network==='mainnet')process.env.MORDINALS_MAINNET='1';else delete process.env.MORDINALS_MAINNET;
-const usesCarrier=['create','balance','split','rescan'].includes(command)||(makes&&!dry);
+const usesCarrier=['create','balance','split','rescan','mint'].includes(command)||(makes&&!dry);
 const bin=resolve(text('carrier')||join(HERE,'..','reader','bin','mordinals-carrier'));
 if(usesCarrier&&!(existsSync(bin)&&statSync(bin).isFile()))stop(`The carrier tool is not at ${bin}. Build it with: sh reader/carrier/build.sh (needs Rust), or give --carrier <path>.`);
 // The node as the wallet needs it: on the wallet's network, and synchronized.
@@ -160,6 +174,8 @@ try{
   case 'split':show(await wallet.split(asked.n));break;
   case 'inscribe':show(await wallet.inscribe({content:readFileSync(asked.file),type:asked.type,name:asked.name,to:asked.to,collection:asked.collection,edition:asked.edition,dryRun:dry}));break;
   case 'collection':show(await wallet.collection({name:asked.name,max:asked.max,dryRun:dry}));break;
+  case 'deploy':show(await wallet.deploy({tick:asked.tick,name:asked.name,max:asked.max,lim:asked.lim,pre:asked.pre,col:asked.col,dryRun:dry}));break;
+  case 'mint':show(await wallet.mint({token:asked.token,amount:asked.amount,to:asked.to,dryRun:dry}));break;
   case 'send':show(await wallet.send({nft:rest[0],to:rest[1],dryRun:dry}));break;
   case 'inscriptions':show(await wallet.inscriptions());break;
   case 'resend':{const out=await wallet.resend();show(out);if(out.some(r=>r.failed))process.exitCode=1;break;}
