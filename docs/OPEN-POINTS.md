@@ -275,6 +275,38 @@ Read twice inside the project, not in use. What was built, what is decided and w
   every fee payment is public with the Mordinal it is for, and a reader now scans every
   transaction from the first burn block on (about 37 ms per block).
 
+## Claiming by a spent coin (24 November 2026)
+
+A draft of a second ledger setting (RULES.md section 11): from a chosen block, at or after the
+first burn block, a holder whose owner coin was spent by an ordinary transaction claims with a
+payment proof, the coin's signed key image (a key image export) and a message signature, and
+pays a fee to the Mordinal's fee address, as a burn claim does. Every part can be made in
+Feather: the payment proof, the key image export (Tools → Offline transaction signing, after
+importing an outputs file that lists the owner coin) and the message signature. Checked with
+stock wallet2 on a local test chain and with Feather 2 itself; built in the rules, the reader,
+the relay and the service, with tests. Not in use. Open:
+
+- the fee is the network fee of the transaction that carries the record, as the chain shows it, and
+  0.0025 XMR; it is known once the record is in a block, so a wallet shows the exact amount then;
+- only a coin spent from the first block of such claims on counts, so the claim is for those
+  who hold a Mordinal then; a coin spent earlier by an ordinary wallet stays without a way;
+- every payment to the Mordinal's fee address counts toward the fee, also one made before the
+  record, for example for a burn of that Mordinal that was refused;
+- a refused burn spent the coin in an original-format transfer of that Mordinal: the rule
+  counts it as moved and gives it no way here either; so does a transfer of it that the
+  original rules ignored (a fee below the record cost, or a later input than the deciding
+  one), since the fee and the input order are not looked at;
+- a claim that waits cannot be changed or withdrawn by its holder; letting a newer claim of
+  the same holder replace it would be safe (only the holder can sign one);
+- the record names the transaction that spent the coin: that links its other inputs and its
+  change to the holder's address and marks the owner output as spent there (rings that use it
+  as a decoy lose it as a candidate);
+- the website flow is not built: an outputs file for the owner coin (its file key is
+  CryptoNight v0 of the secret view key, so the page needs CryptoNight), reading the key images
+  file back, the steps to spend the coin, the claim text to sign and the fee;
+- a first block of claims by a spent coin taken into a folder has to lie at least 10 blocks
+  above the newest block of the folder and of the node, as a first burn block does.
+
 ## Still open
 
 Rules:

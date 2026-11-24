@@ -12,6 +12,9 @@
 //                                                   the dead outputs and the fee wallet are mainnet's (the project's), and other ones can be named
 //                                                   only on the offline test chain or another network; part of the ledger's setup
 //        (a new or changed --burn-from of an existing state folder has to lie at least 10 blocks above the newest block of the folder and of the node)
+//        [--spend-from <height>]   with --burn-from (at or after it): from that block a claim record may show a spent owner coin (proof 2, RULES.md
+//                                                   section 11); part of the ledger's setup. A folder that has not read that block yet takes it in
+//                                                   (it has to lie at least 10 blocks above the newest block of the folder and of the node).
 //        [--carrier-bin <path> --carrier-state <dir> --carrier-network offline-fakechain|stagenet|mainnet [--carrier-start <height>] [--relay-limits name=n,…]]   relay on (mainnet also needs MORDINALS_MAINNET=1)
 //        [--mint-fee <atomic units> --collection-fee <atomic units>]   what this relay charges to carry a mint or a collection record
 //        [--token-mint-fee <atomic units>]   what this relay charges to carry a mint of an open XMR20 token (with --xmr20-open-from; without it the relay carries none)
@@ -91,7 +94,7 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
  const lotView=id=>{const l=L().lot(id),r=l.reservations.at(-1)||null;
   return {id:l.id,number:l.number,name:l.number==null?null:nameOf(l.number),nft:l.number==null?l.reg:null,reg:l.reg,seller:l.seller,price:l.price.toString(),until:l.until,status:l.status,body:reader.body(l.id),
    reservation:r?{record:r.record,buyer:r.buyer,height:r.height,payBy:r.payBy,rate:r.rate}:null,buyer:l.sale?.buyer||null};};
- // A Mordinal burned by a burn claim that waits for its fee is not claimed; `waiting` says so.
+ // A Mordinal whose burn claim, or claim by a spent coin, waits for its fee is not claimed; `waiting` says so.
  const state=n=>{const x=L().mordinal(n);return {number:x.number,name:nameOf(x.number),reg:x.reg,claimed:x.claimed,owner:x.owner,...(x.burned?{burned:true}:{}),...(x.waiting?{waiting:true}:{}),seq:x.seq,lot:x.lot?lotView(x.lot):null};};
  // A burn claim as the routes show it: the Mordinal, the address in its text, its state ('claimed', 'waiting': burned and
  // waiting for its fee, 'lost': claimed by a record first) and its fee: due (the burn's own fee), paid, missing, and the
@@ -159,7 +162,8 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
  const stats=()=>once('stats',()=>{const by={};let volume=0n,fees=0n;for(const e of reader.events){by[e.kind]=(by[e.kind]||0)+1;if(e.kind==='sale'){volume+=BigInt(e.price);fees+=BigInt(e.fee);}}
   return {height:reader.height,mordinals:list.length,claimed:claimed().length,forSale:open().filter(l=>l.until>=reader.height).length,sales:by.sale||0,volume:volume.toString(),fees:fees.toString(),
    records:reader.journal.filter(e=>e.ok&&!feeOnly(e)).length,refused:reader.journal.filter(e=>!e.ok).length,byKind:by,
-   // On a ledger that claims by burning: burns waiting for their fee, and transactions that paid a fee address.
+   // On a ledger that claims by burning: claims waiting for their fee (burns, and claims by a spent coin), and transactions
+   // that paid a fee address.
    ...(m.burnFrom!=null?{burns:{waiting:L().toJSON().waiting?.length??0,feePayments:reader.journal.filter(e=>e.fee).length}}:{}),checkpoint:reader.checkpoints.at(-1)||null};});
  const waitingFor=q=>relay?relay.waitingFor(q):[];
  // A journal entry that is a fee payment and nothing else (RULES.md section 10).
@@ -177,7 +181,10 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
     // The fee: the fee wallet, its public secret view key, the account of the fee addresses and what is added to a
     // Mordinal's number to give its index there (1: index 0 takes the wallet's own change).
     ...(m.burnFrom!=null?{burnFrom:m.burnFrom,burn:{recordsEnd:L().burn.recordsEnd,address:L().burn.address,viewKey:BURN.viewSecret,text:CLAIM_PREFIX+'<address>',dead:L().burn.dead,ownerOutputs:m.ownerOutputs,
-     fee:L().burn.fee}}:{}),...(xmr20||E||xmr20Open?{xmr20:{...(xmr20?{inscribers:xmr20.inscribers}:{}),...(E?{earlier:earlierInfo()}:{}),...(xmr20Open?{open:{from:xmr20Open.from}}:{})}}:{}),
+     fee:L().burn.fee}}:{}),
+    // Claiming by a spent coin (section 11): its first block, and the fixed part of what such a claim pays to its Mordinal's
+    // fee address (the network fee of the transaction that carries the record comes on top).
+    ...(m.spendFrom!=null?{spendFrom:m.spendFrom,spend:{base:L().spend.base}}:{}),...(xmr20||E||xmr20Open?{xmr20:{...(xmr20?{inscribers:xmr20.inscribers}:{}),...(E?{earlier:earlierInfo()}:{}),...(xmr20Open?{open:{from:xmr20Open.from}}:{})}}:{}),
     relay:relay?{networkFee:'relay',perAddress:relay.limits.perSigner,fees:relay.fees,payBlocks:relay.limits.payBlocks}:null,rules:{feeBps:RULES.feeBps,marketFeeCapBps:RULES.marketFeeCapBps,minPrice:RULES.minPrice.toString(),maxReserve:RULES.maxReserve,settle:RULES.settle}};
    if(path==='/owners'){const from=int(q.get('from'),0,0,list.length),limit=int(q.get('limit'),chunk,1,chunk);return {from,total:list.length,entries:list.slice(from,from+limit)};}
    if(path==='/claimed')return {height,numbers:claimed()};
@@ -200,10 +207,11 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
     // (An entry with a fee payment holds the outputs of its transaction, a few kilobytes: pages of at most 500.)
     const from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),200,1,500);return {height,total:all.length,from,burns:all.slice(from,from+limit)};}
    if(path.startsWith('/status/')){const id=path.slice(8);if(!/^[0-9a-f]{64}$/.test(id))throw fail('A record code is 64 hexadecimal characters.');
-    // A burn claim is done once it claimed its Mordinal; before that it waits for its fee, or it was passed over.
-    {const e=reader.entryById(id),b=e?.burn?burnState(id):null;
+    // A burn claim, or a claim by a spent coin (section 11), is done once it claimed its Mordinal; before that it waits for
+    // its fee, or it was passed over.
+    {const e=reader.entryById(id),k=e?L().burnClaim(id):null,b=k?burnState(id):null;
      if(b&&b.state!=='claimed')return {height,id,state:b.state==='waiting'?'waiting':'refused',txid:e.txid,confirmations:0,
-      error:b.state==='lost'?'The Mordinal was claimed by a record before the fee of this burn was paid.':null,fee:b.fee};
+      error:b.state==='lost'?(k.kind==='spend'?'The Mordinal was claimed by another record before the fee of this claim was paid.':'The Mordinal was claimed by a record before the fee of this burn was paid.'):null,fee:b.fee};
      if(b)return {height,id,state:'done',txid:e.txid,confirmations:height-b.claimedAt+1,error:null};}
     if(relay)return {height,...relay.status(id)};const e=reader.entryById(id);
     return e?{height,id,state:'done',txid:e.txid,confirmations:height-e.height+1,error:null}:{height,id,state:'unknown',txid:null,confirmations:0,error:null};}
@@ -211,13 +219,30 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
    if(path.startsWith('/tx/')){const id=path.slice(4);if(!/^[0-9a-f]{64}$/.test(id))throw fail('A transaction ID is 64 hexadecimal characters.');
     if(!allow(caller(req)))throw fail('Too many requests. Try again in a minute.',429);
     const [t]=await reader.lookup([id]);if(!t)throw fail('The Monero node does not know this transaction yet.',404);return {height,payment:t};}
+   // The transaction that spent a key image, for a claim by a spent coin (section 11): asked of the node first (spent or
+   // not, and where), then looked for in the pool or the newest 10 blocks, or with ?height=h in blocks h - 1 to h + 1 (a
+   // wallet shows the block in which it spent a coin). Only on a ledger that takes such claims; a budget of its own, and one
+   // lookup at a time. -> {height, keyImage, status (the node's: 0 not spent, 1 in a block, 2 in the pool), spent: {txid,
+   // height (null: in the pool), tx} or null, earlier: true when the node says it is spent in a block that was not searched}
+   if(path.startsWith('/spent/')){const ki=path.slice(7);if(!/^[0-9a-f]{64}$/.test(ki))throw fail('A key image is 64 hexadecimal characters.');
+    if(m.spendFrom==null)throw fail('This ledger does not take claims by a spent coin.',404);
+    const at=q.get('height');if(at!=null&&!/^[1-9][0-9]{0,9}$/.test(at))throw fail('A block height is a whole number.');
+    const h=at==null?null:Number(at);if(h!=null&&h>height)throw fail('That block is not read yet. Try again in a few minutes.');
+    if(!allow(caller(req))||!allowSpent(caller(req)))throw fail('Too many requests. Try again in a minute.',429);
+    const r=await(spentQueue=spentQueue.catch(()=>{}).then(()=>reader.spentBy(ki,{heights:h==null?Array.from({length:10},(_,i)=>height-i).filter(x=>x>m.start):[h-1,h,h+1]})));
+    return {height,keyImage:ki,status:r.status,spent:r.spent,...(r.status===1&&!r.spent?{earlier:true}:{})};}
+   // Claims that wait for their fee (burns, and claims by a spent coin; public, as the ledger's state is): which Mordinal,
+   // the claim's code, the address it goes to, what is due, paid and missing.
+   if(path==='/waiting'){if(m.burnFrom==null)return {height,waiting:[]};
+    return {height,waiting:once('waiting',()=>(L().toJSON().waiting||[]).map(w=>{const b=L().burnClaim(w.id);return {number:w.number,id:w.id,to:w.to,kind:b?.kind==='spend'?'spent coin':'burn',due:w.due,paid:b?.paid??'0',missing:b?.missing??w.due};}))};}
    // What became of the record a transaction carried: its entry in this reader's journal, accepted or refused.
    if(path.startsWith('/entry/')){const id=path.slice(7);if(!/^[0-9a-f]{64}$/.test(id))throw fail('A transaction ID is 64 hexadecimal characters.');
     const e=reader.entryByTx(id);if(!e)throw fail('This reader has read no record in this transaction.',404);
     // A claim by burning is a transaction of its own kind: its entry says so, which Mordinal goes to whom, and whether it
     // waits for its fee. A transaction that pays fee addresses lists what each payment counted for.
-    const burned=e.burn&&e.ok?burnState(e.id):null;
-    return {height,entry:{txid:e.txid,height:e.height,pos:e.pos,id:e.id??null,op:e.op??null,...(e.burn?{kind:'burn claim',...(burned||{})}:feeOnly(e)?{kind:'fee payment'}:{}),ok:e.ok,...(e.ok?{}:{error:e.error}),
+    // A claim by a spent coin (section 11) says the same: which Mordinal goes to whom, and whether it waits for its fee.
+    const burned=e.burn&&e.ok?burnState(e.id):null,spent=!e.burn&&e.ok&&e.id&&L().burnClaim(e.id)?.kind==='spend'?burnState(e.id):null;
+    return {height,entry:{txid:e.txid,height:e.height,pos:e.pos,id:e.id??null,op:e.op??null,...(e.burn?{kind:'burn claim',...(burned||{})}:spent?{kind:'spent coin claim',...spent}:feeOnly(e)?{kind:'fee payment'}:{}),ok:e.ok,...(e.ok?{}:{error:e.error}),
      ...(e.fee?{fees:reader.feesOf(e.txid)}:{})},confirmations:height-e.height+1};}
    if(path==='/pending')return {height,jobs:relay?relay.pending():[],pool:await poolNow()};
    if(path==='/stats')return stats();
@@ -267,7 +292,10 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
       // The owner output's global index: what the ring of a burning transfer names; the Mordinal's fee address and what
       // was paid to it; a burn claim that waits for its fee.
       ...(m.burnFrom!=null?(f=>({ownerOutput:Number.isSafeInteger(o.ownerOutputIndex)?o.ownerOutputIndex:null,burnFee:{address:f.address,paid:f.paid},
-       ...(f.waiting?{waiting:{txid:f.waiting.tx,id:f.waiting.id,to:f.waiting.to,height:f.waiting.height,due:f.waiting.due,paid:f.waiting.paid,missing:f.waiting.missing}}:{})}))(L().burnFee(o.number)):{})},
+       // A claim by a spent coin that waits (section 11): txid is the transaction that carries its record, spendTx the one
+       // that spent the coin.
+       ...(f.waiting?{waiting:{txid:f.waiting.kind==='spend'?reader.entryById(f.waiting.id)?.txid??null:f.waiting.tx,id:f.waiting.id,to:f.waiting.to,height:f.waiting.height,due:f.waiting.due,paid:f.waiting.paid,missing:f.waiting.missing,
+        ...(f.waiting.kind==='spend'?{proof:'spent coin',spendTx:f.waiting.tx}:{})}}:{})}))(L().burnFee(o.number)):{})},
      history,waiting:waitingFor({number:o.number})};}
    if(path==='/log'){const all=reader.journal,from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),200,1,500);
     return {height,hash:reader.hash,from,total:all.length,entries:all.slice(from,from+limit)};}
@@ -350,6 +378,9 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
  const caller=req=>{const direct=req.socket.remoteAddress||'';if(!behindProxy)return direct;
   const last=String(req.headers['x-forwarded-for']||'').split(',').at(-1).trim();return last||direct;};
  const buckets=new Map();
+ // /spent reads blocks and the pool of the node: a budget of its own, a few per minute, and one lookup at a time.
+ const spentBuckets=new Map();let spentQueue=Promise.resolve();
+ function allowSpent(ip){const t=Date.now(),b=spentBuckets.get(ip)||{tokens:10,at:t};b.tokens=Math.min(10,b.tokens+(t-b.at)/1000*0.2);b.at=t;if(spentBuckets.size>10000)spentBuckets.clear();spentBuckets.set(ip,b);if(b.tokens<1)return false;b.tokens--;return true;}
  function allow(ip){const t=Date.now(),b=buckets.get(ip)||{tokens:rate.burst,at:t};b.tokens=Math.min(rate.burst,b.tokens+(t-b.at)/1000*rate.perSecond);b.at=t;
   if(buckets.size>10000)buckets.clear();buckets.set(ip,b);if(b.tokens<1)return false;b.tokens-=1;return true;}
  async function picture(res,text){
@@ -423,10 +454,10 @@ export async function startService(o){
  // opened (the reader refuses them again whenever it reads).
  if(o.burnDead!=null&&network==='mainnet'&&!isMainnetDead([...o.burnDead].map(Number).sort((x,y)=>x-y))&&(await chain.info()).nettype!=='fakechain')throw Error('--burn-dead: on mainnet the dead outputs are fixed; other ones can be named only on the offline test chain.');
  if(o.burnFee!=null&&network==='mainnet'&&!isProjectFeeWallet(feeWallet(o.burnFee,network,{testChain:true}))&&(await chain.info()).nettype!=='fakechain')throw Error('--burn-fee-wallet: on mainnet the fee wallet is the project\'s; another one can be named only on the offline test chain.');
- const reader=openReader({dir:o.state,chain,network,domain:o.domain,feeAddress:o.feeAddress,owners,start:Number(o.start),startHash:o.startHash||null,mintFrom:o.mintFrom==null?null:Number(o.mintFrom),minters:o.minters??null,openFrom:o.openFrom==null?null:Number(o.openFrom),burnFrom:o.burnFrom==null?null:Number(o.burnFrom),burnDead:o.burnDead??null,burnFee:o.burnFee??null,checkpointEvery:o.checkpointEvery??720,log:o.log});
- // A first burn block that this start takes in, or changes, has to lie at least 10 blocks above the node's newest block.
- // It is checked here, before anything is served: otherwise the pages would announce a setting the folder refuses.
- if(reader.burnPending!=null){const info=await chain.info();try{reader.confirmBurn(info);}catch(e){throw Error('--burn-from: '+e.message);}}
+ const reader=openReader({dir:o.state,chain,network,domain:o.domain,feeAddress:o.feeAddress,owners,start:Number(o.start),startHash:o.startHash||null,mintFrom:o.mintFrom==null?null:Number(o.mintFrom),minters:o.minters??null,openFrom:o.openFrom==null?null:Number(o.openFrom),burnFrom:o.burnFrom==null?null:Number(o.burnFrom),burnDead:o.burnDead??null,burnFee:o.burnFee??null,spendFrom:o.spendFrom==null?null:Number(o.spendFrom),checkpointEvery:o.checkpointEvery??720,log:o.log});
+ // A first burn block that this start takes in, or changes, has to lie at least 10 blocks above the node's newest block,
+ // and so does a first block of claims by a spent coin that it takes in. It is checked here, before anything is served: otherwise the pages would announce a setting the folder refuses.
+ if(reader.burnPending!=null||reader.spendPending!=null){const info=await chain.info();try{reader.confirmBurn(info);}catch(e){throw Error((/spent coin/.test(e.message)?'--spend-from: ':'--burn-from: ')+e.message);}}
  let relay=null;
  if(o.carrierBin){const carrier=createCarrier({bin:o.carrierBin,stateDir:o.carrierState,node:o.node,network:o.carrierNetwork||'offline-fakechain',start:Number(o.carrierStart||o.start)});
   relay=createRelay({dir:join(o.state,'relay'),reader,chain,carrier,network,domain:o.domain,limits:o.limits,fees:o.fees,lane:o.minters||[],...(o.now?{now:o.now}:{}),log:o.log});}
@@ -452,7 +483,7 @@ if(process.argv[1]===import.meta.filename){
  // Every word that begins with a dash is an option this program knows, written "--name value", and given once (the
  // two lists of allowed origins and extensions may repeat). A misspelt option stops the start: an ignored
  // --open-from or --minters would make this another ledger than the one that was meant.
- {const KNOWN=new Set(['owners','transfers','block-times','groups','domain','fee-address','node','start','start-hash','mint-from','minters','open-from','burn-from','burn-dead','burn-fee-wallet','state','network','port','every','xmr20-inscribers','xmr20-open-from','xmr20-earlier','no-xmr20-earlier','no-xmr20-follow',
+ {const KNOWN=new Set(['owners','transfers','block-times','groups','domain','fee-address','node','start','start-hash','mint-from','minters','open-from','burn-from','burn-dead','burn-fee-wallet','spend-from','state','network','port','every','xmr20-inscribers','xmr20-open-from','xmr20-earlier','no-xmr20-earlier','no-xmr20-follow',
    'mint-fee','collection-fee','token-mint-fee','carrier-bin','carrier-state','carrier-start','carrier-network','relay-limits','content-dir','content-archive','collections','views','allow-origin','allow-extension','behind-proxy','test-hooks']),MANY=new Set(['allow-origin','allow-extension']),seen=new Set();
   for(const a of process.argv.slice(2)){if(!a.startsWith('-'))continue;
    if(a.includes('='))throw Error(`Write "${a.split('=')[0]} <value>", with a space: ${a}`);
@@ -468,6 +499,7 @@ if(process.argv[1]===import.meta.filename){
   ...(has('minters')?{minters:(arg('minters')||'').split(',').filter(Boolean)}:{}),...(has('open-from')?{openFrom:(v=>{if(!/^[1-9]\d{0,9}$/.test(v||''))throw Error('--open-from <height>: the opening block is a whole number');return Number(v);})(arg('open-from'))}:{}),
   // The same care for the burn setting: a height that does not read as one, or a list that is not fifteen indexes, stops the start.
   ...(has('burn-from')?{burnFrom:(v=>{if(!/^[1-9]\d{0,9}$/.test(v||''))throw Error('--burn-from <height>: the first burn block is a whole number');return Number(v);})(arg('burn-from'))}:{}),
+  ...(has('spend-from')?{spendFrom:(v=>{if(!/^[1-9]\d{0,9}$/.test(v||''))throw Error('--spend-from <height>: the first block of claims by a spent coin is a whole number');return Number(v);})(arg('spend-from'))}:{}),
   ...(has('burn-dead')?{burnDead:(v=>{if(!/^\d{1,15}(,\d{1,15}){14}$/.test(v||''))throw Error('--burn-dead <index>,…: fifteen global output indexes');return v.split(',').map(Number);})(arg('burn-dead'))}:{}),
   ...(has('burn-fee-wallet')?{burnFee:(v=>{const m=/^([1-9A-HJ-NP-Za-km-z]{95}):([0-9a-f]{64})$/.exec(v||'');if(!m)throw Error('--burn-fee-wallet <main address>:<secret view key>');return {address:m[1],viewKey:m[2]};})(arg('burn-fee-wallet'))}:{}),state:arg('state'),network:arg('network'),xmr20Inscribers:(arg('xmr20-inscribers')||'').split(',').filter(Boolean),...(has('xmr20-open-from')?{xmr20OpenFrom:(v=>{if(!/^[1-9][0-9]{0,8}$/.test(v||''))throw Error('--xmr20-open-from <block>');return Number(v);})(arg('xmr20-open-from'))}:{}),...(has('no-xmr20-earlier')?{xmr20Earlier:false}:arg('xmr20-earlier')?{xmr20Earlier:arg('xmr20-earlier')}:{}),...(has('no-xmr20-follow')?{xmr20Follow:false}:{}),
   port:arg('port'),fees:{mint:arg('mint-fee')||0,collection:arg('collection-fee')||0,tokenMint:arg('token-mint-fee')||0},carrierBin:arg('carrier-bin'),carrierState:arg('carrier-state'),carrierStart:arg('carrier-start'),carrierNetwork:arg('carrier-network'),contentDir:arg('content-dir'),collections:arg('collections'),contentArchive:archive,views:arg('views'),

@@ -42,9 +42,10 @@ record  = "MD1" 0xfe  op(u8)  body  [proof or signature]
 address = kind(u8: 0 standard, 1 subaddress)  spend key(32)  view key(32)
 numbers are little-endian; u32 = block or counter, u64 = piconero, u16 = basis points
 
-op 1 claim    reg32 ownerTx32 to proof(u8) [holder when proof = 1]
+op 1 claim    reg32 ownerTx32 to proof(u8) [holder when proof = 1 or 2] [spendTx32 keyImage32 when proof = 2]
               proof 0: c32 r32
               proof 1: D32 pc32 pr32   variant(u8) c32 r32
+              proof 2: D32 pc32 pr32 kc32 kr32   variant(u8) c32 r32   (section 11)
 op 2 move     reg32 seq(u32) from to                                variant c32 r32
 op 3 list     reg32 seq(u32) until(u32) price(u64) seller           variant c32 r32
 op 4 cancel   lot32 seller                                          variant c32 r32
@@ -67,8 +68,8 @@ main group, or the neutral point).
 A record whose id is already on the ledger is ignored. A record that fails any check is
 ignored and changes nothing.
 
-Largest sizes seen in the tests: claim 199 bytes (one-time key) or 361 (payment proof),
-move 236, list 183, reserve 238, cancel 167. A buy record is 296 bytes (seller and
+Largest sizes seen in the tests: claim 199 bytes (one-time key), 361 (payment proof) or 489
+(spent coin, section 11), move 236, list 183, reserve 238, cancel 167. A buy record is 296 bytes (seller and
 protocol fee) or 425 bytes (with a marketplace fee). Monero relays at most 1,060 bytes of
 `tx_extra`.
 
@@ -82,23 +83,26 @@ is refused.
 
 ```
 Mordinals claim: Mordinal #N (inscription <reg>), held by output 0 of <ownerTx>, now belongs to <to>; code <code>
+Mordinals claim: Mordinal #N (inscription <reg>), held by output 0 of <ownerTx> and spent in <spendTx>, now belongs to <to>; code <code>
 Mordinals move: send Mordinal #N to <to>; move <seq>; code <code>
 Mordinals list: sell Mordinal #N for P XMR (<P − fee> XMR to <seller>, <fee> XMR protocol fee); valid until block <until>; code <code>
 Mordinals cancel: stop selling Mordinal #N; listing <lot code>; code <code>
 Mordinals reserve: buy Mordinal #N for P XMR; pay exactly <a> XMR to <seller> and exactly <b> XMR to <fee address>[ and exactly <c> XMR to <market>] by block <payBy>; Mordinal to <buyer>; code <code>
 ```
 
-The reader rebuilds the text from the record, so what the person read in their wallet is
-what the ledger applies.
+The second claim text is the one of proof 2 (section 11). The reader rebuilds the text from
+the record, so what the person read in their wallet is what the ledger applies.
 
 ## 3. Claim (once per Mordinal)
 
 The first valid claim for a Mordinal wins. `ownerTx` must be the owner transaction on the
 owner list. The Mordinal then belongs to `to`. Claims have no deadline.
 
-On a ledger with a first burn block, claim records count up to 720 blocks past it and no
-longer after that; from the first burn block on a Mordinal is claimed as section 10 says.
-What follows describes the claim record.
+On a ledger with a first burn block, claim records of proof 0 and 1 count up to 720 blocks
+past it and no longer after that; from the first burn block on a Mordinal is claimed as
+section 10 says. A claim record of proof 2 counts only on a ledger that names a first block
+of claims by a spent coin, from that block on (section 11). What follows describes proofs 0
+and 1.
 
 The owner coin is output 0 of the owner transaction, with one-time key `P` and transaction
 public key `R`.
@@ -139,9 +143,9 @@ such proof. The message signature must always come from the spend key.
 Proof 1 is public and shows more than proof 0: the holder's address, and `D`, from which
 anyone can read the **amount** of the owner coin. It shows no key image and spends nothing.
 
-Never accepted as a claim record: OutProofs, spend proofs, reserve proofs, key images, any
-spend of the owner coin. (The one spend that claims is the burning transfer of section 10,
-on a ledger that has it.)
+Never accepted as a claim record: OutProofs, spend proofs, reserve proofs. A key image and a
+spend of the owner coin count only in proof 2, on a ledger with section 11; the burning
+transfer of section 10 claims on a ledger that has it.
 
 ## 4. Move
 
@@ -441,7 +445,7 @@ transaction that anyone can pay for.
 Not in this draft: mints larger than one relayed transaction, mints that anyone can buy
 from a creator, and bringing earlier collections (GENESIS) under these rules.
 
-## 10. Claiming by burning (draft; a ledger setting no ledger uses yet)
+## 10. Claiming by burning (a ledger setting; the mainnet ledger uses it from block 3,808,200)
 
 A ledger's setup may name a **first burn block**. Like the first mint block it is fixed for
 the ledger and shared by every reader of it; a checkpoint names it from that block on.
@@ -718,7 +722,8 @@ for it. The keys are the same on every network; only the written address differs
   check any original index.
 - A Mordinal whose owner coin was already spent by an ordinary transaction cannot be claimed
   by burning: the coin cannot be spent again. Its holder can claim by record until claim
-  records stop; after that this draft has no way for it (`docs/OPEN-POINTS.md`).
+  records stop; after that only if the coin was spent from the first block of claims by a
+  spent coin on, on a ledger that has it (section 11).
 - A burn that is refused (another text, a ring this rule does not take, a fee too low, a
   block before the first burn block) has spent the coin all the same and cannot be made
   again. Until claim records stop, the holder can still claim by record with the one-time
@@ -750,3 +755,115 @@ Tests: `rules/tests/burn.test.mjs` (with one real pair of mainnet transactions i
 `rules/tests/burn-fee.test.mjs`, `reader/tests/burn.test.mjs`, `reader/tests/lab-burn.test.mjs`.
 
 Reader and relay: `reader/`.
+
+## 11. Claiming by a spent coin (a ledger setting; the mainnet ledger uses it from block 3,813,165)
+
+A ledger that claims by burning may also name a **first block of claims by a spent coin**, at
+or after its first burn block. Like the first burn block it is fixed for the ledger and
+shared by every reader of it; a checkpoint names it from that block on. From that block on a
+claim record with **proof 2** claims a Mordinal whose owner coin was spent, from that block
+on, by an ordinary transaction: the way for a holder whose wallet builds no burn. Proof 2
+counts whether claim records still count or not. Like a burn claim it is a paid service: it
+completes once the Mordinal's fee address has received the fee below.
+
+**Proof 2 — payment proof, signed key image and message.** Three parts:
+
+- the payment proof of proof 1: a wallet2 `InProofV2` for the owner transaction and the
+  holder's address, made with an empty message, covering exactly one transaction key;
+- the owner coin's **key image** `I` and a signature that `I` belongs to the coin's one-time
+  key `P`: what a wallet's key image export holds for that coin (wallet2
+  `export_key_images`; in Feather, Tools → Offline transaction signing, after importing an
+  outputs file that lists the coin). It needs the coin's secret key `x`, so only a wallet
+  that holds the spend key can make it; a view-only wallet cannot;
+- a "sign message" signature by the holder's address (spend key) over the claim text, which
+  names the transaction that spent the coin:
+
+```
+Mordinals claim: Mordinal #N (inscription <reg>), held by output 0 of <ownerTx> and spent in <spendTx>, now belongs to <to>; code <code>
+```
+
+The signed key image is wallet2's ring signature over a ring of one, with `I` itself as the
+hash it signs:
+
+```
+I = x·Hp(P)        Hp = hash_to_ec (section 10)
+k random     c = Hs(I ‖ k·G ‖ k·Hp(P))     r = k − c·x
+accepted when c and r lie in 1 … ℓ−1, I is a usable point, and Hs(I ‖ r·G + c·P ‖ r·Hp(P) + c·I) = c
+```
+
+The checks, in this order, after those of every claim (the owner transaction is on the
+owner list, the Mordinal is not claimed) and the payment proof of proof 1:
+
+1. Nothing waits for the Mordinal: no burn claim waits for its fee, and no other claim by a
+   spent coin does.
+2. The signed key image is valid for the owner coin's `P`.
+3. The reader has looked up `spendTx` on the node, and it is in a block **before** the block
+   of the record. A spend in the same block as the record, in a later one or only in the
+   pool does not count.
+4. `spendTx` is in a block at or after the first block of claims by a spent coin. A coin spent
+   before that block never claims this way: the claim is for someone who holds the Mordinal
+   when this section starts.
+5. One input of `spendTx` has the key image `I`. Monero accepts a key image once, so this is
+   the one transaction that spent the owner coin.
+6. `spendTx` did not move the Mordinal under the original rules. It is refused when the 2023
+   indexer reads a transfer in its extra field (a transfer field, 0x11, and no registration
+   field, 0x10, read field by field exactly as that indexer reads them: a field that does not
+   read ends the reading, and a length that the end of the extra field cuts short is the
+   value read so far; `originalTransfer` in `rules/lib/spend.mjs` lists the field types)
+   **and** one of its inputs has a ring whose members all lie in the
+   dead range (section 10, from the lowest to the highest dead output) but one, and that one
+   is this Mordinal's owner output. That is a transfer or a burn of this Mordinal, and its
+   holder no longer holds it (a burn is claimed by section 10). The transfer's fee and the
+   place of that input are not looked at: such a transaction counts as having moved the
+   Mordinal either way. Any other spend moves nothing under the original rules: an ordinary
+   transaction, a registration, or a transfer of another Mordinal that spent this coin beside
+   it.
+7. The message signature is by the holder's address (spend key).
+
+A record that passes waits for its fee, like a burn claim (section 10): the Mordinal is not
+claimed yet, and no other claim by a spent coin can claim it. While claim
+records still count, a claim record of proof 0 or 1 still can, and the claim by a spent coin
+is then passed over.
+
+**The fee.** The network fee of the transaction that carries the claim record, as the chain
+shows it (`txnFee`), and 0.0025 XMR on top (the fixed part is part of the rules: a reader
+with another amount reads another ledger). So the fee follows what the network asks at the
+time: about 0.00004 XMR at the base rate, more when blocks are full. It is paid to the
+Mordinal's fee address of section 10. A record whose carrying transaction shows no fee is
+refused. Every payment to that address counts, also one made
+before the record. The claim completes in the block where the payments reach the fee, or in
+its own block when they had already. The fee rules of section 10 apply: public, not refunded.
+
+A claim that waits cannot be changed or withdrawn, and once its fee is paid the Mordinal goes
+to the address in it: check that address before signing.
+
+Before the first block of such claims a record with proof 2 is no known record (an unknown
+proof kind), as it was before this section existed.
+
+The record of a claim by a spent coin is 489 bytes. The relay holds it until `spendTx` is in a
+block below the reader's newest one, so the record cannot reach a block before it, and
+refuses it when the node does not know `spendTx`.
+
+**What it rests on, and what it shows.**
+
+- The claim rests on the **message signature**: only the spend key of the address that
+  received the coin (as the payment proof shows) can make it, and it names `to`, `spendTx`
+  and the code. The payment proof needs only the view key, and the signed key image is not
+  bound to the claim (it shows that `I` is the coin's key image, so that `spendTx` is the
+  transaction that spent it); someone who holds a view-only copy of the wallet, or a key
+  images file it exported, can supply those two parts but not the signature.
+- Only a coin spent from the first block of such claims on counts. Someone who spent the
+  coin earlier, whatever became of the Mordinal since, has no claim here; the holder of an
+  unspent owner coin spends it in an ordinary transaction, which moves nothing under the
+  original rules, and claims.
+- **It is public.** Beyond what proof 1 shows (the holder's address and the amount of the
+  owner coin), the record shows which transaction spent the coin. That links `spendTx`, its
+  other inputs and its change to the holder's address, and it marks the owner output as
+  spent there, so rings that use it as a decoy elsewhere lose it as a candidate.
+- A burn that was refused spent the coin in an original-format transfer of this Mordinal: the
+  Mordinal moved to the burn address under the original rules, and this section gives it no
+  way either (`docs/OPEN-POINTS.md`).
+
+Code: `rules/lib/spend.mjs`; the checks in order: `spentCoin` in `rules/lib/ledger.mjs`, the
+waiting and the fee as for burn claims. Tests: `rules/tests/spend.test.mjs` (with three key
+images that Feather exported, in `rules/tests/fixtures-spend.json`), `reader/tests/spend.test.mjs`.

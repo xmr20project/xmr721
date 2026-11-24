@@ -16,7 +16,8 @@
 // Every job is one file, jobs/<record id>.json, written before the step it describes:
 //   unpaid   a mint or a collection whose relay fee has not arrived yet (only when the relay charges one)
 //   queued   accepted, no transaction built yet (no coin ready, or the node was unreachable)
-//   held     a purchase whose payments are not in a block yet; it is sent once they are
+//   held     a purchase whose payments are not in a block yet, or a claim by a spent coin whose spending transaction
+//            is not in a block below the newest one yet; it is sent once they are
 //   built    transaction built and saved, not yet handed to the node
 //   sent     handed to the node; waiting for a block
 //   done     the reader accepted the record from a block
@@ -32,7 +33,7 @@ import {execFile} from 'node:child_process';
 import {createHash,randomBytes} from 'node:crypto';
 import {existsSync,mkdirSync,readdirSync,readFileSync,renameSync,unlinkSync,openSync,writeSync,fsyncSync,closeSync} from 'node:fs';
 import {join} from 'node:path';
-import {OP,NO_COLLECTION,decodeRecord,recordId,signerOf,canonical} from '../../rules/lib/records.mjs';
+import {OP,PROOF,NO_COLLECTION,decodeRecord,recordId,signerOf,canonical} from '../../rules/lib/records.mjs';
 import {readDeploy,TYPE_JSON} from '../../xmr20-tokens/lib/token.mjs';
 import {unhex,hex,leBytes,decodeAddress} from '../../rules/lib/monero.mjs';
 import {MAX_RECORD} from './transport.mjs';
@@ -120,6 +121,10 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
  const bad=(message,status=400)=>{const e=Error(message);e.status=status;return e;};
 
  // A purchase waits here while its payments are not in a block: the listing must still be open and reserved.
+ // The carrying transaction's network fee is not known before it is built; any fee stands in for it when a claim is judged.
+ const CARRIED={txid:'0'.repeat(64),carrier:true,fee:'0'};
+ // A job that carries a claim by a spent coin (section 11).
+ const spendClaim=j=>{if(j.op!==OP.claim)return false;try{return decodeRecord(unhex(j.record),network).body.proof===PROOF.spend;}catch{return false;}};
  function holdable(d){const l=reader.ledger.lot(d.body.lot);
   if(!l)throw bad('This listing does not exist.');if(l.status!=='open')throw bad(l.status==='sold'?'This Mordinal is already sold.':'This listing was cancelled.');
   const r=l.reservations.at(-1);if(!r)throw bad('Nobody reserved this listing; reserve it before paying.');
@@ -132,10 +137,25 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   // A node that cannot be reached throws here unmarked; only the rules' own answers are marked as refusals.
   const ids=d.op===OP.buy?[...new Set(d.body.payments.map(p=>p.txid))]:null,facts=ids?await reader.lookup(ids,reader.height):undefined;
   const late=ids&&facts.length<ids.length?await reader.lookup(ids.filter(id=>!facts.some(f=>f.txid===id))):null;
+  // A claim by a spent coin (section 11): the transaction that spent the coin, as the node has it now, in a block or not.
+  const spent=d.op===OP.claim&&d.body.proof===PROOF.spend,spend=spent?(await reader.lookup([d.body.spendTx],null,{inputs:true}))[0]??null:null;
   try{
    // A claim record handed over now reaches the next block at the earliest. On a ledger that claims by burning it
-   // would be refused there once claim records no longer count, so it is not carried.
-   const burn=reader.ledger.burn;if(d.op===OP.claim&&burn&&reader.height+1>=burn.recordsEnd)throw bad(`From block ${burn.recordsEnd} a Mordinal is claimed only by burning it; a claim record no longer counts.`);
+   // would be refused there once claim records no longer count, so it is not carried. A claim by a spent coin counts
+   // from its own first block on, whatever the claim records do.
+   const burn=reader.ledger.burn;if(d.op===OP.claim&&!spent&&burn&&reader.height+1>=burn.recordsEnd)throw bad(`From block ${burn.recordsEnd} a Mordinal is claimed only by burning it; a claim record no longer counts.`);
+   if(spent){
+    // Before the first block of such claims: refused if the record could not reach it, held if it reaches it at the earliest.
+    const from=reader.ledger.spend?.from??null;
+    if(from!==null&&reader.height<from){if(reader.height+1<from)throw bad(`Claiming by a spent coin starts at block ${from}.`);return {ready:false};}
+    // A node may miss a transaction for a moment (between the pool and a block, or another node): a held claim stays held.
+    if(!spend){if(fresh)throw bad('The Monero node does not know the transaction that spent the coin. Check that it was sent, then hand the claim over again.');return {ready:false};}
+    // Not in a block yet, or in the newest one: the record reaches a later block, where the spend is in an earlier one.
+    // It is judged as if the spend were one block back (where that block is one from which a spend counts), and held
+    // until it is.
+    if(spend.height==null||spend.height>=reader.height){if(from===null||reader.height-1>=from)reader.ledger.check(bytes,[{...spend,height:reader.height-1},CARRIED]);return {ready:false};}
+    // In an older block: judged against that block, as a reader judges it.
+    reader.ledger.check(bytes,[...await reader.lookup([d.body.spendTx],reader.height,{inputs:true}),CARRIED]);return {ready:true};}
    if(late){holdable(d);
     if(late.length+facts.length<ids.length){if(fresh)throw bad('A payment of this purchase is not known to the Monero node yet. Wait a moment and send it again.');return {ready:false};}
     reader.ledger.check(bytes,[...facts,...late.map(f=>({...f,height:reader.height}))]);return {ready:false};}
@@ -321,10 +341,11 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
     // rule, and has not sent, is not carried either. One taken for the relay's fee (it has a payment address) is.
     if(!j.txid&&!j.pay&&(j.op===OP.mint||j.op===OP.collection)&&laneOf.size&&!laneOf.has(j.signer)){refuse(j,NOT_CARRIED);continue;}
     if(mine&&!mine.ok){
-     // A purchase can be refused in its block only because replaced blocks put it before its own payment. If the
-     // rules would accept it now, or once its payment is in a block, it goes out again in a new transaction, a
-     // limited number of times; the buyer's wallet may no longer hold what it takes to make the record again.
-     if(j.op!==OP.buy||(j.again||0)>=limits.sendAgain){refuse(j,mine.error);continue;}
+     // A purchase can be refused in its block only because replaced blocks put it before its own payment, and a claim by
+     // a spent coin because they put it beside or before the spending transaction. If the rules would accept it now, or
+     // once that transaction is in a block, it goes out again in a new transaction, a limited number of times; the
+     // buyer's wallet may no longer hold what it takes to make the record again.
+     if(!(j.op===OP.buy||spendClaim(j))||(j.again||0)>=limits.sendAgain){refuse(j,mine.error);continue;}
      const bytes=unhex(j.record);let ready;
      try{({ready}=await judge(bytes,decodeRecord(bytes,network)));}catch(e){if(e.rule){refuse(j,mine.error);continue;}throw e;}
      j.again=(j.again||0)+1;j.state=ready?'queued':'held';j.txid=j.blob=j.fee=null;j.createdHeight=tip;j.note=null;save(j);log({job:j.id,again:j.again});
@@ -340,6 +361,12 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
      for(const p of got)used.add(outKey(p));pay.used=[...used];write(payFile,pay);await send(j);continue;}
     if(j.state==='queued'||j.state==='held'){
      if(j.state==='queued'&&tip-j.createdHeight>limits.stuckBlocks){j.state='stuck';j.endedAt=t;save(j);log({job:j.id,stuck:true});continue;}
+     // A claim by a spent coin is held while its spending transaction is not in a block below the newest one, for so long.
+     // One whose transaction went out once already is given up on as stuck: that transaction may still be mined, and a
+     // claim handed over again goes out as that same transaction.
+     if(j.state==='held'&&j.op===OP.claim&&tip-j.createdHeight>limits.holdBlocks){
+      if(j.blob){j.state='stuck';j.endedAt=t;save(j);log({job:j.id,stuck:true});continue;}
+      refuse(j,'The transaction that spent the coin did not reach a block in time. Nothing was sent; once it is in a block, hand the claim over again.');continue;}
      const bytes=unhex(j.record),d=decodeRecord(bytes,network);let ready;
      try{({ready}=await judge(bytes,d));}catch(e){if(e.rule){refuse(j,e.message);continue;}throw e;}
      if(ready){j.state=j.blob?'built':'queued';await send(j);}
@@ -350,7 +377,7 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
      if(t-j.sentAt>limits.resendMs&&await missing(j.txid)){
       // The node dropped the transaction (or a block that held it was replaced). Send it again only if it would still count.
       const bytes=unhex(j.record);let ready;try{({ready}=await judge(bytes,decodeRecord(bytes,network)));}catch(e){if(e.rule){refuse(j,e.message);continue;}throw e;}
-      if(!ready){j.state='held';save(j);continue;}
+      if(!ready){j.state='held';j.createdHeight=tip;save(j);continue;}
       j.state='built';await send(j);}}}
    catch(e){log({job:j.id,error:String(e.message).slice(0,200)});}}
   // Coins: every record spends one coin of the relay's wallet, so keep a few ready.
