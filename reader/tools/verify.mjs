@@ -27,7 +27,7 @@ import {feeParts,feeWallet,isProjectFeeWallet} from '../../rules/lib/burn-fee.mj
 import {ownersHash,ownerOutputsHash,readOwners} from '../lib/owners.mjs';
 import {unframe} from '../lib/transport.mjs';
 import {createChain} from '../lib/chain.mjs';
-import {openReader,slim,spendFacts} from '../lib/reader.mjs';
+import {openReader,slim,spendFacts,carrierFeeOf} from '../lib/reader.mjs';
 
 const sha=text=>createHash('sha256').update(text).digest('hex');
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
@@ -52,7 +52,7 @@ export async function verify({info,entries,checkpoints=[],owners,chain=null,publ
  let ledger;try{ledger=createLedger({network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,height:info.start,mintFrom:info.mintFrom??null,minters:info.minters??null,openFrom:info.openFrom??null,...burns,...(info.spendFrom!=null?{spendFrom:info.spendFrom}:{})});}
  catch(e){return {ok:false,problems:['The service states a setup the rules do not take: '+String(e?.message||e).slice(0,200)],accepted:0,refused:0,checkpoints:0,checkedOnNode:0};}
  // The fee of a claim by a spent coin is part of the rules: a service that states another one runs other rules.
- if(info.spendFrom!=null&&info.spend?.fee!==ledger.spend.fee)return {ok:false,problems:[`The service asks ${info.spend?.fee} piconero for a claim by a spent coin; these rules ask ${ledger.spend.fee}.`],accepted:0,refused:0,checkpoints:0,checkedOnNode:0};
+ if(info.spendFrom!=null&&info.spend?.base!==ledger.spend.base)return {ok:false,problems:[`The service asks ${info.spend?.base} piconero besides the network fee for a claim by a spent coin; these rules ask ${ledger.spend.base}.`],accepted:0,refused:0,checkpoints:0,checkedOnNode:0};
  // A checkpoint names the first mint block and the minter list of its ledger; they have to be this service's.
  const setup={mintFrom:info.mintFrom??null,minters:info.minters?[...info.minters].sort().join(','):null,openFrom:info.openFrom??null};
  for(const c of checkpoints){const minting=setup.mintFrom!==null&&c.height>=setup.mintFrom,opened=minting&&setup.openFrom!==null&&c.height>=setup.openFrom;
@@ -117,7 +117,9 @@ export async function verify({info,entries,checkpoints=[],owners,chain=null,publ
    const spent=d?.op===OP.claim&&d.body.proof===PROOF.spend;
    if((spent||d?.op===OP.buy)&&!Array.isArray(e.facts)){bad(`Log entry ${i}: the transactions this record names are missing from the log.`);continue;}
    if(e.facts){const ids=[...new Set(e.facts.map(f=>f.txid))],got=await chain.txs(ids),read=tx=>spent?spendFacts(tx):slim(tx);
-    for(const f of e.facts){const p=got.get(f.txid);if(!p||p.inPool||p.height!==f.height||!same(read(p.tx),f.tx))bad(`Log entry ${i}: ${spent?'spending transaction':'payment'} ${f.txid} is not on the node as logged.`);}
+    for(const f of e.facts){if(spent&&f.carrier)continue;const p=got.get(f.txid);if(!p||p.inPool||p.height!==f.height||!same(read(p.tx),f.tx))bad(`Log entry ${i}: ${spent?'spending transaction':'payment'} ${f.txid} is not on the node as logged.`);}
+    // The network fee of the carrying transaction, which such a claim pays, is the node's.
+    if(spent){const fee=carrierFeeOf(t.tx),c=e.facts.filter(f=>f.carrier);if(fee===null?c.length!==0:c.length!==1||c[0].txid!==e.txid||c[0].fee!==fee)bad(`Log entry ${i}: the network fee of transaction ${e.txid} is not logged as the node shows it.`);}
     // A payment, or a spending transaction, that the log leaves out although it was in a block by then would change the verdict.
     if(spent){const p=(await chain.txs([d.body.spendTx])).get(d.body.spendTx),counts=Boolean(p&&!p.inPool&&p.height<=e.height);
      if(counts!==e.facts.some(f=>f.txid===d.body.spendTx))bad(`Log entry ${i}: spending transaction ${d.body.spendTx} is ${counts?'left out of':'wrongly in'} the logged facts.`);}

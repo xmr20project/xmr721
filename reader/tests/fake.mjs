@@ -50,7 +50,7 @@ export function fakeCarrier(chain,{coins=5,subaddress=n=>'relay subaddress '+n}=
   // A mint record laid out as the real tool lays it out; the asset and the owner key are stand-ins.
   mintRecord:async arg=>{const f=String(arg).split(':'),[token,units]=f,salt=f.at(-1),asset=sha('asset '+token);if(f[2]==='k'&&/^ff/.test(f[3]))throw Error('This is not an owner key of an XMR20 wallet');const owner=f[2]==='k'?f[3]:sha('owner '+f[3]+f[4]);
    return {record:'584f31fe'+asset+BigInt(units).toString(16).padStart(16,'0').match(/../g).reverse().join('')+owner+salt,asset,owner};},
-  publish:async blob=>{const t=JSON.parse(Buffer.from(blob,'hex').toString('utf8'));chain.publish({txid:t.txid,tx:{version:2,extra:t.extra,vout:[]}});return {txid:t.txid};}};}
+  publish:async blob=>{const t=JSON.parse(Buffer.from(blob,'hex').toString('utf8'));chain.publish({txid:t.txid,tx:{version:2,extra:t.extra,vout:[],rct_signatures:{type:6,txnFee:30000000}}});return {txid:t.txid};}};}
 
 // A record in a transaction of its own, as anyone could publish it without the relay.
-export const carried=(record,label=randomBytes(8).toString('hex'))=>({txid:sha('direct '+label),tx:{version:2,extra:[...frame(record,randomBytes(32))],vout:[]}});
+export const carried=(record,label=randomBytes(8).toString('hex'))=>({txid:sha('direct '+label),tx:{version:2,extra:[...frame(record,randomBytes(32))],vout:[],rct_signatures:{type:6,txnFee:30000000}}});

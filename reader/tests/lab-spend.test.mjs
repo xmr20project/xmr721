@@ -13,7 +13,7 @@ import {existsSync} from 'node:fs';
 import {mkdtemp,rm,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {hex} from '../../rules/lib/monero.mjs';
-import {SPEND_FEE,originalTransfer} from '../../rules/lib/spend.mjs';
+import {SPEND_BASE,originalTransfer} from '../../rules/lib/spend.mjs';
 import {feeWallet,feeAddressOf} from '../../rules/lib/burn-fee.mjs';
 import {BIN,call,startChain,startWallet,stopAll,txPubKeys} from '../../rules/tests/lab-harness.mjs';
 import {startService} from '../service.mjs';
@@ -60,7 +60,7 @@ test('coins spent by ordinary wallet2 transactions claim their Mordinals through
   const post=async(path,body={})=>{const r=await fetch(base+path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});return {status:r.status,body:await r.json()};};
   const pass=async()=>{const r=await post('/test/step');assert.equal(r.status,200,JSON.stringify(r.body));return r.body;};
   const status=async id=>get('/status/'+id);
-  const info=await get('/info');assert.deepEqual([info.burnFrom,info.spendFrom,info.spend],[start+2,start+4,{fee:SPEND_FEE.toString()}]);
+  const info=await get('/info');assert.deepEqual([info.burnFrom,info.spendFrom,info.spend],[start+2,start+4,{base:SPEND_BASE.toString()}]);
   const relayAddress=(await service.relay.carrier.init()).address;
   await alice.rpc('transfer',{destinations:Array.from({length:3},()=>({address:relayAddress,amount:Number(XMR/5n)})),priority:0});await mine(10);await refresh();await pass();
   while(await tip()<start+4){await mine(1);await pass();}
@@ -80,12 +80,15 @@ test('coins spent by ordinary wallet2 transactions claim their Mordinals through
   await mine(1);await pass();assert.equal((await status(r0.body.id)).state,'sent');
   await mine(1);await pass();
   const recordTx=service.reader.entryById(r0.body.id).txid,waiting=await status(r0.body.id);
-  assert.deepEqual([waiting.state,waiting.txid,waiting.fee.due,waiting.fee.missing,waiting.fee.address],['waiting',recordTx,SPEND_FEE.toString(),SPEND_FEE.toString(),feeAddressOf(feeWallet(),0).address]);
+  // What it has to pay: the network fee the relay's carrying transaction really paid, as the node shows it, and 0.0025 XMR.
+  const carrierPaid=BigInt((await node(recordTx)).tx.rct_signatures.txnFee),due=(SPEND_BASE+carrierPaid).toString();assert.ok(carrierPaid>0n);
+  assert.deepEqual([waiting.state,waiting.txid,waiting.fee.due,waiting.fee.missing,waiting.fee.address],['waiting',recordTx,due,due,feeAddressOf(feeWallet(),0).address]);
+  note('fee',{carrierNetworkFee:carrierPaid.toString(),due});
   assert.deepEqual((await get('/mordinal/0')).mordinal.waiting.spendTx,s0);assert.equal((await get('/entry/'+recordTx)).entry.kind,'spent coin claim');
   const spend0=await node(s0);assert.equal(originalTransfer(spend0.tx.extra),false,'a wallet2 sweep holds no transfer of the original format');assert.ok(spend0.tx.vin.some(i=>i.key.k_image===coins[0].key_image));
   note('claim waits',{record:recordTx,spend:s0,spendHeight:spend0.height,recordHeight:service.reader.entryById(r0.body.id).height,extraTags:spend0.tx.extra.slice(0,1)});
   // The fee from an ordinary wallet completes it.
-  await payer.rpc('refresh');const fee0=await payer.rpc('transfer',{destinations:[{amount:Number(SPEND_FEE),address:feeAddressOf(feeWallet(),0).address}],priority:0});await mine(1);await pass();
+  await payer.rpc('refresh');const fee0=await payer.rpc('transfer',{destinations:[{amount:Number(due),address:feeAddressOf(feeWallet(),0).address}],priority:0});await mine(1);await pass();
   {const d=await status(r0.body.id),m=await get('/mordinal/0');assert.equal(d.state,'done');assert.equal(m.mordinal.owner,receiver);
    const h=m.history.at(-1);assert.deepEqual([h.kind,h.proof,h.txid,h.spendTx,h.feeTx],['claim','spent coin',recordTx,s0,fee0.tx_hash]);}
 

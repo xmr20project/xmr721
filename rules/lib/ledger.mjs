@@ -11,7 +11,7 @@ import {checkPaymentProof,paymentMessage} from './payment.mjs';
 import {RECORDS_OVERLAP,deadOutputs,burnAddress,burnClaimId,readTransfer,claimTo,recordCost,movedOutput,paysBurnAddress} from './burn.mjs';
 import {FEE_ACCOUNT,feeWallet,feeAddressOf,feeTable,feeOutputs} from './burn-fee.mjs';
 import {extraKeys} from './payment.mjs';
-import {SPEND_FEE,verifyKeyImageProof,mayHaveMoved,keyImagesOf} from './spend.mjs';
+import {SPEND_BASE,spendDue,verifyKeyImageProof,mayHaveMoved,keyImagesOf} from './spend.mjs';
 
 // mintFrom: the first block at which collection, mint and burn records count (a setting of the ledger, like the start
 // block). Without it those records are refused, and the ledger is one of Mordinals only.
@@ -22,7 +22,7 @@ import {SPEND_FEE,verifyKeyImageProof,mayHaveMoved,keyImagesOf} from './spend.mj
 // the only one on mainnet. A burn claim completes once the fee payments for its Mordinal reach the burn's own fee.
 // spendFrom: the first block from which a claim record may show a spent owner coin (proof 2, section 11; a setting of the
 // ledger, at or after the first burn block). Such a claim waits, like a burn, until the fee payments for its Mordinal
-// reach SPEND_FEE.
+// reach the network fee of the transaction that carried the record plus SPEND_BASE (spendDue).
 export function createLedger({network='mainnet',domain,feeAddress,owners,height=0,mintFrom=null,minters=null,openFrom=null,burnFrom=null,burnDead=null,burnFee=null,spendFrom=null,testChain=false}){
  if(!/^[0-9a-f]{64}$/.test(domain||''))throw Error('Ledger domain required');
  if(mintFrom!==null&&!(Number.isInteger(mintFrom)&&mintFrom>=1))throw Error('Bad first mint block');
@@ -127,7 +127,7 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
   burn:dead?{from:burnFrom,recordsEnd,dead:[...dead],address:burnAddress(network),fee:{wallet:feeW.address,viewKey:feeW.viewKey,account:FEE_ACCOUNT,offset:1}}:null,
   // Claiming by a spent coin (section 11): the first block, and what such a claim pays to its Mordinal's fee address. null
   // on a ledger without it.
-  spend:spendFrom===null?null:{from:spendFrom,fee:SPEND_FEE.toString()},
+  spend:spendFrom===null?null:{from:spendFrom,base:SPEND_BASE.toString()},
   // A burn claim is a transaction, not a record: `parts` is what burnParts() takes from it (burn.mjs).
   // due: the burn's own fee, which the fee payments for its Mordinal have to reach; paid: what they reach now.
   checkBurnClaim(txid,parts){const v=burnClaim(txid,parts),paid=paidFor(v.mordinal.number);return {id:v.id,number:v.mordinal.number,owner:v.to,due:v.due.toString(),paid:paid.toString(),waiting:paid<v.due};},
@@ -168,7 +168,7 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
     if(b.collection!==NO_COLLECTION)collections.get(b.collection).editions.add(b.edition);
     mordinals.set(id,{number:null,reg:id,claimed:true,owner,seq:0,lot:null,minted,history:[{what:'mint',height:tip,record:id,to:owner}]});return {id,nft:id,owner,number:null};}
    if(op===OP.burn){const m=v.mordinal;m.history.push({what:'burn',height:tip,record:id,from:m.owner,to:null});m.owner=null;m.burned=true;m.seq++;return {id,nft:m.reg,number:m.number,owner:null};}
-   if(op===OP.claim&&b.proof===PROOF.spend){const m=v.mordinal,w={id,tx:b.spendTx,number:m.number,to:b.to,due:SPEND_FEE.toString(),height:tip,state:'waiting',kind:'spend'};
+   if(op===OP.claim&&b.proof===PROOF.spend){const m=v.mordinal,w={id,tx:b.spendTx,number:m.number,to:b.to,due:spendDue(facts).toString(),height:tip,state:'waiting',kind:'spend'};
     burns.set(id,w);m.waiting=w;const done=complete(m);return done||{id,number:m.number,owner:null,waiting:burnView(w)};}
    if(op===OP.claim){const m=v.mordinal;m.claimed=true;m.history.push({what:'claim',height:tip,record:id,to:b.to,proof:b.proof===PROOF.payment?'payment proof and message':'one-time key'});m.owner=b.to;
     // A burn of this Mordinal that still waits for its fee is passed over: the first claim that completes wins.
@@ -277,14 +277,16 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
  function spentCoin(b,proof,m,facts){
   if(m.waiting)throw Error(m.waiting.kind==='spend'?'A claim of this Mordinal by its spent coin waits for its fee already.':'This Mordinal was burned already; that burn waits for its fee.');
   if(!verifyKeyImageProof({outputKey:m.outputKey,keyImage:b.keyImage,c:proof.kc,r:proof.kr}))throw Error('The signed key image is not the key image of the owner coin.');
-  const f=(facts||[]).find(x=>x?.txid===b.spendTx);
+  const f=(facts||[]).find(x=>x?.txid===b.spendTx&&!x.carrier);
   if(!f||!f.tx)throw Error('The spending transaction was not looked up.');
   if(f.height==null)throw Error('The spending transaction is not in a block yet; wait for 1 confirmation.');
   if(f.height>=tip)throw Error('The spending transaction has to be in a block before the block of this record.');
   // Only a coin spent from the first block of such claims on counts: the claim is for someone who holds the Mordinal then.
   if(f.height<spendFrom)throw Error(`The coin was spent before block ${spendFrom}; only a coin spent from that block on claims its Mordinal this way.`);
   if(!keyImagesOf(f.tx).includes(b.keyImage))throw Error('The spending transaction does not spend the owner coin (no input has its key image).');
-  if(mayHaveMoved(f.tx,o=>byOutput.get(o)===m,dead))throw Error('The spending transaction is a transfer of this Mordinal in the original Mordinals format (a transfer or a burn): the Mordinal moved with it, so its spent coin does not claim it.');}
+  if(mayHaveMoved(f.tx,o=>byOutput.get(o)===m,dead))throw Error('The spending transaction is a transfer of this Mordinal in the original Mordinals format (a transfer or a burn): the Mordinal moved with it, so its spent coin does not claim it.');
+  // What the claim pays is the network fee of the transaction that carries this record and the fixed part: the reader hands that fee over.
+  if(spendDue(facts)===null)throw Error('The network fee of the transaction that carries this record was not looked up.');}
  // The checks of a burn claim, in this order; the first that fails is the reason a reader writes down.
  function burnClaim(txid,parts){
   if(!dead)throw Error('Claiming by burning is not part of this ledger.');

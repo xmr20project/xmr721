@@ -286,8 +286,8 @@ importing an outputs file that lists the owner coin) and the message signature. 
 stock wallet2 on a local test chain and with Feather 2 itself; built in the rules, the reader,
 the relay and the service, with tests. Not in use. Open:
 
-- the fee is 0.00255 XMR for every Mordinal: 0.0025 XMR and the cost of the transaction that carries
-  the record (measured at about 0.00004 XMR), rounded up; it is part of the rules;
+- the fee is the network fee of the transaction that carries the record, as the chain shows it, and
+  0.0025 XMR; it is known once the record is in a block, so a wallet shows the exact amount then;
 - only a coin spent from the first block of such claims on counts, so the claim is for those
   who hold a Mordinal then; a coin spent earlier by an ordinary wallet stays without a way;
 - every payment to the Mordinal's fee address counts toward the fee, also one made before the

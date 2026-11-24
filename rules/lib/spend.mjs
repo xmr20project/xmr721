@@ -12,9 +12,14 @@ import {hex,concat,le,leBytes,Hs,usableSpendKey} from './monero.mjs';
 import {hashToPoint} from './burn.mjs';
 const Pt=ed25519.ExtendedPoint,G=Pt.BASE,L=ed25519.CURVE.n,HEX32=/^[0-9a-f]{64}$/;
 const bytes=x=>typeof x==='string'?Uint8Array.from(x.match(/../g)||[],v=>parseInt(v,16)):x;
-// What a claim by a spent coin pays to its Mordinal's fee address (the fee address of section 10), in piconero: 0.0025 XMR
-// and the cost of the transaction that carries the claim record (about 0.00004 XMR at 20,000 piconero a byte), rounded up.
-export const SPEND_FEE=2550000000n;
+// What a claim by a spent coin pays to its Mordinal's fee address (the fee address of section 10), in piconero: the
+// network fee of the transaction that carries the claim record, as the chain shows it (txnFee), and SPEND_BASE (0.0025 XMR).
+export const SPEND_BASE=2500000000n;
+// The network fee of the carrying transaction, as a reader hands it to the rules among the facts of the record:
+// {txid, carrier: true, fee: decimal text}. -> BigInt, or null when it is not there.
+export const carrierFee=facts=>{const f=(Array.isArray(facts)?facts:[]).find(x=>x&&x.carrier===true);return f&&typeof f.fee==='string'&&/^(0|[1-9]\d{0,19})$/.test(f.fee)?BigInt(f.fee):null;};
+// What such a claim has to pay, from those facts (null when the carrier's fee is not there).
+export const spendDue=facts=>{const c=carrierFee(facts);return c===null?null:SPEND_BASE+c;};
 // The signed key image: c and r of a ring signature with one member. -> true when it proves that `keyImage` is the key
 // image of `outputKey`.
 export function verifyKeyImageProof({outputKey,keyImage,c,r}){

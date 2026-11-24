@@ -54,6 +54,8 @@ export const spentImages=tx=>Array.isArray(tx?.vin)?tx.vin.map(i=>{const k=i?.ke
 // What the rules read of the transaction that spent the coin of such a claim, and all of it that is kept: its extra field
 // and its inputs (key images and rings).
 export const spendFacts=tx=>({extra:tx?.extra,vin:spentImages(tx)});
+// The network fee of a transaction as the node shows it (rct_signatures.txnFee), as decimal text; null when it shows none.
+export const carrierFeeOf=tx=>{const f=tx?.rct_signatures?.txnFee;return Number.isSafeInteger(f)&&f>=0?String(f):typeof f==='string'&&/^(0|[1-9]\d{0,19})$/.test(f)?f:null;};
 const lines=file=>{if(!existsSync(file))return {rows:[],torn:false};const out=[];let torn=false;
  for(const l of readFileSync(file,'utf8').split('\n')){if(!l)continue;try{out.push(JSON.parse(l));}catch{torn=true;break;}}return {rows:out,torn};};
 const replace=(file,rows)=>{const tmp=file+'.tmp',fd=openSync(tmp,'w',0o644);try{writeSync(fd,rows.map(r=>JSON.stringify(r)+'\n').join(''));fsyncSync(fd);}finally{closeSync(fd);}renameSync(tmp,file);};
@@ -201,13 +203,16 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
    if(upTo!=null&&height>start&&height<=tipBlock().height){const b=await chain.block(height);if(b.hash!==blocks[height-start-1].hash||!(b.txids.includes(id)||b.minerTx===id))throw changed(height);}
    out.push({txid:id,height,tx:inputs?spendFacts(t.tx):slim(t.tx)});}return out;}
  const changed=height=>Error('The Monero node changed its answer for block '+height+'; trying again');
- async function judge(block,pos,txid,record){
+ async function judge(block,pos,txid,record,tx=null){
   const e={height:block.height,pos,txid,record:hex(record)};let d;
   // A claim by a spent coin is a known record only from the first block of such claims on.
   try{d=decodeRecord(record,network,{spend:spendFrom!==null&&block.height>=spendFrom});}catch(err){return {...e,ok:false,error:String(err.message)};}
   e.op=d.op;e.id=recordId(domain,d.bodyBytes);
   // A node failure here stops the pass (and is tried again); it never turns into a refusal.
-  const facts=d.op===OP.buy?await lookup(d.body.payments.map(p=>p.txid),block.height):d.op===OP.claim&&d.body.proof===PROOF.spend?await lookup([d.body.spendTx],block.height,{inputs:true}):undefined;if(facts)e.facts=facts;
+  const facts=d.op===OP.buy?await lookup(d.body.payments.map(p=>p.txid),block.height):d.op===OP.claim&&d.body.proof===PROOF.spend?await lookup([d.body.spendTx],block.height,{inputs:true}):undefined;
+  // A claim by a spent coin pays the network fee of the transaction that carries it (and a fixed part): that fee is a fact too.
+  if(facts&&d.op===OP.claim){const fee=carrierFeeOf(tx);if(fee!==null)facts.push({txid,carrier:true,fee});}
+  if(facts)e.facts=facts;
   try{const out=ledger.apply(record,facts);e.ok=true;e.time=block.time;note(e,d,out);delete e.time;}catch(err){e.ok=false;e.error=String(err.message);}
   return e;}
  // A transfer in the original Mordinals format, from the first burn block on: a claim by burning, or refused with the reason.
@@ -227,7 +232,7 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
   try{
    for(const [pos,txid] of b.txids.entries()){const t=txs.get(txid);
     if(!t||t.inPool||t.height!==height)throw changed(height);
-    const record=unframe(t.tx.extra);let e=null;if(record)e=await judge(b,pos,txid,record);
+    const record=unframe(t.tx.extra);let e=null;if(record)e=await judge(b,pos,txid,record,t.tx);
     // (A tx_extra is a record or a transfer, never both: a record's holds no field 0x11.)
     else if(burning&&height>=burnFrom&&readTransfer(t.tx.extra))e=judgeBurn(b,pos,txid,t.tx);
     if(burning&&height>=burnFrom)e=judgeFees(b,pos,txid,t.tx,e);

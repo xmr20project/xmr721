@@ -9,10 +9,15 @@ import {hex,unhex,le,leBytes} from '../lib/monero.mjs';
 import {outputSecret,signWithOutputKey} from '../lib/claim.mjs';
 import {RECORDS_OVERLAP,MAINNET_DEAD,burnParts} from '../lib/burn.mjs';
 import {feeParts} from '../lib/burn-fee.mjs';
-import {SPEND_FEE,verifyKeyImageProof,signKeyImage,originalTransfer,mayHaveMoved,keyImagesOf} from '../lib/spend.mjs';
+import {SPEND_BASE,spendDue,carrierFee,verifyKeyImageProof,signKeyImage,originalTransfer,mayHaveMoved,keyImagesOf} from '../lib/spend.mjs';
 import {wallet,makeTx,ownerEntry,makeInProof,makeBurn,payFee,offsetsOf,DOMAIN} from './helpers.mjs';
 import {parseExtra} from './original-rules.mjs';
 const enc=new TextEncoder(),FROM=110,SPEND=120,END=FROM+RECORDS_OVERLAP;
+// The network fee of the transaction that carries a claim in these tests, and what such a claim then pays. A ledger of
+// these tests is handed that fee with every record, as a reader hands it over.
+const CARRY=30000000n,SPEND_FEE=SPEND_BASE+CARRY,CARRIER={txid:'c'.repeat(64),carrier:true,fee:CARRY.toString()};
+const withCarrier=f=>Array.isArray(f)&&!f.some(x=>x?.carrier)?[...f,CARRIER]:f;
+const carriedBy=l=>new Proxy(l,{get:(t,k)=>k==='apply'||k==='check'?(b,f)=>t[k](b,withCarrier(f)):t[k]});
 // Fixed nonces, so a test run makes the same records every time.
 const det=label=>n=>Uint8Array.from({length:n},(_,i)=>keccak_256(enc.encode('spend test nonce '+label+' '+i))[0]);
 // An ordinary transaction that spends the given key images, as get_transactions decode_as_json shows it (inputs and extra).
@@ -24,7 +29,7 @@ function world(o={}){
  const w=Object.fromEntries(['alice','bob','carol','fee'].map(n=>[n,wallet(n)]));
  const holders=[w.alice,w.alice.sub(3),w.bob,w.carol];
  const owners=holders.map((h,i)=>ownerEntry(i,makeTx('spend world '+i,[{to:h,amount:10n**9n}],{subaddressKey:h.kind==='sub'})));
- const l=createLedger({domain:DOMAIN,feeAddress:w.fee.address,owners,height:100,burnFrom:FROM,spendFrom:SPEND,...o});
+ const raw=createLedger({domain:DOMAIN,feeAddress:w.fee.address,owners,height:100,burnFrom:FROM,spendFrom:SPEND,...o}),l=carriedBy(raw);
  const secret=n=>outputSecret({viewSecret:holders[n].viewSecret,spendSecret:holders[n].spendSecret,txPub:owners[n].ownerTxPubKeys[0],subScalar:holders[n].subScalar});
  // The holder's key image export for coin n, and the transaction that spent the coin.
  const signed=n=>signKeyImage(secret(n),det('ki '+n));
@@ -171,3 +176,17 @@ test('key images exported by Feather 2 itself are accepted, each for its own coi
  const {readFileSync}=await import('node:fs'),FIX=JSON.parse(readFileSync(new URL('./fixtures-spend.json',import.meta.url),'utf8'));
  assert.equal(FIX.feather.length,3);
  for(const [i,k] of FIX.feather.entries()){assert.ok(verifyKeyImageProof(k),k.coin);assert.ok(!verifyKeyImageProof({...k,outputKey:FIX.feather[(i+1)%3].outputKey}),k.coin+' with another coin');}});
+
+test('the fee: the network fee of the transaction that carries the record, and 0.0025 XMR',()=>{
+ assert.equal(SPEND_BASE,2500000000n);assert.equal(carrierFee([{txid:'a'.repeat(64),carrier:true,fee:'38000000'}]),38000000n);assert.equal(spendDue([{carrier:true,fee:'0'}]),SPEND_BASE);
+ for(const bad of [[],null,[{carrier:true}],[{carrier:true,fee:38000000}],[{carrier:true,fee:'-1'}],[{carrier:true,fee:'01'}],[{carrier:'yes',fee:'1'}]])assert.equal(spendDue(bad),null,JSON.stringify(bad));
+ const {raw,record,signed,pay}=(()=>{const x=world();return {...x,raw:x.l};})();raw.setHeight(SPEND+5);
+ const s=spendTx([signed(0).keyImage]),{bytes}=record(0,{s}),fact={txid:s.txid,height:SPEND+2,tx:s.tx};
+ // A busy network: the carrying transaction paid 0.004 XMR; the claim waits for that and the fixed part.
+ const out=raw.apply(bytes,[fact,{txid:'d'.repeat(64),carrier:true,fee:'4000000000'}]);assert.equal(out.waiting.due,(SPEND_BASE+4000000000n).toString());
+ assert.deepEqual(pay(0,SPEND_BASE+3999999999n).claims,[]);assert.equal(pay(0,1n).claims.length,1);});
+
+test('a record whose carrying transaction shows no fee is refused',async()=>{
+ const {createLedger:make}=await import('../lib/ledger.mjs'),x=world(),l=make({domain:DOMAIN,feeAddress:x.w.fee.address,owners:x.owners,height:SPEND+5,burnFrom:FROM,spendFrom:SPEND});
+ const s=spendTx([x.signed(0).keyImage]),{bytes}=x.record(0,{s});
+ assert.throws(()=>l.check(bytes,[{txid:s.txid,height:SPEND+2,tx:s.tx}]),/network fee of the transaction that carries this record was not looked up/);});

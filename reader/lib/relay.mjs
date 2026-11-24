@@ -121,6 +121,8 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
  const bad=(message,status=400)=>{const e=Error(message);e.status=status;return e;};
 
  // A purchase waits here while its payments are not in a block: the listing must still be open and reserved.
+ // The carrying transaction's network fee is not known before it is built; any fee stands in for it when a claim is judged.
+ const CARRIED={txid:'0'.repeat(64),carrier:true,fee:'0'};
  // A job that carries a claim by a spent coin (section 11).
  const spendClaim=j=>{if(j.op!==OP.claim)return false;try{return decodeRecord(unhex(j.record),network).body.proof===PROOF.spend;}catch{return false;}};
  function holdable(d){const l=reader.ledger.lot(d.body.lot);
@@ -151,9 +153,9 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
     // Not in a block yet, or in the newest one: the record reaches a later block, where the spend is in an earlier one.
     // It is judged as if the spend were one block back (where that block is one from which a spend counts), and held
     // until it is.
-    if(spend.height==null||spend.height>=reader.height){if(from===null||reader.height-1>=from)reader.ledger.check(bytes,[{...spend,height:reader.height-1}]);return {ready:false};}
+    if(spend.height==null||spend.height>=reader.height){if(from===null||reader.height-1>=from)reader.ledger.check(bytes,[{...spend,height:reader.height-1},CARRIED]);return {ready:false};}
     // In an older block: judged against that block, as a reader judges it.
-    reader.ledger.check(bytes,await reader.lookup([d.body.spendTx],reader.height,{inputs:true}));return {ready:true};}
+    reader.ledger.check(bytes,[...await reader.lookup([d.body.spendTx],reader.height,{inputs:true}),CARRIED]);return {ready:true};}
    if(late){holdable(d);
     if(late.length+facts.length<ids.length){if(fresh)throw bad('A payment of this purchase is not known to the Monero node yet. Wait a moment and send it again.');return {ready:false};}
     reader.ledger.check(bytes,[...facts,...late.map(f=>({...f,height:reader.height}))]);return {ready:false};}

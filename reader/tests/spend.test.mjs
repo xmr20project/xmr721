@@ -9,7 +9,9 @@ import {join} from 'node:path';
 import {hex} from '../../rules/lib/monero.mjs';
 import {outputSecret} from '../../rules/lib/claim.mjs';
 import {RECORDS_OVERLAP,MAINNET_DEAD} from '../../rules/lib/burn.mjs';
-import {SPEND_FEE,signKeyImage} from '../../rules/lib/spend.mjs';
+import {SPEND_BASE,signKeyImage} from '../../rules/lib/spend.mjs';
+// What a claim pays here: the fixed part and the network fee of the made-up transactions that carry records (fake.mjs).
+const CARRY=30000000n,SPEND_FEE=SPEND_BASE+CARRY;
 import {wallet,makeTx,ownerEntry,makeInProof,payFee,offsetsOf,DOMAIN} from '../../rules/tests/helpers.mjs';
 import {openReader,BURN_MARGIN,SCHEMA,SCHEMA_BURN,SCHEMA_SPEND} from '../lib/reader.mjs';
 import {createService} from '../service.mjs';
@@ -44,7 +46,7 @@ function world({every=0}={}){
 
 test('the reader takes claims by a spent coin from their first block on: one waits for its fee, and all is rebuilt without a node',async()=>{
  const {w,holders,chain,open,signed,record,state}=world({every:2}),reader=open(),L=()=>reader.ledger;
- assert.equal(reader.meta.spendFrom,SPEND);assert.deepEqual(L().spend,{from:SPEND,fee:SPEND_FEE.toString()});
+ assert.equal(reader.meta.spendFrom,SPEND);assert.deepEqual(L().spend,{from:SPEND,base:SPEND_BASE.toString()});
  // A schema of its own: reader code from before section 11 refuses this folder (it compares the schema).
  assert.equal(reader.meta.schema,SCHEMA+SCHEMA_BURN+SCHEMA_SPEND);
  // 101: alice spends the coin of Mordinal 1 (it is at a subaddress) in an ordinary transaction. 103: her claim, before the
@@ -61,7 +63,7 @@ test('the reader takes claims by a spent coin from their first block on: one wai
  const c0=carried(record(L(),0,s0,{to:w.carol}),'c0');chain.mine([c0]);await reader.sync();
  // The journal keeps what the rule read of the spending transaction: its block, extra field and the key images it spends.
  const e1=reader.journal[3],id1=e1.id;assert.deepEqual([e1.height,e1.txid,e1.ok],[105,c0.txid,true]);
- assert.deepEqual(json(e1.facts),[{txid:s0.txid,height:104,tx:{extra:s0.tx.extra,vin:[{key:{k_image:signed(0).keyImage,key_offsets:[5,6]}}]}}]);
+ assert.deepEqual(json(e1.facts),[{txid:s0.txid,height:104,tx:{extra:s0.tx.extra,vin:[{key:{k_image:signed(0).keyImage,key_offsets:[5,6]}}]}},{txid:c0.txid,carrier:true,fee:CARRY.toString()}]);
  // It waits for its fee: no event yet, and the Mordinal is not claimed.
  assert.deepEqual([L().burnClaim(id1).state,L().burnClaim(id1).kind,L().burnClaim(id1).due,L().mordinal(0).claimed,Boolean(L().mordinal(0).waiting)],['waiting','spend',SPEND_FEE.toString(),false,true]);
  assert.deepEqual(reader.events,[]);assert.deepEqual(L().toJSON().waiting,[{number:0,id:id1,to:w.carol.address,due:SPEND_FEE.toString()}]);
@@ -112,7 +114,7 @@ test('refused in the reader: a spend that does not spend the coin, one that move
   [good.txid,true,null],
   [again.txid,false,'A claim of this Mordinal by its spent coin waits for its fee already.']]);
  // The spend still in the pool is not kept in the journal; a key image signed for another coin is refused before any lookup.
- assert.deepEqual(records[2].facts,[]);
+ assert.deepEqual(records[2].facts,[{txid:waits.txid,carrier:true,fee:CARRY.toString()}]);
  const forged=carried(record(L(),2,s0,{ki:signed(0)}),'forged');chain.mine([forged],{only:[forged.txid]});await reader.sync();
  assert.equal(reader.entryByTx(forged.txid).error,'The signed key image is not the key image of the owner coin.');});
 
@@ -170,7 +172,7 @@ test('the relay holds a claim by a spent coin until the spend is below the newes
  await assert.rejects(relay.submit(hex(record(reader.ledger,0,s0))),e=>/waits for its fee already/.test(e.message)&&e.rule===true);
  // The service: the setting in /info, the waiting claim in /status, /mordinal and /entry, then done once the fee is paid.
  const service=createService({reader,relay,owners:[],testHooks:true}),port=await service.listen(0),get=async p=>(await fetch(`http://127.0.0.1:${port}${p}`)).json();
- try{const info=await get('/info');assert.deepEqual([info.spendFrom,info.spend],[SPEND,{fee:SPEND_FEE.toString()}]);
+ try{const info=await get('/info');assert.deepEqual([info.spendFrom,info.spend],[SPEND,{base:SPEND_BASE.toString()}]);
   const st=await get('/status/'+held.id);assert.deepEqual([st.state,st.txid,st.fee.due,st.fee.missing,st.error],['waiting',reader.entryById(held.id).txid,SPEND_FEE.toString(),SPEND_FEE.toString(),null]);
   const en=await get('/entry/'+reader.entryById(held.id).txid);assert.deepEqual([en.entry.kind,en.entry.state,en.entry.number,en.entry.to],['spent coin claim','waiting',0,w.bob.address]);
   chain.mine([payFee('spend relay fee',0,SPEND_FEE)]);await reader.sync();await relay.tick();
@@ -214,6 +216,9 @@ test('the check tool replays claims by a spent coin, finds their spending transa
   const hidden=async change=>problems(g=>{const e=at(g);change(e);e.ok=false;e.error='The spending transaction was not looked up.';g.checkpoints=[];});
   assert.match((await hidden(e=>{delete e.facts;})).join('\n'),/the transactions this record names are missing from the log/);
   assert.match((await hidden(e=>{e.facts=[];})).join('\n'),/is left out of the logged facts/);
+  // The network fee the claim pays, changed in the log: the node shows another one (the replay, with no checkpoint to
+  // hold it to, would take the changed fee).
+  assert.match((await problems(g=>{at(g).facts.find(f=>f.carrier).fee='1';g.checkpoints=[];})).join('\n'),/the network fee of transaction [0-9a-f]{64} is not logged as the node shows it/);
   // A checkpoint that names another first block, or none.
   assert.match((await problems(g=>{g.checkpoints.at(-1).spendFrom=SPEND+1;}))[0],/another first block of claims by a spent coin/);
   assert.match((await problems(g=>{delete g.checkpoints.at(-1).spendFrom;}))[0],/another first block of claims by a spent coin/);

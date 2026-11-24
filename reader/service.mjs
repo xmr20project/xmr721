@@ -182,8 +182,9 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
     // Mordinal's number to give its index there (1: index 0 takes the wallet's own change).
     ...(m.burnFrom!=null?{burnFrom:m.burnFrom,burn:{recordsEnd:L().burn.recordsEnd,address:L().burn.address,viewKey:BURN.viewSecret,text:CLAIM_PREFIX+'<address>',dead:L().burn.dead,ownerOutputs:m.ownerOutputs,
      fee:L().burn.fee}}:{}),
-    // Claiming by a spent coin (section 11): its first block, and what such a claim pays to its Mordinal's fee address.
-    ...(m.spendFrom!=null?{spendFrom:m.spendFrom,spend:{fee:L().spend.fee}}:{}),...(xmr20||E||xmr20Open?{xmr20:{...(xmr20?{inscribers:xmr20.inscribers}:{}),...(E?{earlier:earlierInfo()}:{}),...(xmr20Open?{open:{from:xmr20Open.from}}:{})}}:{}),
+    // Claiming by a spent coin (section 11): its first block, and the fixed part of what such a claim pays to its Mordinal's
+    // fee address (the network fee of the transaction that carries the record comes on top).
+    ...(m.spendFrom!=null?{spendFrom:m.spendFrom,spend:{base:L().spend.base}}:{}),...(xmr20||E||xmr20Open?{xmr20:{...(xmr20?{inscribers:xmr20.inscribers}:{}),...(E?{earlier:earlierInfo()}:{}),...(xmr20Open?{open:{from:xmr20Open.from}}:{})}}:{}),
     relay:relay?{networkFee:'relay',perAddress:relay.limits.perSigner,fees:relay.fees,payBlocks:relay.limits.payBlocks}:null,rules:{feeBps:RULES.feeBps,marketFeeCapBps:RULES.marketFeeCapBps,minPrice:RULES.minPrice.toString(),maxReserve:RULES.maxReserve,settle:RULES.settle}};
    if(path==='/owners'){const from=int(q.get('from'),0,0,list.length),limit=int(q.get('limit'),chunk,1,chunk);return {from,total:list.length,entries:list.slice(from,from+limit)};}
    if(path==='/claimed')return {height,numbers:claimed()};

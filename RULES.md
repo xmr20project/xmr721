@@ -825,10 +825,12 @@ claimed yet, and no other claim by a spent coin can claim it. While claim
 records still count, a claim record of proof 0 or 1 still can, and the claim by a spent coin
 is then passed over.
 
-**The fee.** 0.00255 XMR (0.0025 XMR and the cost of the transaction that carries the claim
-record, about 0.00004 XMR, rounded up; one fixed number for every Mordinal and part of the
-rules: a reader with another amount reads another ledger), paid to the Mordinal's fee address
-of section 10. Every payment to that address counts, also one made
+**The fee.** The network fee of the transaction that carries the claim record, as the chain
+shows it (`txnFee`), and 0.0025 XMR on top (the fixed part is part of the rules: a reader
+with another amount reads another ledger). So the fee follows what the network asks at the
+time: about 0.00004 XMR at the base rate, more when blocks are full. It is paid to the
+Mordinal's fee address of section 10. A record whose carrying transaction shows no fee is
+refused. Every payment to that address counts, also one made
 before the record. The claim completes in the block where the payments reach the fee, or in
 its own block when they had already. The fee rules of section 10 apply: public, not refunded.
 
