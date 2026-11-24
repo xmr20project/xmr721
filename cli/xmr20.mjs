@@ -14,6 +14,11 @@
 //   xmr20 mint <token id> <amount> [--to <address>] [--dry-run]
 //                                                mints a token to this wallet's address or to another one; the token
 //                                                by its id or the 16 characters shown after its ticker
+//   xmr20 sign "<message>" | --file <path>       signs a message with the wallet's address, as Feather and Cake Wallet
+//                                                do: to move tokens (xmr20.org/move) or list and buy lots
+//                                                (xmr20.org/market) paste the page's message here, in quotes, and paste
+//                                                the signature back. Read the message first: its signature does what
+//                                                it says
 //   xmr20 status                                 what the wallet sent, and where each transaction is now
 //   xmr20 resend                                 hands the node, as they are, the kept transactions it does not have
 //   xmr20 forget <n>                             takes an entry off the list (its number in "status")
@@ -32,12 +37,12 @@
 //
 // A token is announced by an inscription on the XMR721 ledger, so this command runs the xmr721 wallet (cli/xmr721.mjs)
 // with the same wallet folder: "xmr20 deploy" is "xmr721 wallet deploy", and so on. Moving and trading tokens is done by
-// signing a message (xmr20.org/move and xmr20.org/market), not here.
+// signing a message that xmr20.org/move or xmr20.org/market writes: "xmr20 sign" signs it with this wallet.
 import {readFileSync} from 'node:fs';
 
 const HELP=readFileSync(import.meta.filename,'utf8').split('\n').slice(1).filter((l,i,all)=>all.slice(0,i+1).every(x=>x.startsWith('//'))).map(l=>l.slice(3)).join('\n');
 // xmr20's commands and the xmr721 wallet command each one runs.
-const COMMANDS={create:'create',receive:'receive',balance:'balance',split:'split',deploy:'deploy',mint:'mint',status:'inscriptions',resend:'resend',forget:'forget',rescan:'rescan',restore:'restore'};
+const COMMANDS={create:'create',receive:'receive',balance:'balance',split:'split',deploy:'deploy',mint:'mint',sign:'sign',status:'inscriptions',resend:'resend',forget:'forget',rescan:'rescan',restore:'restore'};
 // The command is the first word that is not an option or an option's value (flags take none).
 const argv=process.argv.slice(2);let at=-1;
 for(let i=0;i<argv.length;i++){if(!argv[i].startsWith('--')){at=i;break;}if(!['--dry-run','--help'].includes(argv[i])&&!argv[i].includes('='))i++;}

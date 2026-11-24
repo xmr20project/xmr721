@@ -293,7 +293,10 @@ node cli/xmr20.mjs status                       # where each transaction is now
   tokens apart, so check it before you mint.
 - **Afterwards.** Tokens at a Monero address are moved and traded by signing a message in
   Feather, Cake Wallet or any Monero wallet, on [xmr20.org/move](https://xmr20.org/move/)
-  and [xmr20.org/market](https://xmr20.org/market/).
+  and [xmr20.org/market](https://xmr20.org/market/). Tokens at this wallet's own address
+  are signed for here: give the page the address (`xmr20 receive`), copy the message it
+  writes, run `node cli/xmr20.mjs sign "<the message>"` and paste the signature back.
+  Read the message before you sign it: the signature does what the message says.
 
 `node cli/xmr20.mjs --help` lists every command and option.
 

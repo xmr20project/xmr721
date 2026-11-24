@@ -51,3 +51,31 @@ console.log(JSON.stringify(op==='status'?{result:{address:'x',tip:10,balance:'30
   const st=await go('status');assert.equal(st.code,0,st.err);assert.ok(!/xmr721 wallet/.test(st.out+st.err),st.out+st.err);
  }finally{s.closeAllConnections?.();await new Promise(r=>s.close(r));}
 });
+
+test('sign: a message signed with the wallet\'s address, as a Monero wallet signs one',async()=>{
+ const {verifySpendSignature}=await import('../../rules/lib/monero.mjs');
+ const dir=join(temp(),'wallet');mkdirSync(dir,{mode:0o700});
+ writeFileSync(join(dir,'carrier.keys.json'),JSON.stringify({spend:'01'.padEnd(64,'0'),view:'02'.padEnd(64,'0')}),{mode:0o600});
+ writeFileSync(join(dir,'wallet.json'),JSON.stringify({network:'stagenet',start:5}));
+ const on=['--wallet',dir,'--network','stagenet'];
+ const address=JSON.parse(run('receive',...on)[1]).address;
+ const message=`XMR20 list: sell 1000 PEPE (token 35400ac2ee704eeb) for 0.05 XMR paid to ${address}; valid until block 3817900; code 9c41d07e52ab6f3388e1b4c27a905d1f`;
+ // No node, reader or carrier tool is needed: none is there.
+ const [code,out,err]=run('sign',message,...on,'--node','http://127.0.0.1:1','--carrier',join(dir,'none'));
+ assert.equal(code,0,err);const signed=JSON.parse(out);
+ assert.deepEqual([signed.address,signed.message],[address,message]);assert.match(signed.signature,/^SigV2[1-9A-HJ-NP-Za-km-z]{88}$/);
+ assert.ok(verifySpendSignature(message,address,signed.signature,'stagenet'));
+ assert.ok(!verifySpendSignature(message.replace('0.05','0.01'),address,signed.signature,'stagenet'));
+ // From a file, without the line break at its end; the same message, another signature that also holds.
+ const file=join(dir,'..','message.txt');writeFileSync(file,message+'\n');
+ const again=JSON.parse(run('sign','--file',file,...on)[1]);assert.equal(again.message,message);assert.notEqual(again.signature,signed.signature);
+ assert.ok(verifySpendSignature(message,address,again.signature,'stagenet'));
+ // Refusals.
+ assert.equal(run('sign',...on)[2],'xmr20 sign "<message>" (the message in quotes, as one word), or: xmr20 sign --file <path>\n');
+ assert.equal(run('sign','two','words',...on)[0],2);assert.equal(run('sign','a','--file',file,...on)[0],2);
+ assert.equal(run('sign','--file',join(dir,'no-file'),...on)[0],2);
+ writeFileSync(file,'one\ntwo\n');assert.match(run('sign','--file',file,...on)[2],/line break/);
+ assert.match(run('sign','x'.repeat(4097),...on)[2],/longer than 4096/);
+ assert.equal(run('sign','x','--wallet',join(dir,'nowhere'))[0],2);
+ assert.match(run('--help')[1],/xmr20 sign "<message>"/);
+});

@@ -21,6 +21,10 @@
 //   xmr721 wallet mint <token id> <amount> [--to <address>] [--dry-run]
 //                                                mints an open XMR20 token to this wallet's address or to another one;
 //                                                the token by its id or the 16 characters signed texts show
+//   xmr721 wallet sign "<message>" | --file <path>
+//                                                signs a message with the wallet's address, as Feather and Cake Wallet
+//                                                do: for moving and selling tokens and NFTs this address holds on
+//                                                xmr20.org. Read the message first: its signature does what it says
 //   xmr721 wallet inscriptions                   what the wallet built, and where each transaction is now
 //   xmr721 wallet resend                         hands the node, as they are, the kept transactions it does not have
 //   xmr721 wallet forget <n>                     takes an entry off the list (its number in "inscriptions"): a transaction
@@ -63,7 +67,7 @@ const show=v=>console.log(ascii(JSON.stringify(v,null,1)));
 // value does not begin with "--" (a forgotten value would otherwise swallow the next option).
 const VALUES=new Set(['wallet','network','node','reader','domain','carrier','max-fee','file','type','name','to','collection','edition','max','height','tick','token-name','lim','pre','col']),FLAGS=new Set(['dry-run','help']);
 // Which options a command takes beside the ones every command takes, and how many words follow it.
-const COMMANDS={create:[],receive:[],balance:[],split:[],inscribe:['file','type','name','to','collection','edition','dry-run'],collection:['name','max','dry-run'],deploy:['tick','token-name','max','lim','pre','col','dry-run'],mint:['to','dry-run'],send:['dry-run'],inscriptions:[],resend:[],forget:[],rescan:[],restore:['height']};
+const COMMANDS={create:[],receive:[],balance:[],split:[],inscribe:['file','type','name','to','collection','edition','dry-run'],collection:['name','max','dry-run'],deploy:['tick','token-name','max','lim','pre','col','dry-run'],mint:['to','dry-run'],send:['dry-run'],sign:['file'],inscriptions:[],resend:[],forget:[],rescan:[],restore:['height']};
 const WORDS={mint:['xmr721 wallet mint <token id> <amount>',2],split:['xmr721 wallet split <n>',1],send:['xmr721 wallet send <nft id> <address>',2],forget:['xmr721 wallet forget <n>',1]};
 const EVERY=['wallet','network','node','reader','domain','carrier','max-fee','help'];
 function parse(argv){
@@ -80,10 +84,12 @@ function parse(argv){
  return {options,words};}
 const {options,words}=parse(process.argv.slice(2));
 if(options.has('help')||!words.length){console.log(HELP);process.exit(options.has('help')?0:2);}
-if(words[0]!=='wallet'||!Object.hasOwn(COMMANDS,words[1]??''))stop('xmr721 wallet <create | receive | balance | split | inscribe | collection | deploy | mint | send | inscriptions | resend | forget | rescan | restore>. See: xmr721 --help');
+if(words[0]!=='wallet'||!Object.hasOwn(COMMANDS,words[1]??''))stop('xmr721 wallet <create | receive | balance | split | inscribe | collection | deploy | mint | send | sign | inscriptions | resend | forget | rescan | restore>. See: xmr721 --help');
 const command=words[1],rest=words.slice(2);
 for(const name of options.keys())if(!EVERY.includes(name)&&!COMMANDS[command].includes(name))stop(`"wallet ${command}" takes no --${name}.`);
-if(rest.length!==(WORDS[command]?.[1]??0))stop(WORDS[command]?.[0]??`"wallet ${command}" takes no "${rest[0]}".`);
+const SIGN='xmr721 wallet sign "<message>" (the message in quotes, as one word), or: xmr721 wallet sign --file <path>';
+if(command==='sign'){if(rest.length!==(options.has('file')?0:1))stop(SIGN);}
+else if(rest.length!==(WORDS[command]?.[1]??0))stop(WORDS[command]?.[0]??`"wallet ${command}" takes no "${rest[0]}".`);
 const opt=name=>options.get(name)??null,text=name=>{const v=opt(name);if(v==='')stop(`--${name} is empty.`);return v;};
 const whole=(v,what)=>{if(!/^[1-9][0-9]{0,9}$/.test(v??''))stop(what+' is a whole number, 1 or more.');return Number(v);};
 
@@ -94,6 +100,11 @@ const dry=options.has('dry-run');
 const asked={};
 if(command==='split'){asked.n=whole(rest[0],'The number of coins');if(asked.n<2||asked.n>14)stop('Split into 2 to 14 coins.');}
 if(command==='restore')asked.height=whole(opt('height'),'--height');
+// The message to sign: the one word after the command, or a file's text without the line break at its end.
+if(command==='sign'){const file=text('file');
+ if(file!=null){if(!existsSync(file)||!statSync(file).isFile())stop('There is no file at '+file+'.');if(statSync(file).size>8192)stop('The file is too large to be a message.');
+  asked.message=readFileSync(file,'utf8').replace(/\r?\n$/,'');}
+ else asked.message=rest[0];}
 if(command==='deploy'){for(const k of ['tick','max'])if(!text(k))stop(`Give --${k}.`);
  Object.assign(asked,{tick:text('tick'),name:text('token-name'),max:text('max'),lim:text('lim'),pre:text('pre'),col:text('col')});
  try{openDeployText(Object.fromEntries(Object.entries(asked).filter(([,v])=>v!=null)));}catch(e){stop(e.message);}}
@@ -170,6 +181,7 @@ try{
   case 'restore':show({...await wallet.restore(asked.height),wallet:dir});wallet.tighten();
    console.error('The wallet reads its coins anew from that block at the next command.');break;
   case 'receive':show({address:wallet.address});break;
+  case 'sign':show(wallet.sign(asked.message));break;
   case 'balance':console.error('Reading the blocks since the wallet was last used…');show(await wallet.balance());break;
   case 'split':show(await wallet.split(asked.n));break;
   case 'inscribe':show(await wallet.inscribe({content:readFileSync(asked.file),type:asked.type,name:asked.name,to:asked.to,collection:asked.collection,edition:asked.edition,dryRun:dry}));break;
