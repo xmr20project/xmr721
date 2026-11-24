@@ -237,3 +237,32 @@ test('the relay waits for the first block of such claims, keeps a held claim thr
  const refused=reader.journal.find(e=>e.id===r1.id);assert.equal(refused.ok,false);assert.equal(refused.error,'The spending transaction has to be in a block before the block of this record.');
  assert.equal(relay.status(r1.id).state,'held');
  await step();assert.equal(relay.status(r1.id).state,'sent');await step();assert.equal(reader.ledger.burnClaim(r1.id).state,'waiting');assert.equal(relay.status(r1.id).state,'done');});
+
+test('the service finds the transaction that spent a key image: in the pool or the newest blocks, or around a given block',async()=>{
+ const {w,owners,chain,open,signed,dir}=world(),reader=open();
+ for(let h=101;h<SPEND;h++)chain.mine();const s0=spendTx([signed(0).keyImage]);chain.mine([s0]);for(let i=0;i<3;i++)chain.mine();   // the spend in 104; newest 107
+ const s2=spendTx([signed(2).keyImage]);chain.publish(s2);await reader.sync();
+ const service=createService({reader,owners,testHooks:true}),port=await service.listen(0),get=async p=>{const r=await fetch(`http://127.0.0.1:${port}${p}`);return {status:r.status,body:await r.json()};};
+ try{let r=await get('/spent/'+signed(0).keyImage);assert.equal(r.status,200);assert.deepEqual(json(r.body.spent),{txid:s0.txid,height:104,tx:{extra:s0.tx.extra,vin:[{key:{k_image:signed(0).keyImage,key_offsets:[5,6]}}]}});
+  assert.equal((await get('/spent/'+signed(0).keyImage+'?height=105')).body.spent.txid,s0.txid);
+  {const r=(await get('/spent/'+signed(0).keyImage+'?height=102')).body;assert.equal(r.spent,null);assert.equal(r.earlier,true);}   // spent, in another block
+  {const p=(await get('/spent/'+signed(2).keyImage)).body.spent;assert.deepEqual([p.txid,p.height],[s2.txid,null]);}
+  {const r=(await get('/spent/'+signed(3).keyImage)).body;assert.equal(r.spent,null);assert.equal(r.earlier,undefined);}   // not spent: the node says so, no block is read
+  // A spend older than the newest 10 blocks: the node says it is spent, the newest blocks do not hold it.
+  for(let i=0;i<10;i++)chain.mine();await reader.sync();{const r=(await get('/spent/'+signed(0).keyImage)).body;assert.deepEqual([r.spent,r.earlier],[null,true]);}
+  // Many lookups from one caller: a budget of its own.
+  let limited=0;for(let i=0;i<12;i++)if((await get('/spent/'+signed(3).keyImage)).status===429)limited++;assert.ok(limited>=1,'no limit');
+  assert.equal((await get('/spent/xyz')).status,400);assert.equal((await get('/spent/'+signed(3).keyImage+'?height=4000')).status,400);assert.equal((await get('/spent/'+signed(3).keyImage+'?height=1.5')).status,400);
+ }finally{await service.close();}
+ // A ledger without claims by a spent coin has no such route.
+ const plain=open({dir:join(dir,'plain'),spendFrom:null});await plain.sync();const other=createService({reader:plain,owners,testHooks:true}),p2=await other.listen(0);
+ try{assert.equal((await fetch(`http://127.0.0.1:${p2}/spent/${signed(0).keyImage}`)).status,404);}finally{await other.close();}});
+
+test('the service lists the claims that wait for their fee',async()=>{
+ const {w,owners,chain,open,signed,record}=world(),reader=open();
+ for(let h=101;h<=SPEND;h++)chain.mine();const s=spendTx([signed(1).keyImage]);chain.mine([s]);
+ const c=carried(record(reader.ledger,1,s,{to:w.carol}),'list');chain.mine([c]);chain.mine([payFee('list half',1,SPEND_FEE/4n)]);await reader.sync();
+ const service=createService({reader,owners,testHooks:true}),port=await service.listen(0);
+ try{const got=await (await fetch(`http://127.0.0.1:${port}/waiting`)).json(),id=reader.entryByTx(c.txid).id;
+  assert.deepEqual(got.waiting,[{number:1,id,to:w.carol.address,kind:'spent coin',due:SPEND_FEE.toString(),paid:(SPEND_FEE/4n).toString(),missing:(SPEND_FEE-SPEND_FEE/4n).toString()}]);
+ }finally{await service.close();}});

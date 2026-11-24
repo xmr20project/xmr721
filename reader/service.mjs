@@ -218,6 +218,22 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
    if(path.startsWith('/tx/')){const id=path.slice(4);if(!/^[0-9a-f]{64}$/.test(id))throw fail('A transaction ID is 64 hexadecimal characters.');
     if(!allow(caller(req)))throw fail('Too many requests. Try again in a minute.',429);
     const [t]=await reader.lookup([id]);if(!t)throw fail('The Monero node does not know this transaction yet.',404);return {height,payment:t};}
+   // The transaction that spent a key image, for a claim by a spent coin (section 11): asked of the node first (spent or
+   // not, and where), then looked for in the pool or the newest 10 blocks, or with ?height=h in blocks h - 1 to h + 1 (a
+   // wallet shows the block in which it spent a coin). Only on a ledger that takes such claims; a budget of its own, and one
+   // lookup at a time. -> {height, keyImage, status (the node's: 0 not spent, 1 in a block, 2 in the pool), spent: {txid,
+   // height (null: in the pool), tx} or null, earlier: true when the node says it is spent in a block that was not searched}
+   if(path.startsWith('/spent/')){const ki=path.slice(7);if(!/^[0-9a-f]{64}$/.test(ki))throw fail('A key image is 64 hexadecimal characters.');
+    if(m.spendFrom==null)throw fail('This ledger does not take claims by a spent coin.',404);
+    const at=q.get('height');if(at!=null&&!/^[1-9][0-9]{0,9}$/.test(at))throw fail('A block height is a whole number.');
+    const h=at==null?null:Number(at);if(h!=null&&h>height)throw fail('That block is not read yet. Try again in a few minutes.');
+    if(!allow(caller(req))||!allowSpent(caller(req)))throw fail('Too many requests. Try again in a minute.',429);
+    const r=await(spentQueue=spentQueue.catch(()=>{}).then(()=>reader.spentBy(ki,{heights:h==null?Array.from({length:10},(_,i)=>height-i).filter(x=>x>m.start):[h-1,h,h+1]})));
+    return {height,keyImage:ki,status:r.status,spent:r.spent,...(r.status===1&&!r.spent?{earlier:true}:{})};}
+   // Claims that wait for their fee (burns, and claims by a spent coin; public, as the ledger's state is): which Mordinal,
+   // the claim's code, the address it goes to, what is due, paid and missing.
+   if(path==='/waiting'){if(m.burnFrom==null)return {height,waiting:[]};
+    return {height,waiting:once('waiting',()=>(L().toJSON().waiting||[]).map(w=>{const b=L().burnClaim(w.id);return {number:w.number,id:w.id,to:w.to,kind:b?.kind==='spend'?'spent coin':'burn',due:w.due,paid:b?.paid??'0',missing:b?.missing??w.due};}))};}
    // What became of the record a transaction carried: its entry in this reader's journal, accepted or refused.
    if(path.startsWith('/entry/')){const id=path.slice(7);if(!/^[0-9a-f]{64}$/.test(id))throw fail('A transaction ID is 64 hexadecimal characters.');
     const e=reader.entryByTx(id);if(!e)throw fail('This reader has read no record in this transaction.',404);
@@ -361,6 +377,9 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
  const caller=req=>{const direct=req.socket.remoteAddress||'';if(!behindProxy)return direct;
   const last=String(req.headers['x-forwarded-for']||'').split(',').at(-1).trim();return last||direct;};
  const buckets=new Map();
+ // /spent reads blocks and the pool of the node: a budget of its own, a few per minute, and one lookup at a time.
+ const spentBuckets=new Map();let spentQueue=Promise.resolve();
+ function allowSpent(ip){const t=Date.now(),b=spentBuckets.get(ip)||{tokens:10,at:t};b.tokens=Math.min(10,b.tokens+(t-b.at)/1000*0.2);b.at=t;if(spentBuckets.size>10000)spentBuckets.clear();spentBuckets.set(ip,b);if(b.tokens<1)return false;b.tokens--;return true;}
  function allow(ip){const t=Date.now(),b=buckets.get(ip)||{tokens:rate.burst,at:t};b.tokens=Math.min(rate.burst,b.tokens+(t-b.at)/1000*rate.perSecond);b.at=t;
   if(buckets.size>10000)buckets.clear();buckets.set(ip,b);if(b.tokens<1)return false;b.tokens-=1;return true;}
  async function picture(res,text){

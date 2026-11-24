@@ -277,6 +277,19 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
   // One pass at a time: read new blocks up to the node's tip.
   sync(options){if(!busy)busy=pass(options).finally(()=>{busy=null;});return busy;},
   // MD1 records waiting in the node's pool (not yet in a block). For "waiting" notices only; nothing here counts.
+  // The transaction that spent a key image (a wallet that claims by a spent coin, section 11, looks for it). The node is
+  // asked first whether it is spent at all (is_key_image_spent): if not, nothing more is read; if in the pool, the pool is
+  // searched; if in a block, the given blocks (at most 11, none above this reader's newest). -> {status (0 not spent, 1 in a
+  // block, 2 in the pool), spent: {txid, height (null: in the pool), tx: spendFacts} or null}. The node's answer, not
+  // checked against this journal: the rules look again when they judge.
+  async spentBy(keyImage,{heights=[]}={}){
+   if(!/^[0-9a-f]{64}$/.test(keyImage||''))throw Error('A key image is 64 hexadecimal characters.');
+   const [status]=await chain.spent([keyImage]);if(status===0)return {status,spent:null};
+   const look=async ids=>{for(let i=0;i<ids.length;i+=100){const got=await chain.txs(ids.slice(i,i+100));
+    for(const t of got.values())if(spentImages(t.tx).some(v=>v.key?.k_image===keyImage))return {txid:t.txid,height:t.inPool?null:t.height,tx:spendFacts(t.tx)};}return null;};
+   if(status===2)return {status,spent:await look(await chain.pool())};
+   for(const h of [...new Set(heights)].filter(h=>Number.isInteger(h)&&h>=1&&h<=tipBlock().height).slice(0,11)){const r=await look((await chain.block(h)).txids);if(r)return {status,spent:r};}
+   return {status,spent:null};},
   async waiting(){const ids=await chain.pool(),fresh=ids.filter(i=>!pool.seen.has(i));
    if(fresh.length){const got=await chain.txs(fresh);for(const id of fresh){const t=got.get(id);let v=null;
     if(t){const record=unframe(t.tx.extra);if(record){try{const d=decodeRecord(record,network);v={txid:id,record:hex(record),op:d.op,id:recordId(domain,d.bodyBytes)};}catch{}}}

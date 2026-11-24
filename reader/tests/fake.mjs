@@ -17,6 +17,9 @@ export function fakeChain({start=100,time=1700000000}={}){
   async block(h){c.trip('block');const b=blocks.get(h);if(!b)throw Error('Monero node: no such block');return {...b,txids:b.txids.slice(),minerTx:b.minerTx||null};},
   async txs(ids){c.calls++;c.trip('txs');const out=new Map();for(const id of ids){const m=mined.get(id),p=pool.get(id);if(m)out.set(id,{txid:id,inPool:false,height:m.height,tx:m.tx});else if(p)out.set(id,{txid:id,inPool:true,height:null,tx:p});}return out;},
   async pool(){return [...pool.keys()];},
+  // Whether key images are spent, as is_key_image_spent answers: 0 no, 1 by a transaction in a block, 2 by one in the pool.
+  async spent(images){c.calls++;const ins=tx=>(Array.isArray(tx?.vin)?tx.vin:[]).map(i=>i?.key?.k_image);
+   return images.map(k=>[...mined.values()].some(m=>ins(m.tx).includes(k))?1:[...pool.values()].some(t=>ins(t).includes(k))?2:0);},
   // Test controls.
   publish(t){if(mined.has(t.txid))throw Error('The node refused the transaction (double spend)');pool.set(t.txid,t.tx);},
   mine(extra=[],{only=null}={}){for(const t of extra)pool.set(t.txid,t.tx);
