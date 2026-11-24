@@ -387,6 +387,13 @@ export function openWallet({dir,carrier,reader=null,chain,network='mainnet',nett
  const api={
   dir,
   get address(){return me().address;},
+  // A message signed with the wallet's address, as Feather and Cake Wallet sign one (Sign/verify message): the same
+  // signature, so whatever takes theirs takes this. Nothing is sent and no node or reader is asked.
+  sign(message){
+   need(typeof message==='string'&&message.length>0,'There is no message to sign.');
+   need(message.length<=4096,'The message is longer than 4096 characters.');
+   need(!/[\u0000-\u001f\u007f]/.test(message),'The message has a line break or a control character in it. A message to sign is one line.');
+   const keys=me();return {address:keys.address,message,signature:keys.sign(message)};},
   // What the journal holds for the wallet's owner to read (a build that was cut short).
   notes(){try{return load().notes;}catch{return [];}},
   // A new wallet: its keys, and the block its scan starts at (the node's newest: a new wallet has received nothing yet).
