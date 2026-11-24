@@ -445,7 +445,7 @@ transaction that anyone can pay for.
 Not in this draft: mints larger than one relayed transaction, mints that anyone can buy
 from a creator, and bringing earlier collections (GENESIS) under these rules.
 
-## 10. Claiming by burning (draft; a ledger setting no ledger uses yet)
+## 10. Claiming by burning (a ledger setting; the mainnet ledger uses it from block 3,808,200)
 
 A ledger's setup may name a **first burn block**. Like the first mint block it is fixed for
 the ledger and shared by every reader of it; a checkpoint names it from that block on.
@@ -756,7 +756,7 @@ Tests: `rules/tests/burn.test.mjs` (with one real pair of mainnet transactions i
 
 Reader and relay: `reader/`.
 
-## 11. Claiming by a spent coin (draft; a ledger setting no ledger uses yet)
+## 11. Claiming by a spent coin (a ledger setting; the mainnet ledger uses it from block 3,813,165)
 
 A ledger that claims by burning may also name a **first block of claims by a spent coin**, at
 or after its first burn block. Like the first burn block it is fixed for the ledger and
