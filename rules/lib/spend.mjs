@@ -12,8 +12,9 @@ import {hex,concat,le,leBytes,Hs,usableSpendKey} from './monero.mjs';
 import {hashToPoint} from './burn.mjs';
 const Pt=ed25519.ExtendedPoint,G=Pt.BASE,L=ed25519.CURVE.n,HEX32=/^[0-9a-f]{64}$/;
 const bytes=x=>typeof x==='string'?Uint8Array.from(x.match(/../g)||[],v=>parseInt(v,16)):x;
-// What a claim by a spent coin pays to its Mordinal's fee address (the fee address of section 10), in piconero. Draft value.
-export const SPEND_FEE=2000000000n;
+// What a claim by a spent coin pays to its Mordinal's fee address (the fee address of section 10), in piconero: 0.0025 XMR
+// and the cost of the transaction that carries the claim record (about 0.00004 XMR at 20,000 piconero a byte), rounded up.
+export const SPEND_FEE=2550000000n;
 // The signed key image: c and r of a ring signature with one member. -> true when it proves that `keyImage` is the key
 // image of `outputKey`.
 export function verifyKeyImageProof({outputKey,keyImage,c,r}){

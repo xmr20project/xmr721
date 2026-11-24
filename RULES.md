@@ -825,7 +825,8 @@ claimed yet, and no other claim by a spent coin can claim it. While claim
 records still count, a claim record of proof 0 or 1 still can, and the claim by a spent coin
 is then passed over.
 
-**The fee.** 0.002 XMR (a draft amount, one fixed number for every Mordinal and part of the
+**The fee.** 0.00255 XMR (0.0025 XMR and the cost of the transaction that carries the claim
+record, about 0.00004 XMR, rounded up; one fixed number for every Mordinal and part of the
 rules: a reader with another amount reads another ledger), paid to the Mordinal's fee address
 of section 10. Every payment to that address counts, also one made
 before the record. The claim completes in the block where the payments reach the fee, or in
