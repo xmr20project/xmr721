@@ -289,8 +289,8 @@ the relay and the service, with tests. Not in use. Open:
 - the fee: 0.002 XMR is a draft amount (a burn claim pays the burn's own fee once more, about
   0.00103 XMR, besides the burn's network cost); it is part of the rules, so it has to be
   fixed before a ledger uses section 11;
-- a spend at any height counts, also one before the first burn block or the start block; a
-  ledger could count only spends from some block on instead;
+- only a coin spent from the first block of such claims on counts, so the claim is for those
+  who hold a Mordinal then; a coin spent earlier by an ordinary wallet stays without a way;
 - every payment to the Mordinal's fee address counts toward the fee, also one made before the
   record, for example for a burn of that Mordinal that was refused;
 - a refused burn spent the coin in an original-format transfer of that Mordinal: the rule

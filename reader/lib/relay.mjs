@@ -149,8 +149,9 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
     // A node may miss a transaction for a moment (between the pool and a block, or another node): a held claim stays held.
     if(!spend){if(fresh)throw bad('The Monero node does not know the transaction that spent the coin. Check that it was sent, then hand the claim over again.');return {ready:false};}
     // Not in a block yet, or in the newest one: the record reaches a later block, where the spend is in an earlier one.
-    // It is judged as if the spend were one block back, and held until it is.
-    if(spend.height==null||spend.height>=reader.height){reader.ledger.check(bytes,[{...spend,height:reader.height-1}]);return {ready:false};}
+    // It is judged as if the spend were one block back (where that block is one from which a spend counts), and held
+    // until it is.
+    if(spend.height==null||spend.height>=reader.height){if(from===null||reader.height-1>=from)reader.ledger.check(bytes,[{...spend,height:reader.height-1}]);return {ready:false};}
     // In an older block: judged against that block, as a reader judges it.
     reader.ledger.check(bytes,await reader.lookup([d.body.spendTx],reader.height,{inputs:true}));return {ready:true};}
    if(late){holdable(d);

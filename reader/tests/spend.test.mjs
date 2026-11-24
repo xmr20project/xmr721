@@ -52,29 +52,33 @@ test('the reader takes claims by a spent coin from their first block on: one wai
  const s1=spendTx([signed(1).keyImage]),early=carried(record(L(),1,s1),'early');
  chain.mine([s1]);chain.mine();chain.mine([early]);await reader.sync();
  assert.deepEqual(reader.journal.map(e=>[e.height,e.txid,e.ok,e.error??null]),[[103,early.txid,false,'Unknown proof kind']]);assert.deepEqual(Object.keys(reader.journal[0]),['height','pos','txid','record','ok','error']);
- // 104: her claim again, to carol; and bob's claim of Mordinal 2 with a spend in the same block: refused.
- const c1=carried(record(L(),1,s1,{to:w.carol}),'c1'),s2=spendTx([signed(2).keyImage]),same=carried(record(L(),2,s2),'same');
- chain.mine([c1,s2,same]);await reader.sync();
- assert.deepEqual(reader.journal.slice(1).map(e=>[e.height,e.pos,e.txid,e.ok,e.error??null]),[[104,0,c1.txid,true,null],[104,2,same.txid,false,'The spending transaction has to be in a block before the block of this record.']]);
+ // 104: her claim again: the coin was spent before the first block of such claims, so it never counts. In the same block
+ // alice spends the coin of Mordinal 0, and bob claims Mordinal 2 with a spend in this very block: refused.
+ const c1=carried(record(L(),1,s1,{to:w.carol}),'c1'),s0=spendTx([signed(0).keyImage]),s2=spendTx([signed(2).keyImage]),same=carried(record(L(),2,s2),'same');
+ chain.mine([c1,s0,s2,same]);await reader.sync();
+ assert.deepEqual(reader.journal.slice(1).map(e=>[e.height,e.pos,e.txid,e.ok,e.error??null]),[[104,0,c1.txid,false,`The coin was spent before block ${SPEND}; only a coin spent from that block on claims its Mordinal this way.`],[104,3,same.txid,false,'The spending transaction has to be in a block before the block of this record.']]);
+ // 105: alice's claim of Mordinal 0, to carol: its coin was spent in block 104.
+ const c0=carried(record(L(),0,s0,{to:w.carol}),'c0');chain.mine([c0]);await reader.sync();
  // The journal keeps what the rule read of the spending transaction: its block, extra field and the key images it spends.
- const e1=reader.journal[1],id1=e1.id;
- assert.deepEqual(json(e1.facts),[{txid:s1.txid,height:101,tx:{extra:s1.tx.extra,vin:[{key:{k_image:signed(1).keyImage,key_offsets:[5,6]}}]}}]);
+ const e1=reader.journal[3],id1=e1.id;assert.deepEqual([e1.height,e1.txid,e1.ok],[105,c0.txid,true]);
+ assert.deepEqual(json(e1.facts),[{txid:s0.txid,height:104,tx:{extra:s0.tx.extra,vin:[{key:{k_image:signed(0).keyImage,key_offsets:[5,6]}}]}}]);
  // It waits for its fee: no event yet, and the Mordinal is not claimed.
- assert.deepEqual([L().burnClaim(id1).state,L().burnClaim(id1).kind,L().burnClaim(id1).due,L().mordinal(1).claimed,Boolean(L().mordinal(1).waiting)],['waiting','spend',SPEND_FEE.toString(),false,true]);
- assert.deepEqual(reader.events,[]);assert.deepEqual(L().toJSON().waiting,[{number:1,id:id1,to:w.carol.address,due:SPEND_FEE.toString()}]);
- // 105: half the fee; 106: the rest, in a transaction that pays someone else too. The claim completes in block 106; its
+ assert.deepEqual([L().burnClaim(id1).state,L().burnClaim(id1).kind,L().burnClaim(id1).due,L().mordinal(0).claimed,Boolean(L().mordinal(0).waiting)],['waiting','spend',SPEND_FEE.toString(),false,true]);
+ assert.deepEqual(reader.events,[]);assert.deepEqual(L().toJSON().waiting,[{number:0,id:id1,to:w.carol.address,due:SPEND_FEE.toString()}]);
+ // 106: half the fee; 107: the rest, in a transaction that pays someone else too. The claim completes in block 107; its
  // event carries the transaction of the record, where the record and the spend are, and the payment that completed it.
- const half1=payFee('spend half 1',1,SPEND_FEE/2n),half2=payFee('spend half 2',1,SPEND_FEE-SPEND_FEE/2n,{alongside:wallet('somebody')});
+ const half1=payFee('spend half 1',0,SPEND_FEE/2n),half2=payFee('spend half 2',0,SPEND_FEE-SPEND_FEE/2n,{alongside:wallet('somebody')});
  chain.mine([half1]);await reader.sync();assert.equal(L().burnClaim(id1).missing,(SPEND_FEE-SPEND_FEE/2n).toString());assert.deepEqual(reader.events,[]);
- chain.mine([half2]);await reader.sync();assert.equal(L().mordinal(1).owner,w.carol.address);
- assert.deepEqual(reader.events.map(e=>[e.kind,e.number,e.to,e.proof,e.height,e.txid,e.id,e.spendTx,e.recordHeight,e.feeTx]),[['claim',1,w.carol.address,'spent coin',106,c1.txid,id1,s1.txid,104,half2.txid]]);
- assert.equal(reader.events[0].time,reader.timeOf(106));
- assert.deepEqual(L().mordinal(1).history.at(-1),{what:'claim',height:106,record:id1,to:w.carol.address,proof:'spent coin',tx:s1.txid});
- // 107: the fee for Mordinal 3 paid ahead, and carol spends its coin; 108: her claim, claimed in its own block.
+ chain.mine([half2]);await reader.sync();assert.equal(L().mordinal(0).owner,w.carol.address);
+ assert.deepEqual(reader.events.map(e=>[e.kind,e.number,e.to,e.proof,e.height,e.txid,e.id,e.spendTx,e.recordHeight,e.feeTx]),[['claim',0,w.carol.address,'spent coin',107,c0.txid,id1,s0.txid,105,half2.txid]]);
+ assert.equal(reader.events[0].time,reader.timeOf(107));
+ assert.deepEqual(L().mordinal(0).history.at(-1),{what:'claim',height:107,record:id1,to:w.carol.address,proof:'spent coin',tx:s0.txid});
+ // 108: the fee for Mordinal 3 paid ahead, and carol spends its coin; 109: her claim, claimed in its own block.
  const pre=payFee('spend ahead',3,SPEND_FEE),s3=spendTx([signed(3).keyImage]);chain.mine([pre,s3]);
  const c3=carried(record(L(),3,s3),'c3');chain.mine([c3]);await reader.sync();
  assert.equal(L().mordinal(3).owner,holders[3].address);const last=reader.events.at(-1);
- assert.deepEqual([last.kind,last.number,last.proof,last.height,last.txid,last.spendTx,'recordHeight' in last,'feeTx' in last],['claim',3,'spent coin',108,c3.txid,s3.txid,false,false]);
+ assert.deepEqual([last.kind,last.number,last.proof,last.height,last.txid,last.spendTx,'recordHeight' in last,'feeTx' in last],['claim',3,'spent coin',109,c3.txid,s3.txid,false,false]);
+ assert.equal(L().mordinal(1).claimed,false);
  // Checkpoints name the first block of claims by a spent coin from that block on.
  const [c102,c104]=reader.checkpoints;assert.deepEqual([c102.height,c104.height],[102,104]);assert.equal('spendFrom' in c102,false);
  assert.deepEqual(Object.keys(c104),['schema','network','domain','owners','start','burnFrom','burnDead','ownerOutputs','burnFee','spendFrom','height','blockHash','records','listHash','stateHash']);assert.equal(c104.spendFrom,SPEND);
@@ -84,9 +88,9 @@ test('the reader takes claims by a spent coin from their first block on: one wai
  // A reader without the setting knows no such record; up to the block before it, the two agree on every checkpoint and
  // write the same log.
  const plain=open({dir:state+'-plain',spendFrom:null});await plain.sync();
- assert.deepEqual(plain.journal.filter(e=>e.record!==undefined).map(e=>[e.txid,e.ok,e.error??null]),[early,c1,same,c3].map(t=>[t.txid,false,'Unknown proof kind']));
+ assert.deepEqual(plain.journal.filter(e=>e.record!==undefined).map(e=>[e.txid,e.ok,e.error??null]),[early,c1,same,c0,c3].map(t=>[t.txid,false,'Unknown proof kind']));
  assert.deepEqual(plain.journal[0],reader.journal[0]);assert.equal(plain.meta.schema,SCHEMA+SCHEMA_BURN);
- assert.equal(plain.ledger.mordinal(1).claimed,false);assert.deepEqual(plain.checkpoints[0],c102);assert.notDeepEqual(plain.checkpoints[1],c104);
+ assert.equal(plain.ledger.mordinal(0).claimed,false);assert.deepEqual(plain.checkpoints[0],c102);assert.notDeepEqual(plain.checkpoints[1],c104);
  // A folder keeps its setting; a bad one is refused.
  assert.throws(()=>open({spendFrom:SPEND+20}),/made for another ledger \(spendFrom differs\)/);assert.throws(()=>open({spendFrom:null}),/made for another ledger \(schema differs\)/);
  assert.throws(()=>open({dir:state+'-bad',spendFrom:FROM-1}),/Bad first block of claims by a spent coin/);assert.throws(()=>open({dir:state+'-bad',burnFrom:null}),/Bad first block of claims by a spent coin/);
@@ -150,7 +154,9 @@ test('a folder takes in the first block of claims by a spent coin while that blo
 
 test('the relay holds a claim by a spent coin until the spend is below the newest block, and carries it after claim records end',async()=>{
  const {w,chain,open,signed,record,dir}=world(),reader=open(),relay=createRelay({dir:join(dir,'relay'),reader,chain,carrier:fakeCarrier(chain,{coins:6}),domain:DOMAIN,limits:{resendMs:1000},now:()=>1_000_000});
- for(let h=101;h<=SPEND;h++)chain.mine();await reader.sync();
+ const sOld=spendTx([signed(1).keyImage]);chain.mine([sOld]);for(let h=102;h<=SPEND;h++)chain.mine();await reader.sync();
+ // A coin spent before the first block of such claims: refused, nothing carried.
+ await assert.rejects(relay.submit(hex(record(reader.ledger,1,sOld))),e=>/was spent before block 104/.test(e.message)&&e.rule===true);
  // A spend the node does not know: refused, nothing carried.
  const s0=spendTx([signed(0).keyImage]);
  await assert.rejects(relay.submit(hex(record(reader.ledger,0,s0))),e=>/does not know the transaction that spent the coin/.test(e.message)&&e.rule===true);
@@ -218,10 +224,12 @@ test('the relay waits for the first block of such claims, keeps a held claim thr
  const step=async(txs=[])=>{chain.mine(txs);await reader.sync();await relay.tick();};
  // Two blocks before the first block of such claims the record could not reach it: refused. One block before: held,
  // and sent once the reader is at that block.
- const s0=spendTx([signed(0).keyImage]);chain.mine([s0]);chain.mine();await reader.sync();                           // 102
+ const s0=spendTx([signed(0).keyImage]),empty=()=>chain.mine([],{only:[]});chain.publish(s0);empty();empty();await reader.sync();   // 102; the spend waits in the pool
  await assert.rejects(relay.submit(hex(record(reader.ledger,0,s0))),e=>/Claiming by a spent coin starts at block 104/.test(e.message)&&e.rule===true);
- chain.mine();await reader.sync();const early=await relay.submit(hex(record(reader.ledger,0,s0)));assert.equal(early.state,'held');   // 103
+ empty();await reader.sync();const early=await relay.submit(hex(record(reader.ledger,0,s0)));assert.equal(early.state,'held');   // 103
+ await step();assert.equal(relay.status(early.id).state,'held');                                                       // 104 holds the spend
  await step();assert.equal(relay.status(early.id).state,'sent');await step();assert.equal(reader.ledger.burnClaim(early.id).state,'waiting');
+
  // The node loses the spend for a moment while the claim is held: still held, then sent once the spend is below the newest block.
  const s2=spendTx([signed(2).keyImage]);chain.publish(s2);const held=await relay.submit(hex(record(reader.ledger,2,s2)));assert.equal(held.state,'held');
  chain.drop(s2.txid);await step();assert.equal(relay.status(held.id).state,'held');

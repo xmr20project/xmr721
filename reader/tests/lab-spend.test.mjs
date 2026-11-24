@@ -1,6 +1,7 @@
 // Claiming by a spent coin (RULES.md section 11) on a local test chain. SIMULATED: own offline fakechain (monerod --regtest),
 // throwaway wallet2 wallets (monero-wallet-rpc) and the real carrier tool for the relay's transactions; no real funds.
-// Real here: the owner coins are spent by ordinary wallet2 transactions (sweep_single), one in the start block; the
+// Real here: the owner coins are spent by ordinary wallet2 transactions (sweep_single), one before the first block of such
+// claims (in the start block: it never counts); the
 // key images and their signatures are wallet2's own key image export (the one-member ring signature Feather exports for an
 // imported outputs file); payment proofs and message signatures are wallet2's; the fees are paid by an ordinary wallet; the
 // records travel in real transactions, and the reader reads all of it out of real blocks.
@@ -88,19 +89,17 @@ test('coins spent by ordinary wallet2 transactions claim their Mordinals through
   {const d=await status(r0.body.id),m=await get('/mordinal/0');assert.equal(d.state,'done');assert.equal(m.mordinal.owner,receiver);
    const h=m.history.at(-1);assert.deepEqual([h.kind,h.proof,h.txid,h.spendTx,h.feeTx],['claim','spent coin',recordTx,s0,fee0.tx_hash]);}
 
-  // 4. Mordinal 1, whose coin was spent in the start block: the fee paid first, then the claim, claimed in its block.
-  await mine(10);await payer.rpc('refresh');
-  await payer.rpc('transfer',{destinations:[{amount:Number(SPEND_FEE),address:feeAddressOf(feeWallet(),1).address}],priority:0});await mine(1);await pass();
+  // 4. Mordinal 1, whose coin was spent in the start block, before the first block of such claims: refused at the relay.
   const spend1=await node(s1);assert.ok(spend1.height<=start);assert.equal(originalTransfer(spend1.tx.extra),false);
-  const r1=await post('/records',{record:hex(await claim(1,s1))});assert.equal(r1.status,200,JSON.stringify(r1.body));assert.equal(r1.body.state,'sent');
-  await mine(1);await pass();assert.equal((await status(r1.body.id)).state,'done');assert.equal((await get('/mordinal/1')).mordinal.owner,receiver);
-  note('claims done',{mordinal0:receiver.slice(0,8),mordinal1Spend:{height:spend1.height,start}});
+  const r1=await post('/records',{record:hex(await claim(1,s1))});assert.ok(r1.status>=400&&r1.status<500,JSON.stringify(r1));
+  assert.match(r1.body.error,new RegExp(`The coin was spent before block ${start+4}`));assert.equal((await get('/mordinal/1')).mordinal.claimed,false);
+  note('claims done',{mordinal0:receiver.slice(0,8),mordinal1:'refused: spent at '+spend1.height+', before block '+(start+4)});
 
   // 5. The check tool replays the log, finds every record and spending transaction on the node, and a reader of its own
   //    over the same blocks writes the same log.
   await mine(2);await pass();
   const got=await download(base),checked=await verify({...got,owners,chain:createChain(chain.url)});
-  assert.equal(checked.ok,true,JSON.stringify(checked.problems));assert.ok(checked.accepted>=3);
+  assert.equal(checked.ok,true,JSON.stringify(checked.problems));assert.ok(checked.accepted>=2);
   assert.deepEqual(await scan({...got,owners,chain:createChain(chain.url),dir:join(dir,'scan')}),[]);
   note('checked',{accepted:checked.accepted,refused:checked.refused,checkpoints:checked.checkpoints,onNode:checked.checkedOnNode});
  }finally{if(service)await service.close();await stopAll([chain,...Object.values(W)]);await rm(dir,{recursive:true,force:true});}});

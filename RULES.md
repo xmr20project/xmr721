@@ -722,7 +722,8 @@ for it. The keys are the same on every network; only the written address differs
   check any original index.
 - A Mordinal whose owner coin was already spent by an ordinary transaction cannot be claimed
   by burning: the coin cannot be spent again. Its holder can claim by record until claim
-  records stop; after that, on a ledger that has it, by a spent coin (section 11).
+  records stop; after that only if the coin was spent from the first block of claims by a
+  spent coin on, on a ledger that has it (section 11).
 - A burn that is refused (another text, a ring this rule does not take, a fee too low, a
   block before the first burn block) has spent the coin all the same and cannot be made
   again. Until claim records stop, the holder can still claim by record with the one-time
@@ -760,8 +761,8 @@ Reader and relay: `reader/`.
 A ledger that claims by burning may also name a **first block of claims by a spent coin**, at
 or after its first burn block. Like the first burn block it is fixed for the ledger and
 shared by every reader of it; a checkpoint names it from that block on. From that block on a
-claim record with **proof 2** claims a Mordinal whose owner coin was spent by an ordinary
-transaction: the case section 10 leaves without a way once claim records stop. Proof 2
+claim record with **proof 2** claims a Mordinal whose owner coin was spent, from that block
+on, by an ordinary transaction: the way for a holder whose wallet builds no burn. Proof 2
 counts whether claim records still count or not. Like a burn claim it is a paid service: it
 completes once the Mordinal's fee address has received the fee below.
 
@@ -799,9 +800,12 @@ owner list, the Mordinal is not claimed) and the payment proof of proof 1:
 3. The reader has looked up `spendTx` on the node, and it is in a block **before** the block
    of the record. A spend in the same block as the record, in a later one or only in the
    pool does not count.
-4. One input of `spendTx` has the key image `I`. Monero accepts a key image once, so this is
+4. `spendTx` is in a block at or after the first block of claims by a spent coin. A coin spent
+   before that block never claims this way: the claim is for someone who holds the Mordinal
+   when this section starts.
+5. One input of `spendTx` has the key image `I`. Monero accepts a key image once, so this is
    the one transaction that spent the owner coin.
-5. `spendTx` did not move the Mordinal under the original rules. It is refused when the 2023
+6. `spendTx` did not move the Mordinal under the original rules. It is refused when the 2023
    indexer reads a transfer in its extra field (a transfer field, 0x11, and no registration
    field, 0x10, read field by field exactly as that indexer reads them: a field that does not
    read ends the reading, and a length that the end of the extra field cuts short is the
@@ -814,7 +818,7 @@ owner list, the Mordinal is not claimed) and the payment proof of proof 1:
    Mordinal either way. Any other spend moves nothing under the original rules: an ordinary
    transaction, a registration, or a transfer of another Mordinal that spent this coin beside
    it.
-6. The message signature is by the holder's address (spend key).
+7. The message signature is by the holder's address (spend key).
 
 A record that passes waits for its fee, like a burn claim (section 10): the Mordinal is not
 claimed yet, and no other claim by a spent coin can claim it. While claim
@@ -845,9 +849,10 @@ refuses it when the node does not know `spendTx`.
   bound to the claim (it shows that `I` is the coin's key image, so that `spendTx` is the
   transaction that spent it); someone who holds a view-only copy of the wallet, or a key
   images file it exported, can supply those two parts but not the signature.
-- The coin can be spent by any ordinary transaction, also one before the first burn block or
-  before the start block. That holder held the Mordinal when the coin was spent: an ordinary
-  spend moves nothing under the original rules.
+- Only a coin spent from the first block of such claims on counts. Someone who spent the
+  coin earlier, whatever became of the Mordinal since, has no claim here; the holder of an
+  unspent owner coin spends it in an ordinary transaction, which moves nothing under the
+  original rules, and claims.
 - **It is public.** Beyond what proof 1 shows (the holder's address and the amount of the
   owner coin), the record shows which transaction spent the coin. That links `spendTx`, its
   other inputs and its change to the holder's address, and it marks the owner output as

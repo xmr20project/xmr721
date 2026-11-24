@@ -281,6 +281,8 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
   if(!f||!f.tx)throw Error('The spending transaction was not looked up.');
   if(f.height==null)throw Error('The spending transaction is not in a block yet; wait for 1 confirmation.');
   if(f.height>=tip)throw Error('The spending transaction has to be in a block before the block of this record.');
+  // Only a coin spent from the first block of such claims on counts: the claim is for someone who holds the Mordinal then.
+  if(f.height<spendFrom)throw Error(`The coin was spent before block ${spendFrom}; only a coin spent from that block on claims its Mordinal this way.`);
   if(!keyImagesOf(f.tx).includes(b.keyImage))throw Error('The spending transaction does not spend the owner coin (no input has its key image).');
   if(mayHaveMoved(f.tx,o=>byOutput.get(o)===m,dead))throw Error('The spending transaction is a transfer of this Mordinal in the original Mordinals format (a transfer or a burn): the Mordinal moved with it, so its spent coin does not claim it.');}
  // The checks of a burn claim, in this order; the first that fails is the reason a reader writes down.

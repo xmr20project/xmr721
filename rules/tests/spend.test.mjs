@@ -110,6 +110,9 @@ test('refused: each check of section 11, with its reason',()=>{
  assert.throws(()=>l.check(bytes,[]),/was not looked up/);
  assert.throws(()=>l.check(bytes,[{...fact,height:null}]),/not in a block yet/);
  assert.throws(()=>l.check(bytes,[{...fact,height:SPEND+5}]),/in a block before the block of this record/);
+ // A coin spent before the first block of such claims never counts; one spent in that very block does.
+ assert.throws(()=>l.check(bytes,[{...fact,height:SPEND-1}]),new RegExp(`The coin was spent before block ${SPEND}; only a coin spent from that block on`));
+ assert.equal(l.check(bytes,[{...fact,height:SPEND}]).body.proof,PROOF.spend);
  const other=spendTx([signed(2).keyImage]);
  {const r=record(0,{s:other});assert.throws(()=>l.check(r.bytes,[{txid:other.txid,height:SPEND+2,tx:other.tx}]),/does not spend the owner coin/);}
  for(const extra of [[...s.tx.extra,0x11,3,65,66,67],[0x10,1,0,...s.tx.extra],[...s.tx.extra,0]])
