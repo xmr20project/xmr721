@@ -63,7 +63,8 @@ test('records decode strictly and fit a Monero transaction',()=>{
   assert.throws(()=>decodeRecord(concat(r,Uint8Array.of(0))),/extra bytes/);assert.throws(()=>decodeRecord(r.slice(0,-1)),/truncated/);}
  assert.throws(()=>decodeRecord(Uint8Array.of(0x4d,0x44,0x31,0xfe,10)),/Unknown operation/);
  assert.throws(()=>decodeRecord(Uint8Array.of(0x58,0x54,0x31,0xfe,1)),/Not an MD1 record/);
- const bad=c0.slice();bad[5+64+65]=2;assert.throws(()=>decodeRecord(bad),/Unknown proof kind/);
+ // (proof kinds 0 to 2 exist; 2 is the spent coin of section 11)
+ const bad=c0.slice();bad[5+64+65]=3;assert.throws(()=>decodeRecord(bad),/Unknown proof kind/);
  l.apply(c0);l.apply(c1);
  const m=l.prepareMove({mordinal:0,from:w.alice.address,to:w.carol.address}),mr=l.sign(m.bodyBytes,w.alice.sign(m.text+'\n'));sizes.move=mr.length;
  assert.equal(decodeRecord(mr).proof.variant,1);                                        // a wallet that adds a line break still verifies

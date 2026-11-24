@@ -1,0 +1,26 @@
+{
+ "note": "Key images exported by Feather 2 (Tools, Offline transaction signing, key images for an outputs file) on 24 Nov 2026 for three made-up coins of a throwaway wallet with no funds. Public data: coin keys, key images and their signatures.",
+ "feather": [
+  {
+   "coin": "0/0",
+   "outputKey": "551f4de137da304138c58e0769789aa318910784195244b7b105ac112ec7a38e",
+   "keyImage": "9e806f8b29a3dfb3fae89737a0b6fdbbc691bfab4790fae1ac6935d6e6202380",
+   "c": "11cb3c2ad9e29cf6df8bb6ba6628737f343ec060544266d3f7e804282fb9d501",
+   "r": "6d2df34cafb7eaa873571ff2a4a8c4b043c67e25e0f1e8bf9022b63375785703"
+  },
+  {
+   "coin": "0/4",
+   "outputKey": "e9683669fc015e911a25f3863b8036ccb3d25aa46a11c0d826dbd92816334734",
+   "keyImage": "c120d797e06fbb2b4991f60a70872e9e436db9bb29481ce54f92776fce23c503",
+   "c": "ce87981c08e52c5b05831bd9b399e7062e52bf936ac3e645427139ebdacb7809",
+   "r": "585a56aa6d4154e99a4151de123162861bb0ac1b7dd288b2f04cc3c1a0b3d403"
+  },
+  {
+   "coin": "1/2",
+   "outputKey": "80e30c36ef02cafdae81d5a0b75d03a37904493863a9035e8a14def30d7f833f",
+   "keyImage": "22022c16ace01ec6a1c4c09719d6b5b8025c9c6dbd1744cb8ef3d9b6e9d1682c",
+   "c": "f38dc4e83b25337f57bd9b7c1aeb047491efec6723a2f6b78586e38a99abdf07",
+   "r": "60ba4ba01ab27bd2875bd5650865f9bfabc070d226ed9d6ed1ebf19339c6a700"
+  }
+ ]
+}

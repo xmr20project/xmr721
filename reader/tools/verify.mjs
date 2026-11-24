@@ -6,10 +6,12 @@
 //   judged again with the rule library, in order, and must come out the same way (accepted with the same id, or
 //   refused); every checkpoint the service shows is recomputed from that replay. On a ledger that claims by burning
 //   (RULES.md section 10) the logged burning transfers are judged again the same way, and the logged fee payments are
-//   read again and applied after what their transaction carries.
+//   read again and applied after what their transaction carries. On a ledger that also claims by a spent coin (section 11)
+//   such a claim is judged with the spending transaction the log holds.
 // --node: every logged record is looked up on the Monero node: it must sit in the stated block at the stated place
 //   and its transaction must carry exactly those record bytes; the payments of every purchase are fetched again and
-//   compared; the parts of a burning transfer or a fee payment are read again from the node's transaction and compared;
+//   compared, and so is the spending transaction of every claim by a spent coin (with the key images of its inputs); the
+//   parts of a burning transfer or a fee payment are read again from the node's transaction and compared;
 //   checkpoint block hashes are compared with the node.
 // --scan: additionally reads every block from the start block with this code (a reader of your own in that folder)
 //   and compares the two logs. Only this finds a record or a fee payment the service left out. It takes as long as a first sync.
@@ -18,14 +20,14 @@ import {createHash} from 'node:crypto';
 import {existsSync,readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {createLedger} from '../../rules/lib/ledger.mjs';
-import {OP,decodeRecord,recordId} from '../../rules/lib/records.mjs';
+import {OP,PROOF,decodeRecord,recordId} from '../../rules/lib/records.mjs';
 import {hex,unhex} from '../../rules/lib/monero.mjs';
 import {burnParts,burnClaimId,isMainnetDead} from '../../rules/lib/burn.mjs';
 import {feeParts,feeWallet,isProjectFeeWallet} from '../../rules/lib/burn-fee.mjs';
 import {ownersHash,ownerOutputsHash,readOwners} from '../lib/owners.mjs';
 import {unframe} from '../lib/transport.mjs';
 import {createChain} from '../lib/chain.mjs';
-import {openReader,slim} from '../lib/reader.mjs';
+import {openReader,slim,spendFacts} from '../lib/reader.mjs';
 
 const sha=text=>createHash('sha256').update(text).digest('hex');
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
@@ -47,14 +49,19 @@ export async function verify({info,entries,checkpoints=[],owners,chain=null,publ
  // Off mainnet (stagenet, testnet) a ledger names its own dead outputs, and the service's list is the one to replay with.
  const burns=info.burnFrom!=null?{burnFrom:info.burnFrom,burnDead:own||info.network!=='mainnet'?info.burn?.dead??null:null,burnFee:own||info.network!=='mainnet'?named:null,testChain:own}:{};
  if(info.burnFrom!=null&&ownerOutputsHash(owners)!==info.burn?.ownerOutputs)return {ok:false,problems:['The owner list here has other owner output indexes than the one this service uses (hash differs).'],accepted:0,refused:0,checkpoints:0,checkedOnNode:0};
- let ledger;try{ledger=createLedger({network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,height:info.start,mintFrom:info.mintFrom??null,minters:info.minters??null,openFrom:info.openFrom??null,...burns});}
+ let ledger;try{ledger=createLedger({network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,height:info.start,mintFrom:info.mintFrom??null,minters:info.minters??null,openFrom:info.openFrom??null,...burns,...(info.spendFrom!=null?{spendFrom:info.spendFrom}:{})});}
  catch(e){return {ok:false,problems:['The service states a setup the rules do not take: '+String(e?.message||e).slice(0,200)],accepted:0,refused:0,checkpoints:0,checkedOnNode:0};}
+ // The fee of a claim by a spent coin is part of the rules: a service that states another one runs other rules.
+ if(info.spendFrom!=null&&info.spend?.fee!==ledger.spend.fee)return {ok:false,problems:[`The service asks ${info.spend?.fee} piconero for a claim by a spent coin; these rules ask ${ledger.spend.fee}.`],accepted:0,refused:0,checkpoints:0,checkedOnNode:0};
  // A checkpoint names the first mint block and the minter list of its ledger; they have to be this service's.
  const setup={mintFrom:info.mintFrom??null,minters:info.minters?[...info.minters].sort().join(','):null,openFrom:info.openFrom??null};
  for(const c of checkpoints){const minting=setup.mintFrom!==null&&c.height>=setup.mintFrom,opened=minting&&setup.openFrom!==null&&c.height>=setup.openFrom;
   if((c.mintFrom??null)!==(minting?setup.mintFrom:null)||(c.minters??null)!==(minting?setup.minters:null)||(c.openFrom??null)!==(opened?setup.openFrom:null)){bad(`The checkpoint at block ${c.height} is for a ledger with another first mint block, minter list or opening block.`);break;}
   const burning=info.burnFrom!=null&&c.height>=info.burnFrom;
-  if((c.burnFrom??null)!==(burning?info.burnFrom:null)||(c.burnDead??null)!==(burning?ledger.burn.dead.join(','):null)||(c.ownerOutputs??null)!==(burning?info.burn.ownerOutputs:null)||(c.burnFee??null)!==(burning?ledger.burn.fee.wallet:null)){bad(`The checkpoint at block ${c.height} is for a ledger with another first burn block, other dead outputs, other owner outputs or another fee wallet.`);break;}}
+  if((c.burnFrom??null)!==(burning?info.burnFrom:null)||(c.burnDead??null)!==(burning?ledger.burn.dead.join(','):null)||(c.ownerOutputs??null)!==(burning?info.burn.ownerOutputs:null)||(c.burnFee??null)!==(burning?ledger.burn.fee.wallet:null)){bad(`The checkpoint at block ${c.height} is for a ledger with another first burn block, other dead outputs, other owner outputs or another fee wallet.`);break;}
+  if((c.spendFrom??null)!==(info.spendFrom!=null&&c.height>=info.spendFrom?info.spendFrom:null)){bad(`The checkpoint at block ${c.height} is for a ledger with another first block of claims by a spent coin.`);break;}}
+ // Whether a claim by a spent coin is a known record in the block of an entry (section 11), as the reader decodes it.
+ const spends=e=>info.spendFrom!=null&&e.height>=info.spendFrom;
  const marks=[...checkpoints].sort((a,b)=>a.height-b.height),accepted=[];let mark=0,last=[info.start,-1],ok=0,refused=0;
  const settle=upTo=>{for(;mark<marks.length&&marks[mark].height<=upTo;mark++){const c=marks[mark];ledger.setHeight(c.height);
   const mine={records:accepted.length,listHash:sha(accepted.map(e=>`${e.height}:${e.txid}\n`).join('')),stateHash:sha(JSON.stringify(ledger.toJSON()))};
@@ -79,7 +86,7 @@ export async function verify({info,entries,checkpoints=[],owners,chain=null,publ
   // A fee payment and nothing else.
   if(e.record===undefined&&e.fee!==undefined){if(e.ok!==true||e.id!==undefined||e.error!==undefined){bad(`Log entry ${i} (block ${e.height}) is not a well-formed fee payment entry.`);break;}
    if(!fees(e,i))break;accepted.push(e);ok++;continue;}
-  let bytes,d=null;try{bytes=unhex(e.record);d=decodeRecord(bytes,info.network);}catch{}
+  let bytes,d=null;try{bytes=unhex(e.record);d=decodeRecord(bytes,info.network,{spend:spends(e)});}catch{}
   if(!d){if(e.ok)bad(`Log entry ${i} (block ${e.height}) is marked accepted but does not decode.`);else refused++;if(!fees(e,i))break;continue;}
   if(e.id!==recordId(info.domain,d.bodyBytes))bad(`Log entry ${i} (block ${e.height}) has another record id than its bytes.`);
   let out=null,error=null;try{out=ledger.check(bytes,e.facts);}catch(err){error=String(err.message);}
@@ -104,10 +111,16 @@ export async function verify({info,entries,checkpoints=[],owners,chain=null,publ
     onNode++;continue;}
    const t=(await chain.txs([e.txid])).get(e.txid),record=t&&!t.inPool&&t.height===e.height?unframe(t.tx.extra):null;
    if(!record||hex(record)!==e.record){bad(`Log entry ${i}: transaction ${e.txid} does not carry this record.`);continue;}
-   if(e.facts){const ids=[...new Set(e.facts.map(f=>f.txid))],got=await chain.txs(ids);
-    for(const f of e.facts){const p=got.get(f.txid);if(!p||p.inPool||p.height!==f.height||!same(slim(p.tx),f.tx))bad(`Log entry ${i}: payment ${f.txid} is not on the node as logged.`);}
-    // A payment the log leaves out although it was in a block by then would change the verdict.
-    let d=null;try{d=decodeRecord(unhex(e.record),info.network);}catch{}
+   // A purchase, and a claim by a spent coin where such claims count, are judged with what the reader looked up on the
+   // node: the log has to hold it (a claim by a spent coin keeps the spending transaction as spendFacts() reads it).
+   let d=null;try{d=decodeRecord(unhex(e.record),info.network,{spend:spends(e)});}catch{}
+   const spent=d?.op===OP.claim&&d.body.proof===PROOF.spend;
+   if((spent||d?.op===OP.buy)&&!Array.isArray(e.facts)){bad(`Log entry ${i}: the transactions this record names are missing from the log.`);continue;}
+   if(e.facts){const ids=[...new Set(e.facts.map(f=>f.txid))],got=await chain.txs(ids),read=tx=>spent?spendFacts(tx):slim(tx);
+    for(const f of e.facts){const p=got.get(f.txid);if(!p||p.inPool||p.height!==f.height||!same(read(p.tx),f.tx))bad(`Log entry ${i}: ${spent?'spending transaction':'payment'} ${f.txid} is not on the node as logged.`);}
+    // A payment, or a spending transaction, that the log leaves out although it was in a block by then would change the verdict.
+    if(spent){const p=(await chain.txs([d.body.spendTx])).get(d.body.spendTx),counts=Boolean(p&&!p.inPool&&p.height<=e.height);
+     if(counts!==e.facts.some(f=>f.txid===d.body.spendTx))bad(`Log entry ${i}: spending transaction ${d.body.spendTx} is ${counts?'left out of':'wrongly in'} the logged facts.`);}
     if(d?.op===OP.buy){const named=[...new Set(d.body.payments.map(p=>p.txid))],all=await chain.txs(named);
      for(const id of named){const p=all.get(id),counts=p&&!p.inPool&&p.height<=e.height;if(counts!==e.facts.some(f=>f.txid===id))bad(`Log entry ${i}: payment ${id} is ${counts?'left out of':'wrongly in'} the logged facts.`);}}}
    onNode++;}
@@ -118,7 +131,7 @@ export async function verify({info,entries,checkpoints=[],owners,chain=null,publ
 // A reader of your own over the same blocks; the two logs must be equal. -> list of problems
 export async function scan({info,entries,owners,chain,dir,height}){
  const named=info.burn?.fee?{address:info.burn.fee.wallet,viewKey:info.burn.fee.viewKey}:null;let project=false;try{project=info.burnFrom!=null&&isProjectFeeWallet(feeWallet(named,info.network,{testChain:true}));}catch{}
- let reader;try{reader=openReader({dir,chain,network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,start:info.start,startHash:info.startHash,mintFrom:info.mintFrom??null,minters:info.minters??null,openFrom:info.openFrom??null,...(info.burnFrom!=null?{burnFrom:info.burnFrom,burnDead:info.network==='mainnet'&&Array.isArray(info.burn?.dead)&&isMainnetDead([...info.burn.dead].sort((a,b)=>a-b))?null:info.burn?.dead??null,burnFee:project?null:named}:{}),checkpointEvery:0});}catch(e){return ['The service states a setup the rules do not take: '+String(e?.message||e).slice(0,200)];}
+ let reader;try{reader=openReader({dir,chain,network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,start:info.start,startHash:info.startHash,mintFrom:info.mintFrom??null,minters:info.minters??null,openFrom:info.openFrom??null,...(info.burnFrom!=null?{burnFrom:info.burnFrom,burnDead:info.network==='mainnet'&&Array.isArray(info.burn?.dead)&&isMainnetDead([...info.burn.dead].sort((a,b)=>a-b))?null:info.burn?.dead??null,burnFee:project?null:named}:{}),...(info.spendFrom!=null?{spendFrom:info.spendFrom}:{}),checkpointEvery:0});}catch(e){return ['The service states a setup the rules do not take: '+String(e?.message||e).slice(0,200)];}
  while(reader.height<height){const before=reader.height;await reader.sync({limit:height-reader.height});if(reader.height===before)break;}
  if(reader.height<height)return [`The node only reaches block ${reader.height}; the service is at ${height}.`];
  const mine=reader.journal.filter(e=>e.height<=height),theirs=entries.filter(e=>e.height<=height),problems=[];

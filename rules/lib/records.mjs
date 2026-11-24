@@ -1,8 +1,9 @@
 // MD1 records: claim, move, list, cancel, reserve, buy, and collection, mint, burn (RULES.md). Draft.
 //   record   = "MD1\xfe" op(u8) body [proof or signature]
-//   op 1 claim    reg32 ownerTx32 to proof(u8) [holder when proof = 1]
+//   op 1 claim    reg32 ownerTx32 to proof(u8) [holder when proof = 1 or 2] [spendTx32 keyImage32 when proof = 2]
 //                 proof 0 (one-time key):       c32 r32
 //                 proof 1 (payment proof + message): D32 pc32 pr32 variant(u8) c32 r32
+//                 proof 2 (spent coin: payment proof + signed key image + message): D32 pc32 pr32 kc32 kr32 variant(u8) c32 r32
 //   op 2 move     reg32 seq(u32) from to                              variant c32 r32
 //   op 3 list     reg32 seq(u32) until(u32) price(u64 piconero) seller variant c32 r32
 //   op 4 cancel   lot32 seller                                        variant c32 r32
@@ -25,7 +26,7 @@
 import {sha256} from '@noble/hashes/sha256';
 import {decodeAddress,encodeAddress,verifySpendSignature,usableSpendKey,parseSignature,hex,unhex,concat,le,leBytes} from './monero.mjs';
 const enc=new TextEncoder();
-export const MAGIC=Uint8Array.of(0x4d,0x44,0x31,0xfe),OP={claim:1,move:2,list:3,cancel:4,reserve:5,buy:6,collection:7,mint:8,burn:9},PROOF={outputKey:0,payment:1};
+export const MAGIC=Uint8Array.of(0x4d,0x44,0x31,0xfe),OP={claim:1,move:2,list:3,cancel:4,reserve:5,buy:6,collection:7,mint:8,burn:9},PROOF={outputKey:0,payment:1,spend:2};
 // A record travels in one relayed transaction, which leaves this many bytes for it (RULES.md section 8).
 export const MAX_RECORD=1000,NO_COLLECTION='0'.repeat(64),MAX_EDITIONS=10000,MAX_NAME=64,ORIGIN={bitcoinInscription:1};
 // Draft parameters. The fee address is given to the ledger; rate, cap, minimum price and window are the draft values of RULES.md section 7.
@@ -61,8 +62,9 @@ const readParty=(r,network)=>{const k=r.u8();if(k>1)throw Error('Unknown address
 
 export function encodeBody(op,b,network='mainnet'){
  const head=concat(MAGIC,Uint8Array.of(op));
- if(op===OP.claim){if(b.proof!==PROOF.outputKey&&b.proof!==PROOF.payment)throw Error('Unknown proof kind');
-  return concat(head,id32(b.reg,'Inscription transaction'),id32(b.ownerTx,'Owner transaction'),party(b.to,network),Uint8Array.of(b.proof),b.proof===PROOF.payment?party(b.holder,network):new Uint8Array(0));}
+ if(op===OP.claim){if(b.proof!==PROOF.outputKey&&b.proof!==PROOF.payment&&b.proof!==PROOF.spend)throw Error('Unknown proof kind');
+  return concat(head,id32(b.reg,'Inscription transaction'),id32(b.ownerTx,'Owner transaction'),party(b.to,network),Uint8Array.of(b.proof),b.proof===PROOF.outputKey?new Uint8Array(0):party(b.holder,network),
+   b.proof===PROOF.spend?concat(id32(b.spendTx,'Spending transaction'),id32(b.keyImage,'Key image')):new Uint8Array(0));}
  if(op===OP.move)return concat(head,id32(b.reg,'Inscription transaction'),u32(b.seq),party(b.from,network),party(b.to,network));
  if(op===OP.list){if(!(b.price>0n))throw Error('Price must be above 0');return concat(head,id32(b.reg,'Inscription transaction'),u32(b.seq),height(b.until,'expiry height'),u64(b.price),party(b.seller,network));}
  if(op===OP.cancel)return concat(head,id32(b.lot,'Listing id'),party(b.seller,network));
@@ -84,10 +86,12 @@ export function encodeBody(op,b,network='mainnet'){
  throw Error('Unknown operation');}
 export const signedOp=op=>op===OP.move||op===OP.list||op===OP.cancel||op===OP.reserve||op===OP.collection||op===OP.mint||op===OP.burn;
 // Strict decode of a whole record, or of a body alone (sig: false). Nothing may follow the last field.
-export function decodeRecord(bytes,network='mainnet',{sig=true}={}){
+// spend: false reads a claim with proof 2 (section 11) as an unknown proof kind, as it reads on a ledger, or in a block,
+// where claims by a spent coin do not count; a reader decodes so, and its log stays what it was before proof 2 existed.
+export function decodeRecord(bytes,network='mainnet',{sig=true,spend=true}={}){
  const r=reader(bytes);if(hex(r.take(4))!==hex(MAGIC))throw Error('Not an MD1 record');const op=r.u8();let body,proof=null;
- if(op===OP.claim){const reg=r.hex32(),ownerTx=r.hex32(),to=readParty(r,network),kind=r.u8();if(kind>1)throw Error('Unknown proof kind');
-  body={reg,ownerTx,to,proof:kind};if(kind===PROOF.payment)body.holder=readParty(r,network);}
+ if(op===OP.claim){const reg=r.hex32(),ownerTx=r.hex32(),to=readParty(r,network),kind=r.u8();if(kind>(spend?2:1))throw Error('Unknown proof kind');
+  body={reg,ownerTx,to,proof:kind};if(kind!==PROOF.outputKey)body.holder=readParty(r,network);if(kind===PROOF.spend){body.spendTx=r.hex32();body.keyImage=r.hex32();}}
  else if(op===OP.move)body={reg:r.hex32(),seq:r.u32(),from:readParty(r,network),to:readParty(r,network)};
  else if(op===OP.list){body={reg:r.hex32(),seq:r.u32(),until:r.u32(),price:r.u64(),seller:readParty(r,network)};if(!(body.price>0n)||!body.until)throw Error('Bad listing');}
  else if(op===OP.cancel)body={lot:r.hex32(),seller:readParty(r,network)};
@@ -106,7 +110,7 @@ export function decodeRecord(bytes,network='mainnet',{sig=true}={}){
  const bodyBytes=bytes.slice(0,r.at);
  if(sig){
   if(op===OP.claim&&body.proof===PROOF.outputKey)proof={c:r.take(32).slice(),r:r.take(32).slice()};
-  else if(op===OP.claim)proof={D:r.take(32).slice(),pc:r.take(32).slice(),pr:r.take(32).slice(),variant:r.u8(),c:r.take(32).slice(),r:r.take(32).slice()};
+  else if(op===OP.claim)proof={D:r.take(32).slice(),pc:r.take(32).slice(),pr:r.take(32).slice(),...(body.proof===PROOF.spend?{kc:r.take(32).slice(),kr:r.take(32).slice()}:{}),variant:r.u8(),c:r.take(32).slice(),r:r.take(32).slice()};
   else if(signedOp(op))proof={variant:r.u8(),c:r.take(32).slice(),r:r.take(32).slice()};
   if(proof&&'variant' in proof&&proof.variant>=SUFFIX.length)throw Error('Unknown text ending');}
  if(r.left)throw Error('Record has extra bytes');
@@ -131,7 +135,7 @@ export function renderText(op,b,bodyBytes,ctx){
  if(op===OP.mint)return `XMR721 mint: ${b.collection===NO_COLLECTION?'one NFT in no collection':`edition ${b.edition} of "${ctx.collectionName}"`}${b.name?` named "${b.name}"`:''}; ${b.content.length} bytes of type ${b.type}, SHA-256 ${hex(sha256(b.content))}`
   +(b.origin?`; from ${b.origin.kind}:${b.origin.ref}`:'')+`; first owner ${b.to||b.creator}; code ${code}`;
  if(op===OP.burn)return `XMR721 burn: destroy ${what} for good; burn ${b.seq}; code ${code}`;
- if(op===OP.claim)return `Mordinals claim: Mordinal #${n} (inscription ${b.reg}), held by output 0 of ${b.ownerTx}, now belongs to ${b.to}; code ${code}`;
+ if(op===OP.claim)return `Mordinals claim: Mordinal #${n} (inscription ${b.reg}), held by output 0 of ${b.ownerTx}${b.proof===PROOF.spend?` and spent in ${b.spendTx}`:''}, now belongs to ${b.to}; code ${code}`;
  if(op===OP.move)return `Mordinals move: send ${what} to ${b.to}; move ${b.seq}; code ${code}`;
  if(op===OP.list){const s=splitOf(b.price);return `Mordinals list: sell ${what} for ${formatXmr(b.price)} XMR (${formatXmr(s.seller)} XMR to ${b.seller}, ${formatXmr(s.fee)} XMR protocol fee); valid until block ${b.until}; code ${code}`;}
  if(op===OP.cancel)return `Mordinals cancel: stop selling ${what}; listing ${codeOf(b.lot)}; code ${code}`;
