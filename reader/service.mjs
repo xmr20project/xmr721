@@ -99,7 +99,7 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
  const once=(key,make)=>{const at=reader.height+':'+reader.journal.length+':'+reader.hash;if(at!==memoAt){memoAt=at;memo=new Map();}if(!memo.has(key))memo.set(key,make());return memo.get(key);};
  const L=()=>reader.ledger;
  const lotView=id=>{const l=L().lot(id),r=l.reservations.at(-1)||null;
-  return {id:l.id,number:l.number,name:l.number==null?null:nameOf(l.number),nft:l.number==null?l.reg:null,reg:l.reg,seller:l.seller,price:l.price.toString(),until:l.until,status:l.status,...(l.offer?{offer:l.offer}:{}),body:reader.body(l.id),
+  return {id:l.id,number:l.number,name:l.number==null?null:nameOf(l.number),nft:l.number==null?l.reg:null,reg:l.reg,seller:l.seller,price:l.price.toString(),until:l.until,status:l.status,...(l.offer?{offer:l.offer,offerBody:reader.body(l.offer)}:{}),body:reader.body(l.id),
    reservation:r?{record:r.record,buyer:r.buyer,height:r.height,payBy:r.payBy,rate:r.rate}:null,buyer:l.sale?.buyer||null};};
  // A Mordinal whose burn claim, or claim by a spent coin, waits for its fee is not claimed; `waiting` says so.
  const state=n=>{const x=L().mordinal(n);return {number:x.number,name:nameOf(x.number),reg:x.reg,claimed:x.claimed,owner:x.owner,...(x.burned?{burned:true}:{}),...(x.waiting?{waiting:true}:{}),seq:x.seq,lot:x.lot?lotView(x.lot):null};};
@@ -162,22 +162,22 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
  if(relay&&xmr20Open)relay.useTokens(key=>openTokens().by.get(key)??null);
  const opened=()=>{if(!xmr20Open)throw fail('This reader lists no open XMR20 tokens.',404);if(reader.height+1<xmr20Open.from)throw fail(`Open XMR20 tokens start at block ${xmr20Open.from}; the ledger is at block ${reader.height}.`,409);};
  // Listings anyone can reserve. A sale that came from an accepted offer is for its bidder alone and is not among them.
- const open=()=>once('open',()=>reader.lots.map(lotView).filter(l=>l.status==='open'&&!l.offer));
+ const openAll=()=>once('openAll',()=>reader.lots.map(lotView).filter(l=>l.status==='open')),open=()=>once('open',()=>openAll().filter(l=>!l.offer));
  // Offers (section 13). A set of Mordinals an offer can name: each collection found on the chain, by the root of its list.
  const SCOPES=['nft','collection','set'];
- const setOf=g=>g.set??=(regs=>({regs,root:setRoot(regs)}))(g.members.map(n=>entry.get(n).registrationTx));
+ const setOf=g=>g.set??=(regs=>({regs,root:setRoot(regs)}))([...new Set(g.members.map(n=>entry.get(n).registrationTx))]);
  const groupByRoot=()=>once('roots',()=>new Map(groupList.map(g=>[setOf(g).root,g])));
  const offerView=id=>{const o=L().offer(id),g=o.kind===2?groupByRoot().get(o.ref)||null:null,c=o.kind===1?L().collection(o.ref):null,one=o.kind===0?L().mordinal(o.ref):null;
   return {id:o.id,bidder:o.bidder,price:o.price.toString(),until:o.until,count:o.count,left:o.left,running:o.running,scope:SCOPES[o.kind],ref:o.ref,rate:o.rate,market:o.market,height:o.height,status:o.status,open:o.open,
    // Whether another accept would be taken now: open, pieces left, and time enough to pay.
-   acceptable:o.open&&o.left-o.running>0&&L().height+RULES.maxReserve+RULES.settle<=o.until,
+   acceptable:o.open&&o.left-o.running>0&&L().height+1+RULES.maxReserve+RULES.settle<=o.until,
    ...(g?{group:{id:g.id,name:g.name}}:{}),...(c?{collection:{id:c.id,name:c.name}}:{}),...(one?{number:one.number,name:one.number==null?null:nameOf(one.number),...(one.number==null?{nft:one.reg}:{})}:{}),body:reader.body(o.id)};};
  const offersNow=()=>once('offers',()=>reader.offers.map(offerView));
  // The offers a piece fits: its own, its collection's, and those for a set whose list it is on.
  const offersFor=m=>offersNow().filter(o=>o.acceptable&&(o.scope==='nft'?o.ref===m.reg:o.scope==='collection'?Boolean(m.minted)&&m.minted.collection===o.ref:m.number!=null&&o.group&&groupById.get(o.group.id).members.includes(m.number)));
  const claimed=()=>once('claimed',()=>numbers.filter(n=>L().mordinal(n).claimed));
  const card=n=>{const o=entry.get(n),s=state(n);return {number:n,name:s.name,reg:s.reg,claimed:s.claimed,owner:s.owner,...(s.burned?{burned:true}:{}),...(s.waiting?{waiting:true}:{}),bodySize:o.bodySize??null,group:groupOf.get(n)??null,
-  lot:s.lot?{id:s.lot.id,price:s.lot.price,until:s.lot.until,seller:s.lot.seller,reserved:Boolean(s.lot.reservation&&heldUntil(s.lot.reservation)>=reader.height)}:null};};
+  lot:s.lot&&!s.lot.offer?{id:s.lot.id,price:s.lot.price,until:s.lot.until,seller:s.lot.seller,reserved:Boolean(s.lot.reservation&&heldUntil(s.lot.reservation)>=reader.height)}:null};};
  const which=text=>{const t=decodeURIComponent(text);const o=/^\d{1,9}$/.test(t)?entry.get(Number(t)):/^[0-9a-f]{64}$/.test(t)?byReg.get(t):null;if(!o)throw fail('This is not a Mordinal on the owner list.',404);return o;};
  const stats=()=>once('stats',()=>{const by={};let volume=0n,fees=0n;for(const e of reader.events){by[e.kind]=(by[e.kind]||0)+1;if(e.kind==='sale'){volume+=BigInt(e.price);fees+=BigInt(e.fee);}}
   return {height:reader.height,mordinals:list.length,claimed:claimed().length,forSale:open().filter(l=>l.until>=reader.height).length,sales:by.sale||0,volume:volume.toString(),fees:fees.toString(),
@@ -212,7 +212,7 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
    // that lost its own notes finds here what it already handed over.
    if(/^\/address\/[^/]+\/records$/.test(path)){const a=canonical(decodeURIComponent(path.slice(9,-8)),m.network);return {height,records:relay?relay.jobsOf(a):[]};}
    if(path.startsWith('/address/')){const a=canonical(decodeURIComponent(path.slice(9)),m.network);
-    return {height,mordinals:L().owned(a).map(state),nfts:L().nftsOf(a).map(minted),buying:open().filter(l=>l.reservation?.buyer===a),waiting:waitingFor({signer:a})};}
+    return {height,mordinals:L().owned(a).map(state),nfts:L().nftsOf(a).map(minted),buying:openAll().filter(l=>l.reservation?.buyer===a),waiting:waitingFor({signer:a})};}
    if(path==='/listings')return {height,listings:open().filter(l=>l.until>=height)};
    if(path.startsWith('/lot/')){const id=path.slice(5);if(!/^[0-9a-f]{64}$/.test(id)||!L().lot(id))throw fail('This listing does not exist.',404);return {height,lot:lotView(id),waiting:waitingFor({number:L().lot(id).number??L().lot(id).reg})};}
    if(path==='/records'){const all=reader.journal.filter(e=>e.ok&&e.record!==undefined),from=int(q.get('from'),0,0,all.length),limit=int(q.get('limit'),1000,1,5000);
@@ -266,15 +266,15 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
      ...(e.fee?{fees:reader.feesOf(e.txid)}:{})},confirmations:height-e.height+1};}
    if(path==='/pending')return {height,jobs:relay?relay.pending():[],pool:await poolNow()};
    if(m.offersFrom!=null&&path==='/offers'){const group=q.get('group'),bidder=q.get('bidder'),collection=q.get('collection'),number=q.get('number'),all=q.get('all')==='1';
-    let list=offersNow();if(!all)list=list.filter(o=>o.acceptable);
+    // A bidder's own offers are shown whatever their state; every other list holds the offers that can be accepted now.
+    let list=number!==null?offersFor(L().mordinal(which(number).number)):offersNow();
+    if(bidder!==null){const a=canonical(bidder,m.network);list=list.filter(o=>o.bidder===a);}else if(!all)list=list.filter(o=>o.acceptable);
     if(group!==null)list=list.filter(o=>o.group?.id===group);if(collection!==null)list=list.filter(o=>o.collection?.id===collection);
-    if(bidder!==null){const a=canonical(bidder,m.network);list=offersNow().filter(o=>o.bidder===a);}
-    if(number!==null){const x=L().mordinal(which(number).number);list=offersFor(x);}
     return {height,offers:[...list].sort((a,b)=>BigInt(a.price)>BigInt(b.price)?-1:BigInt(a.price)<BigInt(b.price)?1:a.height-b.height).slice(0,200)};}
    if(m.offersFrom!=null&&path.startsWith('/offer/')){const [id,rest,n]=path.slice(7).split('/');if(!/^[0-9a-f]{64}$/.test(id)||!L().offer(id))throw fail('This offer does not exist.',404);
     const o=offerView(id);if(rest===undefined)return {height,offer:o,sales:reader.lots.map(lotView).filter(l=>l.offer===id)};
     // The path an accept of this offer carries for one Mordinal of its set.
-    if(rest!=='path')throw fail('Not found',404);const x=which(n);if(o.scope!=='set')return {height,offer:id,number:x.number,path:[]};
+    if(rest!=='path')throw fail('Not found',404);const x=which(n);if(o.scope!=='set'){if(o.scope!=='nft'||o.ref!==x.registrationTx)throw fail('This offer is not for this Mordinal.',404);return {height,offer:id,number:x.number,path:[]};}
     const g=o.group&&groupById.get(o.group.id);if(!g||!g.members.includes(x.number))throw fail('This offer is not for this Mordinal.',404);
     return {height,offer:id,number:x.number,path:setPath(setOf(g).regs,entry.get(x.number).registrationTx)};}
    if(path==='/stats')return stats();

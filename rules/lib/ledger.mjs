@@ -104,7 +104,7 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
  const prepared=(op,body)=>{const bodyBytes=encodeBody(op,body,network),id=recordId(domain,bodyBytes);return {bodyBytes,id,code:codeOf(id),text:textOf(bodyBytes)};};
  const owned=(x,by)=>{const m=find(x);if(!m.claimed)throw Error('This Mordinal has not been claimed yet.');if(m.owner!==canonical(by,network))throw Error('This Mordinal belongs to another address.');return m;};
  const api={
-  get height(){return tip;},setHeight(h){if(h<tip)throw Error('Height cannot go back');tip=h;lapse();return h;},feeAddress:fee,
+  get height(){return tip;},setHeight(h){if(h<tip)throw Error('Height cannot go back');if(h===tip)return h;tip=h;lapse();return h;},feeAddress:fee,
   mordinal:x=>{const m=find(x);return {...m,history:m.history.slice()};},lot:id=>lots.get(id)||null,
   owned:address=>{const a=canonical(address,network);return [...mordinals.values()].filter(m=>m.owner===a&&m.number!=null).map(m=>m.number);},
   // Minted NFTs: one by id, those of an address, and collections.
@@ -249,7 +249,7 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
     if(b.until<tip)throw Error('This offer ended before it was posted; prepare and sign it again.');
     if(b.until>tip+RULES.maxOffer)throw Error(`An offer ends at most ${RULES.maxOffer} blocks (about 7 days) after its block.`);
     if(b.bidder===fee)throw Error('The fee address cannot make an offer.');
-    if(b.kind===SCOPE.nft){const m=find(b.ref);if(m.burned)throw Error('This NFT was burned.');}
+    if(b.kind===SCOPE.nft){const m=find(b.ref);if(m.burned)throw Error('This NFT was burned.');if(b.count!==1)throw Error('An offer for one NFT is for one piece.');}
     else if(b.kind===SCOPE.collection)collectionOf(b.ref);
     if(b.rate>RULES.marketFeeCapBps)throw Error(`A marketplace fee is at most ${RULES.marketFeeCapBps/100}%.`);
     if(b.rate){if(b.market===fee)throw Error('The marketplace fee address must differ from the protocol fee address.');
@@ -341,6 +341,8 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
    if(!f||!f.tx)throw Error('A payment in this record was not looked up.');if(payments.has(p.txid))throw Error('This payment was already used for a sale.');
    if(f.height==null)throw Error('A payment is not in a block yet; wait for 1 confirmation.');if(f.height>tip)throw Error('A payment is in a block after this record.');
    if(f.height<r.height)throw Error('A payment was made before the reservation.');
+   // A sale from an accepted offer: the payment is in a block by the pay-by block, and the ten blocks after it are for this record alone.
+   if(lot.offer&&f.height>r.payBy)throw Error(`A payment was made after the pay-by block of this accepted offer (block ${r.payBy}), so it does not count.`);
    if(f.height>lot.until)throw Error(`A payment was made after the listing ended (block ${lot.until}), so it does not count.`);
    const c=checkPaymentProof({tx:f.tx,txid:p.txid,out:p.out,D:p.D,c:p.c,s:p.s,address,message,network,what});
    if(c.amount!==BigInt(amount))throw Error(`The ${what} payment is ${formatXmr(c.amount)} XMR; this reservation needs exactly ${formatXmr(amount)} XMR.`);

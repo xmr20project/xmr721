@@ -921,7 +921,8 @@ accepts with one signature, and the bidder then pays as in section 5.
 
 1. **Offer.** Signed by the bidder's address, which also receives what is bought. Lowest
    price 0.001 XMR. The last block is at most 5,040 blocks (about 7 days) after the block
-   of the offer. `count` is 1 to 100: how many pieces the bidder buys at this price. The
+   of the offer. `count` is 1 to 100: how many pieces the bidder buys at this price; an
+   offer for one NFT (kind 0) is for one piece. The
    fee address cannot make an offer. A marketplace fee is named as in a reservation. An
    offer is for one of:
    - kind 0, one NFT: `ref` is its 32 bytes (a Mordinal's registration, or a mint's id);
@@ -938,6 +939,9 @@ accepts with one signature, and the bidder then pays as in section 5.
    pay-by + 10. Amounts, the tail (from the accept's code), the protocol fee, the payment
    proof and the buy record are those of section 5; the buy record names the accept as
    its lot. Nobody else can reserve this sale, and the seller cannot cancel it.
+   The payment is in a block no later than the pay-by block, and the buy record in a
+   block no later than pay-by + 10: the ten blocks are for the record alone. A payment
+   made after the pay-by block does not count. Wallets and pages must refuse to pay late.
 4. **Paid.** The piece moves to the bidder and the offer has one piece fewer left. With
    none left it is complete.
 5. **Not paid.** In the block after pay-by + 10 the piece is free again by itself: no

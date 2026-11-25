@@ -157,8 +157,10 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
  // A job that carries a claim by a spent coin (section 11).
  const spendClaim=j=>{if(j.op!==OP.claim)return false;try{return decodeRecord(unhex(j.record),network).body.proof===PROOF.spend;}catch{return false;}};
  function holdable(d){const l=reader.ledger.lot(d.body.lot);
-  if(!l)throw bad('This listing does not exist.');if(l.status!=='open')throw bad(l.status==='sold'?'This Mordinal is already sold.':'This listing was cancelled.');
+  if(!l)throw bad('This listing does not exist.');if(l.status!=='open')throw bad(l.status==='sold'?'This Mordinal is already sold.':l.status==='lapsed'?'This accepted offer was not paid in time.':'This listing was cancelled.');
   const r=l.reservations.at(-1);if(!r)throw bad('Nobody reserved this listing; reserve it before paying.');
+  // A sale from an accepted offer ends by itself: its purchase is held only while it can still be recorded in time.
+  if(l.offer&&reader.height>=l.until)throw bad('This accepted offer can no longer be paid in time.');
   if(reader.height>r.payBy+limits.holdBlocks)throw bad('The payments did not reach a block in time. If they are in a block now, send the purchase again.');
   return l;}
  // Judge a record against the ledger as the reader has it now. -> {ready}

@@ -102,7 +102,7 @@ test('an accept that is not paid frees the piece by itself and closes the offer'
  // The other accept, made before the miss, can still be paid; nothing new is accepted; a payment for the lapsed one is refused.
  assert.throws(()=>l.check(accept(o.id,1,w.alice,setPath(set,regs[1])).record),/closed: an earlier accept of it was not paid/);
  assert.throws(()=>buy(a.id,payment('late',a.pay)),/not paid in time/);
- buy(b.id,payment('in time',b.pay));assert.equal(l.mordinal(3).owner,w.bob.address);assert.deepEqual([l.offer(o.id).status,l.offer(o.id).left,l.offer(o.id).running],['closed',2,0]);
+ buy(b.id,payment('in time',b.pay),FROM+3+RULES.maxReserve);assert.equal(l.mordinal(3).owner,w.bob.address);assert.deepEqual([l.offer(o.id).status,l.offer(o.id).left,l.offer(o.id).running],['closed',2,0]);
  // The seller lists or sends the freed Mordinal with no record in between.
  {const p=l.prepareList({mordinal:0,seller:w.alice.address,price:XMR,until:l.height+100});l.apply(l.sign(p.bodyBytes,w.alice.sign(p.text)));assert.equal(l.mordinal(0).lot,p.id);}
  {const p=l.prepareWithdraw({offer:o.id,bidder:w.bob.address});assert.throws(()=>l.check(l.sign(p.bodyBytes,w.bob.sign(p.text))),/This offer is closed/);}
@@ -148,7 +148,13 @@ test('an offer for one NFT, and for a collection made on this ledger, with a mar
  // One NFT: only that one, with no path.
  const o=offer(w.bob,{price:XMR,kind:SCOPE.nft,ref:regs[1]});assert.match(o.text,/buy 1 piece of Mordinal #1 for 1 XMR each/);l.apply(o.record);
  assert.throws(()=>l.check(accept(o.id,0,w.alice).record),/not for this NFT/);assert.throws(()=>l.check(accept(o.id,1,w.alice,[regs[0]]).record),/not for this NFT/);
- const a=accept(o.id,1,w.alice);l.apply(a.record);buy(a.id,payment('nft pay',a.pay));assert.equal(l.mordinal(1).owner,w.bob.address);assert.equal(l.offer(o.id).status,'done');
+ assert.throws(()=>l.check(offer(w.bob,{price:XMR,count:2,kind:SCOPE.nft,ref:regs[1]}).record),/for one NFT is for one piece/);
+ const a=accept(o.id,1,w.alice);l.apply(a.record);
+ // The payment is in a block by the pay-by block; one made later does not count, though the sale is still held.
+ {const payBy=l.lot(a.id).reservations[0].payBy,t=payment('nft pay late',a.pay);l.setHeight(payBy+2);
+  assert.throws(()=>l.apply(l.buyRecord({lot:a.id,payments:entries(linesFor(a.id),[t],a.id)}),[fact(t,payBy+1)]),/after the pay-by block of this accepted offer/);
+  const good=payment('nft pay',a.pay);l.apply(l.buyRecord({lot:a.id,payments:entries(linesFor(a.id),[good],a.id)}),[fact(good,payBy)]);}
+ assert.equal(l.mordinal(1).owner,w.bob.address);assert.equal(l.offer(o.id).status,'done');
  // A collection: any NFT minted into it, not a Mordinal; the marketplace is paid on top.
  const c=offer(w.bob,{price:XMR,count:2,kind:SCOPE.collection,ref:set.id,rate:250,market:w.market.address});
  assert.match(c.text,new RegExp(`buy 2 pieces of "Stamps" \\(collection ${set.id.slice(0,32)}\\) for 1 XMR each plus 0\\.025 XMR each to ${w.market.address}; `));l.apply(c.record);
