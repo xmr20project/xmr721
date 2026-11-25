@@ -6,6 +6,7 @@
 //   --give   puts the numbered demo Mordinals at an address of yours (main address or subaddress), so a throwaway
 //            wallet can find and claim them.
 //   --auto   puts waiting transactions in a new made-up block every <ms> (default 4000; 0 = only on request).
+//   --offers the made-up ledger takes offers (RULES.md section 13) from its second block, and its relay charges 0.0025 XMR for one.
 //
 // Extra routes of the demo only:
 //   POST /test/mine {blocks}            make blocks now (waiting transactions go into the first), then read them
@@ -63,7 +64,7 @@ const DRAWING='<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" vi
 // seed: false leaves the ledger as on its first day (no claims, listings or sales; the 2023 history only).
 // bodies: a Map of number -> inscribed bytes that replace the demo content of those numbers.
 // fees: {mint, collection} in atomic units: the relay charges them, to subaddresses of a made-up relay wallet.
-export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=[],network='mainnet',views=undefined,mints=false,fees=null,seed=true,bodies=null,burnFrom=null,spendFrom=null,log=()=>{}}={}){
+export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=[],network='mainnet',views=undefined,mints=false,fees=null,seed=true,bodies=null,burnFrom=null,spendFrom=null,offersFrom=null,log=()=>{}}={}){
  const names=['alice','bob','carol','dave','erin'],w=Object.fromEntries([...names,'fee','other'].map(n=>[n,wallet('demo '+n,network)])),by=new Map(Object.values(w).map(x=>[x.address,x]));
  const given=new Map();for(const g of give){const a=decodeAddress(g.address,network);for(const n of g.numbers)given.set(n,{spend:a.spend,view:a.view,sub:a.kind==='sub'});}
  // Who holds what at the start: the demo wallets hold the low numbers, everything else sits with a wallet nobody uses.
@@ -82,7 +83,7 @@ export async function startDemo({port=18951,count=300,give=[],auto=4000,origins=
 
  const dir=mkdtempSync(join(tmpdir(),'mordinals-demo-')),start=100,story=14;
  const chain=fakeChain({start,time:Math.floor(Date.now()/1000)-story*120});
- const reader=openReader({dir:join(dir,'state'),chain,network,domain:DOMAIN,feeAddress:w.fee.address,owners,start,checkpointEvery:5,...(mints?{mintFrom:start+1}:{}),...(burnFrom!=null?{burnFrom}:{}),...(spendFrom!=null?{spendFrom}:{}),log});
+ const reader=openReader({dir:join(dir,'state'),chain,network,domain:DOMAIN,feeAddress:w.fee.address,owners,start,checkpointEvery:5,...(mints?{mintFrom:start+1}:{}),...(burnFrom!=null?{burnFrom}:{}),...(spendFrom!=null?{spendFrom}:{}),...(offersFrom!=null?{offersFrom}:{}),log});
  const relayWallet=wallet('demo relay',network),feeAddresses=new Map();
  const carrier=fakeCarrier(chain,{coins:40,subaddress:n=>{const a=relayWallet.sub(n).address;feeAddresses.set(a,n);return a;}});
  const relay=createRelay({dir:join(dir,'relay'),reader,chain,carrier,network,domain:DOMAIN,limits:{resendMs:60000,settleBlocks:3,holdBlocks:60},...(fees?{fees}:{}),log});
@@ -168,7 +169,7 @@ if(process.argv[1]===import.meta.filename){
  const arg=name=>{const i=process.argv.indexOf('--'+name);return i<0?null:process.argv[i+1];};
  const give=process.argv.flatMap((a,i)=>{if(a!=='--give')return [];const [address,list]=String(process.argv[i+1]).split('=');return [{address,numbers:(list||'7').split(',').map(Number)}];});
  const d=await startDemo({port:Number(arg('port'))||18951,count:Number(arg('count'))||300,give,auto:arg('auto')==null?4000:Number(arg('auto')),
-  origins:process.argv.flatMap((a,i)=>a==='--allow-origin'?[process.argv[i+1]]:[]),log:v=>console.log(JSON.stringify(v))});
+  origins:process.argv.flatMap((a,i)=>a==='--allow-origin'?[process.argv[i+1]]:[]),...(process.argv.includes('--offers')?{burnFrom:101,offersFrom:102,fees:{offer:2500000000}}:{}),log:v=>console.log(JSON.stringify(v))});
  console.log(`Mordinals demo (made-up chain) on http://127.0.0.1:${d.port}  pages: http://127.0.0.1:${d.port}/view/  block ${d.reader.height}`);
  for(const s of ['SIGINT','SIGTERM'])process.on(s,()=>d.close().then(()=>process.exit(0)));
 }

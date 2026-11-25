@@ -3,7 +3,8 @@
 // Input that is not a record: the owner list at the start block (ownership-index/result/owners.jsonl format) and, for a buy
 // record, the payment transactions it names as a Monero node returns them ({txid, height, tx}).
 import {decodeAddress,usableSpendKey,verifySpendSignature,parseSignature,concat} from './monero.mjs';
-import {OP,PROOF,RULES,SUFFIX,MAX_RECORD,NO_COLLECTION,heldUntil,encodeBody,decodeRecord,recordId,codeOf,amounts,renderText,nftLabel,signerOf,attachSignature,matchSignature,canonical,formatXmr} from './records.mjs';
+import {inSet} from './offers.mjs';
+import {OP,PROOF,RULES,SCOPE,SUFFIX,MAX_RECORD,NO_COLLECTION,heldUntil,encodeBody,decodeRecord,recordId,codeOf,amounts,renderText,nftLabel,signerOf,attachSignature,matchSignature,canonical,formatXmr} from './records.mjs';
 import {sha256} from '@noble/hashes/sha256';
 import {hex,unhex} from './monero.mjs';
 import {claimKeyHash,verifyOutputKeySignature,parseInProof,verifyInProof,ownsOutput} from './claim.mjs';
@@ -25,7 +26,8 @@ import {SPEND_BASE,spendDue,verifyKeyImageProof,mayHaveMoved,keyImagesOf} from '
 // reach the network fee of the transaction that carried the record plus SPEND_BASE (spendDue).
 // recordsFrom: the first block from which claim records of proof 0 and 1 count again (section 12; a setting of the ledger,
 // at or after the block where they stopped). Burn claims and claims by a spent coin go on as before.
-export function createLedger({network='mainnet',domain,feeAddress,owners,height=0,mintFrom=null,minters=null,openFrom=null,burnFrom=null,burnDead=null,burnFee=null,spendFrom=null,recordsFrom=null,testChain=false}){
+// offersFrom: the first block at which offer, accept and withdraw records count (section 13; a setting of the ledger).
+export function createLedger({network='mainnet',domain,feeAddress,owners,height=0,mintFrom=null,minters=null,openFrom=null,burnFrom=null,burnDead=null,burnFee=null,spendFrom=null,recordsFrom=null,offersFrom=null,testChain=false}){
  if(!/^[0-9a-f]{64}$/.test(domain||''))throw Error('Ledger domain required');
  if(mintFrom!==null&&!(Number.isInteger(mintFrom)&&mintFrom>=1))throw Error('Bad first mint block');
  // Who may make collections and mint: anyone (null), or the addresses the ledger's setup lists. Like the first mint
@@ -39,11 +41,12 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
  if(burnFrom===null&&burnFee!==null)throw Error('A fee wallet is named only with a first burn block');
  if(spendFrom!==null&&!(Number.isInteger(spendFrom)&&burnFrom!==null&&spendFrom>=burnFrom))throw Error('Bad first block of claims by a spent coin: it needs a first burn block at or before it');
  if(recordsFrom!==null&&!(Number.isInteger(recordsFrom)&&burnFrom!==null&&recordsFrom>=burnFrom+RECORDS_OVERLAP))throw Error('Bad first block of claim records counting again: it needs a first burn block and comes at or after the block where claim records stopped');
+ if(offersFrom!==null&&!(Number.isInteger(offersFrom)&&offersFrom>=1))throw Error('Bad first block of offers');
  const dead=burnFrom===null?null:deadOutputs(burnDead,network,{testChain}),byOutput=new Map(),recordsEnd=burnFrom===null?null:burnFrom+RECORDS_OVERLAP;
  const feeW=dead?feeWallet(burnFee,network,{testChain}):null;
  // The fee address is checked like every address in a record: both keys must be keys a wallet can use.
  {const a=decodeAddress(feeAddress,network);if(!usableSpendKey(a.spend)||!usableSpendKey(a.view))throw Error('The fee address has a key no wallet can use.');}
- const fee=canonical(feeAddress,network),mordinals=new Map(),byNumber=new Map(),lots=new Map(),open=new Set(),applied=new Set(),payments=new Set(),paidOutputs=new Set(),collections=new Map();let tip=height;
+ const fee=canonical(feeAddress,network),mordinals=new Map(),byNumber=new Map(),lots=new Map(),open=new Set(),applied=new Set(),payments=new Set(),paidOutputs=new Set(),collections=new Map(),offers=new Map();let tip=height;
  for(const o of owners){
   if(o.ownerTxPubKeys?.length!==1||o.ownerAdditionalPubKeys?.length)throw Error(`Owner list entry ${o.number} must have exactly one transaction public key`);
   const m={number:o.number,reg:o.registrationTx,ownerTx:o.ownerTx,outputKey:o.ownerOutputKey,txPub:o.ownerTxPubKeys[0],claimed:false,owner:null,seq:0,lot:null,history:[]};
@@ -75,17 +78,33 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
  // recorded, must never fit somebody else's reservation.
  const awaited=()=>{const out=new Set();for(const id of open){const l=lots.get(id);if(l.until<tip)continue;for(const r of l.reservations)for(const [,address,amount] of linesOf(l,r))out.add(address+':'+amount);}return out;};
  const collectionOf=id=>{const c=collections.get(id);if(!c)throw Error('This collection does not exist.');return c;};
+ // Offers (section 13). An offer: {id, bidder, price, until, count, left (pieces not bought yet), running (accepts that
+ // wait for their payment), kind, ref, rate, market, height, status: 'open' | 'withdrawn' | 'closed' (an accept ran out
+ // unpaid) | 'done' (every piece bought)}. An accept is a listing with one reservation, made in one record: `offer`
+ // names its offer, and its last block is the last block its reservation is held.
+ const offerOf=id=>{const o=offers.get(id);if(!o)throw Error('This offer does not exist.');return o;};
+ const offerOpen=o=>o.status==='open'&&o.until>=tip;
+ // What an offer is for, in the words of its signed text.
+ const scopeText=b=>b.kind===SCOPE.nft?(m=>labelOf(m)??`Mordinal #${m.number}`)(find(b.ref)):b.kind===SCOPE.collection?`"${collectionOf(b.ref).name}" (collection ${codeOf(b.ref)})`:`the set of Mordinals ${b.ref}`;
+ // An accept whose payment did not come by the end of its hold frees its piece by itself, and its offer closes for good.
+ // Done whenever the height moves, before anything is judged at the new height, so the state at a height is the same
+ // however the blocks up to it were handed in.
+ const lapse=()=>{for(const id of [...open]){const l=lots.get(id);if(!l.offer||l.until>=tip)continue;
+  const m=mordinals.get(l.reg),o=offers.get(l.offer);l.status='lapsed';l.lapsed={height:l.until+1};open.delete(id);m.lot=null;m.seq++;o.running--;if(o.status==='open')o.status='closed';}};
  // How a minted NFT is named in a signed text. A Mordinal keeps "Mordinal #n".
  const labelOf=m=>m.minted?nftLabel(m.reg,m.minted,m.minted.collection===NO_COLLECTION?null:collections.get(m.minted.collection).name):undefined;
  const ctxFor=(d)=>{
   if(d.op===OP.collection)return {domain};
   if(d.op===OP.mint)return {domain,collectionName:d.body.collection===NO_COLLECTION?null:collectionOf(d.body.collection).name};
+  if(d.op===OP.offer)return {domain,scope:scopeText(d.body)};
+  if(d.op===OP.withdraw)return {domain};
+  if(d.op===OP.accept){const m=find(d.body.reg);return {domain,number:m.number,what:labelOf(m),offer:offerOf(d.body.offer)};}
   const lot=d.op===OP.cancel||d.op===OP.reserve?lotOf(d.body.lot):null,m=lot?mordinals.get(lot.reg):find(d.op===OP.burn?d.body.nft:d.body.reg);return {domain,number:m.number,what:labelOf(m),lot,feeAddress:fee};};
  const textOf=bodyBytes=>{const d=decodeRecord(bodyBytes,network,{sig:false});return renderText(d.op,d.body,d.bodyBytes,ctxFor(d));};
  const prepared=(op,body)=>{const bodyBytes=encodeBody(op,body,network),id=recordId(domain,bodyBytes);return {bodyBytes,id,code:codeOf(id),text:textOf(bodyBytes)};};
  const owned=(x,by)=>{const m=find(x);if(!m.claimed)throw Error('This Mordinal has not been claimed yet.');if(m.owner!==canonical(by,network))throw Error('This Mordinal belongs to another address.');return m;};
  const api={
-  get height(){return tip;},setHeight(h){if(h<tip)throw Error('Height cannot go back');tip=h;return h;},feeAddress:fee,
+  get height(){return tip;},setHeight(h){if(h<tip)throw Error('Height cannot go back');if(h===tip)return h;tip=h;lapse();return h;},feeAddress:fee,
   mordinal:x=>{const m=find(x);return {...m,history:m.history.slice()};},lot:id=>lots.get(id)||null,
   owned:address=>{const a=canonical(address,network);return [...mordinals.values()].filter(m=>m.owner===a&&m.number!=null).map(m=>m.number);},
   // Minted NFTs: one by id, those of an address, and collections.
@@ -118,6 +137,15 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
   prepareCancel({lot,seller}){return prepared(OP.cancel,{lot,seller});},
   prepareReserve({lot,buyer,window=RULES.maxReserve,market,rate=0}){const l=lotOf(lot),p=prepared(OP.reserve,{lot,payBy:Math.min(tip+window,l.until),buyer,rate,market});
    const a=amounts({price:l.price,rate,code:p.code});return {...p,pay:[{to:l.seller,amount:a.seller,what:'seller'},{to:fee,amount:a.protocol,what:'protocol fee'},...(rate?[{to:canonical(market,network),amount:a.market,what:'marketplace fee'}]:[])]};},
+  // Offers: an offer for one NFT, a collection made here or a set of Mordinals; its accept by an owner; its withdrawal.
+  prepareOffer({bidder,price,count=1,until=tip+RULES.maxOffer,kind,ref,market,rate=0}){return prepared(OP.offer,{bidder,price,until,count,kind,ref,rate,market});},
+  // -> also `pay`: what the bidder pays once this accept is in a block, and `payBy` counted from the block it lands in.
+  prepareAccept({offer,mordinal,seller,path=[]}){const o=offerOf(offer),m=owned(mordinal,seller),p=prepared(OP.accept,{offer,reg:m.reg,seq:m.seq,seller,path});
+   const a=amounts({price:o.price,rate:o.rate,code:p.code});return {...p,pay:[{to:canonical(seller,network),amount:a.seller,what:'seller'},{to:fee,amount:a.protocol,what:'protocol fee'},...(o.rate?[{to:o.market,amount:a.market,what:'marketplace fee'}]:[])]};},
+  prepareWithdraw({offer,bidder}){return prepared(OP.withdraw,{offer,bidder});},
+  offer:id=>{const o=offers.get(id);return o?{...o,open:offerOpen(o)}:null;},offerList:()=>[...offers.values()].map(o=>({...o,open:offerOpen(o)})),
+  // Offers (section 13): the first block. null on a ledger without them.
+  offers:offersFrom===null?null:{from:offersFrom},
   sign:(bodyBytes,signature)=>attachSignature(bodyBytes,signature,ctxFor(decodeRecord(bodyBytes,network,{sig:false})),network),
   // payments: one entry per payee in the reservation's order (provePayments in payment.mjs makes them).
   buyRecord:({lot,payments:p})=>encodeBody(OP.buy,{lot,payments:p},network),
@@ -184,12 +212,21 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
    if(op===OP.cancel){const l=v.lot,m=mordinals.get(l.reg);l.status='cancelled';l.cancelled={height:tip,record:id};open.delete(l.id);m.lot=null;m.seq++;return {id,lot:l.id};}
    if(op===OP.reserve){const a=amounts({price:v.lot.price,rate:b.rate,code:codeOf(id)});
     v.lot.reservations.push({record:id,buyer:b.buyer,height:tip,payBy:b.payBy,rate:b.rate,market:b.market||null,seller:a.seller.toString(),protocol:a.protocol.toString(),marketPay:a.market.toString()});return {id,lot:v.lot.id,payBy:b.payBy};}
+   if(op===OP.offer){offers.set(id,{id,bidder:b.bidder,price:b.price,until:b.until,count:b.count,left:b.count,running:0,kind:b.kind,ref:b.ref,rate:b.rate,market:b.market||null,height:tip,status:'open'});return {id,offer:id};}
+   if(op===OP.withdraw){v.offer.status='withdrawn';v.offer.withdrawn={height:tip,record:id};return {id,offer:v.offer.id};}
+   if(op===OP.accept){const o=v.offer,m=v.mordinal,a=amounts({price:o.price,rate:o.rate,code:codeOf(id)}),payBy=tip+RULES.maxReserve;
+    const lot={id,reg:m.reg,number:m.number,seller:b.seller,price:o.price,until:payBy+RULES.settle,height:tip,status:'open',offer:o.id,
+     reservations:[{record:id,buyer:o.bidder,height:tip,payBy,rate:o.rate,market:o.market,seller:a.seller.toString(),protocol:a.protocol.toString(),marketPay:a.market.toString()}]};
+    lots.set(id,lot);open.add(id);m.lot=id;o.running++;return {id,lot:id,offer:o.id,number:m.number,payBy};}
    const l=v.lot,r=latest(l),m=mordinals.get(l.reg);for(const p of b.payments)payments.add(p.txid);for(const k of v.outputs)paidOutputs.add(k);
+   if(l.offer){const o=offers.get(l.offer);o.running--;o.left--;if(!o.left&&o.status==='open')o.status='done';}
    l.status='sold';open.delete(l.id);l.sale={buyer:r.buyer,height:tip,record:id,payments:[...new Set(b.payments.map(p=>p.txid))],paid:v.paid};m.lot=null;
    moved(m,r.buyer,'sale',{price:l.price.toString(),fee:(l.price*BigInt(RULES.feeBps)/10000n).toString(),lot:l.id});return {id,lot:l.id,number:m.number,owner:r.buyer,paid:v.paid};},
   toJSON:()=>({height:tip,claimed:[...mordinals.values()].filter(m=>m.claimed&&!m.minted).map(m=>({number:m.number,owner:m.owner,seq:m.seq,lot:m.lot,history:m.history.map(h=>h.what)})),
    lots:[...lots.values()].map(l=>({id:l.id,number:l.number,seller:l.seller,price:l.price.toString(),status:l.status,buyer:l.sale?.buyer||null,reservations:l.reservations.length})),payments:[...payments].sort(),
    // Present only once something was minted, so a ledger of Mordinals alone has the summary it always had.
+   // Present only once an offer was made.
+   ...(offers.size?{offers:[...offers.values()].map(o=>({id:o.id,bidder:o.bidder,price:o.price.toString(),until:o.until,count:o.count,left:o.left,running:o.running,kind:o.kind,ref:o.ref,status:o.status}))}:{}),
    ...(collections.size?{collections:[...collections.values()].map(c=>({id:c.id,creator:c.creator,name:c.name,max:c.max,editions:[...c.editions].sort((a,b)=>a-b)}))}:{}),
    ...([...mordinals.values()].some(m=>m.minted)?{minted:[...mordinals.values()].filter(m=>m.minted).map(m=>({id:m.reg,collection:m.minted.collection,edition:m.minted.edition,sha256:m.minted.sha256,owner:m.owner,seq:m.seq,burned:Boolean(m.burned)}))}:{}),
    // On a ledger that claims by burning, once there is something to say: the burns that wait for their fee, and the fee
@@ -205,6 +242,40 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
   if((op===OP.collection||op===OP.mint||op===OP.burn)&&(mintFrom===null||tip<mintFrom))throw Error(mintFrom===null?'Minting and burning are not part of this ledger.':`Minting and burning start at block ${mintFrom}.`);
   // (The refusal reads the same with and without an opening block: a journal keeps the text a record was refused with.)
   if((op===OP.collection||op===OP.mint)&&mayMint&&!mayMint.has(b.creator)&&!(openFrom!==null&&tip>=openFrom))throw Error('On this ledger only the listed addresses make collections and mint.');
+  if(op===OP.offer||op===OP.accept||op===OP.withdraw){
+   if(offersFrom===null||tip<offersFrom)throw Error(offersFrom===null?'Offers are not part of this ledger.':`Offers start at block ${offersFrom}.`);
+   if(op===OP.offer){
+    if(b.price<RULES.minPrice)throw Error(`The lowest price is ${formatXmr(RULES.minPrice)} XMR.`);
+    if(b.until<tip)throw Error('This offer ended before it was posted; prepare and sign it again.');
+    if(b.until>tip+RULES.maxOffer)throw Error(`An offer ends at most ${RULES.maxOffer} blocks (about 7 days) after its block.`);
+    if(b.bidder===fee)throw Error('The fee address cannot make an offer.');
+    if(b.kind===SCOPE.nft){const m=find(b.ref);if(m.burned)throw Error('This NFT was burned.');if(b.count!==1)throw Error('An offer for one NFT is for one piece.');}
+    else if(b.kind===SCOPE.collection)collectionOf(b.ref);
+    if(b.rate>RULES.marketFeeCapBps)throw Error(`A marketplace fee is at most ${RULES.marketFeeCapBps/100}%.`);
+    if(b.rate){if(b.market===fee)throw Error('The marketplace fee address must differ from the protocol fee address.');
+     if(!(b.price*BigInt(b.rate)/10000n>0n))throw Error('The marketplace fee would be zero.');}
+    signedBy(b.bidder);return out;}
+   const o=offerOf(b.offer);
+   if(op===OP.withdraw){if(b.bidder!==o.bidder)throw Error('Only the bidder can withdraw this offer.');
+    if(o.status!=='open')throw Error(o.status==='withdrawn'?'This offer was withdrawn already.':o.status==='done'?'This offer is complete.':'This offer is closed.');signedBy(b.bidder);return {...out,offer:o};}
+   // Accept.
+   if(o.status!=='open')throw Error(o.status==='withdrawn'?'This offer was withdrawn.':o.status==='done'?'This offer is complete.':'This offer is closed: an earlier accept of it was not paid.');
+   if(o.until<tip)throw Error('This offer has ended.');
+   if(tip+RULES.maxReserve+RULES.settle>o.until)throw Error('This offer ends too soon for a sale to be paid and recorded.');
+   if(o.left-o.running<1)throw Error('Every piece this offer asks for is accepted already.');
+   const m=find(b.reg);
+   if(m.burned)throw Error('This NFT was burned.');if(!m.claimed)throw Error('This Mordinal has not been claimed yet.');if(m.owner!==b.seller)throw Error('This Mordinal belongs to another address.');
+   if(b.seq!==m.seq)throw Error('This record was signed for an earlier state of the Mordinal; prepare and sign it again.');
+   if(m.lot)throw Error('This Mordinal is listed for sale; cancel the listing first.');
+   if(b.seller===o.bidder)throw Error('The bidder cannot accept their own offer.');if(b.seller===fee)throw Error('The fee address cannot sell.');
+   if(o.rate&&o.market===b.seller)throw Error('The marketplace fee address must differ from the seller.');
+   if(o.kind===SCOPE.nft?o.ref!==m.reg||b.path.length:o.kind===SCOPE.collection?!(m.minted&&m.minted.collection===o.ref)||b.path.length:m.minted||!inSet(m.reg,b.path,o.ref))
+    throw Error('This offer is not for this NFT.');
+   signedBy(b.seller);
+   const a=amounts({price:o.price,rate:o.rate,code:codeOf(id)}),taken=awaited();
+   if([[b.seller,a.seller],[fee,a.protocol],...(o.rate?[[o.market,a.market]]:[])].some(([address,amount])=>taken.has(address+':'+amount)))
+    throw Error('Another sale is waiting for exactly these amounts right now. Accept again in a few minutes.');
+   return {...out,offer:o,mordinal:m};}
   if(op===OP.collection){signedBy(b.creator);return out;}
   if(op===OP.mint){
    // Standard mints only: the whole record has to fit a relayed transaction.
@@ -239,7 +310,8 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
    if(b.price<RULES.minPrice)throw Error(`The lowest price is ${formatXmr(RULES.minPrice)} XMR.`);
    if(b.seller===fee)throw Error('The fee address cannot sell.');return {...out,mordinal:m};}
   const lot=lotOf(b.lot);
-  if(lot.status!=='open')throw Error(lot.status==='sold'?'This Mordinal is already sold.':'This listing was cancelled.');
+  if(lot.status!=='open')throw Error(lot.status==='sold'?'This Mordinal is already sold.':lot.status==='lapsed'?'This accepted offer was not paid in time.':'This listing was cancelled.');
+  if(lot.offer&&op!==OP.buy)throw Error('This sale came from an accepted offer: it is paid by the bidder or ends by itself.');
   if(op===OP.cancel){if(b.seller!==lot.seller)throw Error('Only the seller can cancel this listing.');signedBy(b.seller);
    const r=running(lot);if(r)throw Error(`This listing is reserved until block ${heldUntil(r)}; it can be cancelled after that.`);return {...out,lot};}
   if(op===OP.reserve){signedBy(b.buyer);
@@ -269,6 +341,8 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
    if(!f||!f.tx)throw Error('A payment in this record was not looked up.');if(payments.has(p.txid))throw Error('This payment was already used for a sale.');
    if(f.height==null)throw Error('A payment is not in a block yet; wait for 1 confirmation.');if(f.height>tip)throw Error('A payment is in a block after this record.');
    if(f.height<r.height)throw Error('A payment was made before the reservation.');
+   // A sale from an accepted offer: the payment is in a block by the pay-by block, and the ten blocks after it are for this record alone.
+   if(lot.offer&&f.height>r.payBy)throw Error(`A payment was made after the pay-by block of this accepted offer (block ${r.payBy}), so it does not count.`);
    if(f.height>lot.until)throw Error(`A payment was made after the listing ended (block ${lot.until}), so it does not count.`);
    const c=checkPaymentProof({tx:f.tx,txid:p.txid,out:p.out,D:p.D,c:p.c,s:p.s,address,message,network,what});
    if(c.amount!==BigInt(amount))throw Error(`The ${what} payment is ${formatXmr(c.amount)} XMR; this reservation needs exactly ${formatXmr(amount)} XMR.`);

@@ -34,7 +34,7 @@ import {ownersHash,ownerOutputsHash} from './owners.mjs';
 // instead of judging the blocks after it by the list alone.
 // A folder of a ledger that claims by burning adds "-burn-fee" to its name, for the same reason (code from before the
 // fee of burn claims, which named such a folder "-burn", refuses it too).
-export const SCHEMA='mordinals-reader-v3',SCHEMA_MINTERS='mordinals-reader-v3-minters',SCHEMA_OPEN='mordinals-reader-v3-open',SCHEMA_BURN='-burn-fee',SCHEMA_SPEND='-spend',SCHEMA_RECORDS='-records';
+export const SCHEMA='mordinals-reader-v3',SCHEMA_MINTERS='mordinals-reader-v3-minters',SCHEMA_OPEN='mordinals-reader-v3-open',SCHEMA_BURN='-burn-fee',SCHEMA_SPEND='-spend',SCHEMA_RECORDS='-records',SCHEMA_OFFERS='-offers';
 // A folder takes a first burn block in, or another one, only when that block is at least this far above the newest
 // block it has read and above the newest block of the Monero node: a block that close may be read, or replaced, before
 // every reader of the ledger has the setting, and a folder that lags behind the chain must not take a block that is
@@ -61,7 +61,7 @@ const lines=file=>{if(!existsSync(file))return {rows:[],torn:false};const out=[]
 const replace=(file,rows)=>{const tmp=file+'.tmp',fd=openSync(tmp,'w',0o644);try{writeSync(fd,rows.map(r=>JSON.stringify(r)+'\n').join(''));fsyncSync(fd);}finally{closeSync(fd);}renameSync(tmp,file);};
 const append=(file,rows)=>{if(!rows.length)return;const fd=openSync(file,'a',0o644);try{writeSync(fd,rows.map(r=>JSON.stringify(r)+'\n').join(''));fsyncSync(fd);}finally{closeSync(fd);}};
 
-export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners,start,startHash=null,mintFrom=null,minters=null,openFrom=null,burnFrom=null,burnDead=null,burnFee=null,spendFrom=null,recordsFrom=null,checkpointEvery=720,maxReorg=10000,log=()=>{}}){
+export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners,start,startHash=null,mintFrom=null,minters=null,openFrom=null,burnFrom=null,burnDead=null,burnFee=null,spendFrom=null,recordsFrom=null,offersFrom=null,checkpointEvery=720,maxReorg=10000,log=()=>{}}){
  if(!Number.isInteger(start)||start<1)throw Error('Start block required');
  mkdirSync(dir,{recursive:true});
  const files={meta:join(dir,'meta.json'),blocks:join(dir,'blocks.jsonl'),records:join(dir,'records.jsonl'),checkpoints:join(dir,'checkpoints.jsonl')};
@@ -82,12 +82,14 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
  if(spendFrom!==null&&!(Number.isInteger(spendFrom)&&burnFrom!==null&&spendFrom>=burnFrom))throw Error('Bad first block of claims by a spent coin: it needs a first burn block at or before it');
  // Claim records counting again (section 12): its first block is part of what the folder is for too.
  if(recordsFrom!==null&&!(Number.isInteger(recordsFrom)&&burnFrom!==null&&recordsFrom>=burnFrom+RECORDS_OVERLAP))throw Error('Bad first block of claim records counting again: it needs a first burn block and comes at or after the block where claim records stopped');
+ // Offers (section 13): their first block is part of what the folder is for. A folder takes it in like the two settings above, so it is kept with them.
+ if(offersFrom!==null&&!(Number.isInteger(offersFrom)&&burnFrom!==null&&offersFrom>start))throw Error('Bad first block of offers: it needs a first burn block and comes after the start block');
  const deadList=burnFrom===null?null:deadOutputs(burnDead,network,{testChain:burnDead!==null}),feeW=burnFrom===null?null:feeWallet(burnFee,network,{testChain:burnFee!==null});
  const testChain=burnFrom!==null&&network==='mainnet'&&(!isMainnetDead(deadList)||!isProjectFeeWallet(feeW));
  if(burnFrom!==null)for(const o of owners)if(!Number.isSafeInteger(o.ownerOutputIndex)||o.ownerOutputIndex<0)throw Error(`Owner list entry ${o.number} does not state the global index of its owner output, which a ledger that claims by burning needs`);
  // A folder that claims by a spent coin has a schema of its own too, so reader code from before section 11 refuses it.
- const burning=burnFrom===null?null:{burnFrom,burnDead:deadList.join(','),ownerOutputs:ownerOutputsHash(owners),burnFee:feeW.address},tail=burning?SCHEMA_BURN+(spendFrom!==null?SCHEMA_SPEND:'')+(recordsFrom!==null?SCHEMA_RECORDS:''):'';
- const want={schema:(openFrom!==null?SCHEMA_OPEN:minterList?SCHEMA_MINTERS:SCHEMA)+tail,network,domain,feeAddress:canonical(feeAddress,network),start,owners:ownersHash(owners),...(mintFrom!==null?{mintFrom}:{}),...(minterList?{minters:minterList.join(',')}:{}),...(openFrom!==null?{openFrom}:{}),...(burning||{}),...(spendFrom!==null?{spendFrom}:{}),...(recordsFrom!==null?{recordsFrom}:{})};
+ const burning=burnFrom===null?null:{burnFrom,burnDead:deadList.join(','),ownerOutputs:ownerOutputsHash(owners),burnFee:feeW.address},tail=burning?SCHEMA_BURN+(spendFrom!==null?SCHEMA_SPEND:'')+(recordsFrom!==null?SCHEMA_RECORDS:'')+(offersFrom!==null?SCHEMA_OFFERS:''):'';
+ const want={schema:(openFrom!==null?SCHEMA_OPEN:minterList?SCHEMA_MINTERS:SCHEMA)+tail,network,domain,feeAddress:canonical(feeAddress,network),start,owners:ownersHash(owners),...(mintFrom!==null?{mintFrom}:{}),...(minterList?{minters:minterList.join(',')}:{}),...(openFrom!==null?{openFrom}:{}),...(burning||{}),...(spendFrom!==null?{spendFrom}:{}),...(recordsFrom!==null?{recordsFrom}:{}),...(offersFrom!==null?{offersFrom}:{})};
  let meta=existsSync(files.meta)?JSON.parse(readFileSync(files.meta,'utf8')):null,opened=null,lit=null;
  // The folder's setting as it stands written, shown (`meta` below) until a burn setting taken in is confirmed.
  const written=meta;
@@ -99,8 +101,8 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
  // The burn setting of a folder can be taken in, changed or taken out while the folder has read neither the block it
  // had nor the block it gets: up to there nothing was judged by it. A new first burn block has to lie BURN_MARGIN
  // blocks above what was read.
- if(meta&&BURN_KEYS.some(k=>(meta[k]??null)!==(want[k]??null))&&meta.schema.replace(SCHEMA_BURN,'').replace(SCHEMA_SPEND,'').replace(SCHEMA_RECORDS,'')===want.schema.replace(SCHEMA_BURN,'').replace(SCHEMA_SPEND,'').replace(SCHEMA_RECORDS,'')
-  &&[...new Set([...Object.keys(want),...Object.keys(meta)])].every(k=>k==='schema'||k==='startHash'||k==='spendFrom'||k==='recordsFrom'||BURN_KEYS.includes(k)||(meta[k]??null)===(want[k]??null))){
+ if(meta&&BURN_KEYS.some(k=>(meta[k]??null)!==(want[k]??null))&&meta.schema.replace(SCHEMA_BURN,'').replace(SCHEMA_SPEND,'').replace(SCHEMA_RECORDS,'').replace(SCHEMA_OFFERS,'')===want.schema.replace(SCHEMA_BURN,'').replace(SCHEMA_SPEND,'').replace(SCHEMA_RECORDS,'').replace(SCHEMA_OFFERS,'')
+  &&[...new Set([...Object.keys(want),...Object.keys(meta)])].every(k=>k==='schema'||k==='startHash'||k==='spendFrom'||k==='recordsFrom'||k==='offersFrom'||BURN_KEYS.includes(k)||(meta[k]??null)===(want[k]??null))){
   const read=lines(files.blocks).rows.at(-1)?.height??start,had=meta.burnFrom??null;
   if((had===null||read<had)&&(burnFrom===null||read<burnFrom)){
    if(burnFrom!==null&&burnFrom<read+BURN_MARGIN)throw Error(`The first burn block has to be at least ${BURN_MARGIN} blocks above the newest block this folder has read (${read}).`);
@@ -118,12 +120,18 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
  if(meta&&recordsFrom!==null&&meta.recordsFrom==null&&[...new Set([...Object.keys(want),...Object.keys(meta)])].every(k=>k==='recordsFrom'||k==='startHash'||(k==='schema'&&meta.schema+SCHEMA_RECORDS===want.schema)||(meta[k]??null)===(want[k]??null))){
   const read=lines(files.blocks).rows.at(-1)?.height??start;
   if(read<recordsFrom){if(recordsFrom<read+BURN_MARGIN)throw Error(`The first block of claim records counting again has to be at least ${BURN_MARGIN} blocks above the newest block this folder has read (${read}).`);
-   meta={...meta,schema:want.schema,recordsFrom};recording=read;}}
- if(meta){for(const k of [...Object.keys(want),'mintFrom','minters','openFrom','burnFrom','burnDead','ownerOutputs','burnFee','spendFrom','recordsFrom'])if((meta[k]??null)!==(want[k]??null))throw Error(`This state folder was made for another ledger (${k} differs).`);
+   meta={...meta,schema:meta.schema+SCHEMA_RECORDS,recordsFrom};recording=read;}}
+ // The same for the first block of offers (section 13).
+ let offering=null;
+ if(meta&&offersFrom!==null&&meta.offersFrom==null&&[...new Set([...Object.keys(want),...Object.keys(meta)])].every(k=>k==='offersFrom'||k==='startHash'||(k==='schema'&&meta.schema+SCHEMA_OFFERS===want.schema)||(meta[k]??null)===(want[k]??null))){
+  const read=lines(files.blocks).rows.at(-1)?.height??start;
+  if(read<offersFrom){if(offersFrom<read+BURN_MARGIN)throw Error(`The first block of offers has to be at least ${BURN_MARGIN} blocks above the newest block this folder has read (${read}).`);
+   meta={...meta,schema:want.schema,offersFrom};offering=read;}}
+ if(meta){for(const k of [...Object.keys(want),'mintFrom','minters','openFrom','burnFrom','burnDead','ownerOutputs','burnFee','spendFrom','recordsFrom','offersFrom'])if((meta[k]??null)!==(want[k]??null))throw Error(`This state folder was made for another ledger (${k} differs).`);
   if(startHash&&meta.startHash&&meta.startHash!==startHash)throw Error('This state folder was made for another start block hash.');}
  else{meta={...want,startHash:startHash||null};writeMeta(meta);}
 
- let ledger,blocks,journal,checkpoints,events,lots,bodies,byId,byTx,feeNotes,spendRecords;
+ let ledger,blocks,journal,checkpoints,events,offerIds,lots,bodies,byId,byTx,feeNotes,spendRecords;
  function tipBlock(){return blocks.at(-1)||{height:start,hash:meta.startHash};}
  const timeOf=height=>blocks[height-start-1]?.time??null;
  // What an accepted record did, in public words. This is what the explorer and the history views show.
@@ -135,6 +143,9 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
   if(d.op===OP.burn)return {...base,kind:'burn',number:out.number,nft:out.nft,owner:b.owner};
   if(d.op===OP.claim)return {...base,kind:'claim',number:out.number,to:b.to,proof:b.proof===PROOF.payment?'payment proof and message':b.proof===PROOF.spend?'spent coin':'one-time key',...(b.proof===PROOF.spend?{spendTx:b.spendTx}:{})};
   if(d.op===OP.move)return {...base,kind:'move',number:out.number,...(out.number==null?{nft:b.reg}:{}),from:b.from,to:b.to};
+  if(d.op===OP.offer)return {...base,kind:'offer',number:null,offer:e.id,bidder:b.bidder,price:b.price.toString(),count:b.count,until:b.until,scope:b.kind,ref:b.ref};
+  if(d.op===OP.withdraw)return {...base,kind:'withdraw',number:null,offer:b.offer,bidder:b.bidder};
+  if(d.op===OP.accept){const o=ledger.offer(b.offer);return {...base,kind:'accept',number:out.number,...(out.number==null?{nft:b.reg}:{}),lot:e.id,offer:b.offer,seller:b.seller,buyer:o.bidder,price:o.price.toString(),payBy:out.payBy};}
   if(d.op===OP.list)return {...base,kind:'list',number:out.number,...(out.number==null?{nft:b.reg}:{}),lot:e.id,seller:b.seller,price:b.price.toString(),until:b.until};
   const l=ledger.lot(b.lot);
   const which=l.number==null?{nft:l.reg}:{};
@@ -155,11 +166,11 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
  const noteFees=e=>{const r=ledger.applyBurnFees(e.txid,e.fee,e.feeFound??null);feeNotes.set(e.txid,r.paid);for(const c of r.claims)noteBurn(e,c);};
  // A claim by a spent coin that waits for its fee is no event yet: noteBurn writes it once the fee completes it.
  function note(e,d,out){if(d.op===OP.claim&&d.body.proof===PROOF.spend){spendRecords.set(e.id,{txid:e.txid,height:e.height});if(out.owner==null)return;}
-  events.push(describe(e,d,out));if(d.op===OP.list){lots.push(e.id);bodies.set(e.id,hex(d.bodyBytes));}}
+  events.push(describe(e,d,out));if(d.op===OP.list||d.op===OP.accept){lots.push(e.id);bodies.set(e.id,hex(d.bodyBytes));}if(d.op===OP.offer){offerIds.push(e.id);bodies.set(e.id,hex(d.bodyBytes));}}
  const index=e=>{if(e.id&&e.ok)byId.set(e.id,e);if(!byTx.has(e.txid))byTx.set(e.txid,e);};
  // The ledger from the owner list and the journal alone. No node is asked.
  function rebuild(){
-  ledger=createLedger({network,domain,feeAddress,owners,height:start,mintFrom,minters:minterList,openFrom,burnFrom,burnDead,burnFee,spendFrom,recordsFrom,testChain});events=[];lots=[];bodies=new Map();byId=new Map();byTx=new Map();feeNotes=new Map();spendRecords=new Map();
+  ledger=createLedger({network,domain,feeAddress,owners,height:start,mintFrom,minters:minterList,openFrom,burnFrom,burnDead,burnFee,spendFrom,recordsFrom,offersFrom,testChain});events=[];offerIds=[];lots=[];bodies=new Map();byId=new Map();byTx=new Map();feeNotes=new Map();spendRecords=new Map();
   for(const e of journal){ledger.setHeight(e.height);index(e);
    if(e.ok&&e.burn){const out=ledger.applyBurnClaim(e.txid,e.burn);if(out.id!==e.id)throw Error('The journal does not match the rules at block '+e.height);if(out.owner)noteBurn(e,out);}
    else if(e.ok&&e.record!==undefined){const bytes=unhex(e.record),d=decodeRecord(bytes,network),out=ledger.apply(bytes,e.facts);
@@ -181,9 +192,9 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
  // The opening is written into the folder only now, when the folder has passed every check and was read whole.
  // A burn setting taken out is written now; one taken in, or changed, once the node's newest block is known (pass()),
  // and with it an opening taken in at the same start. So is a first block of claims by a spent coin taken in.
- let pendingBurn=lit!==null&&burnFrom!==null,pendingSpend=spending!==null,pendingRecords=recording!==null;
- if(opened!==null&&!pendingBurn&&!pendingSpend&&!pendingRecords){writeMeta(meta);log?.({opened:openFrom,at:opened});}
- if(lit!==null&&!pendingBurn&&!pendingSpend&&!pendingRecords){writeMeta(meta);log?.({burnFrom,at:lit});}
+ let pendingBurn=lit!==null&&burnFrom!==null,pendingSpend=spending!==null,pendingRecords=recording!==null,pendingOffers=offering!==null;
+ if(opened!==null&&!pendingBurn&&!pendingSpend&&!pendingRecords&&!pendingOffers){writeMeta(meta);log?.({opened:openFrom,at:opened});}
+ if(lit!==null&&!pendingBurn&&!pendingSpend&&!pendingRecords&&!pendingOffers){writeMeta(meta);log?.({burnFrom,at:lit});}
 
  // A summary anyone can compare: the accepted records so far and the ledger they lead to.
  function checkpoint(){
@@ -198,7 +209,7 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
    // From the first block of claims by a spent coin on it names that block too.
    ...(meta.spendFrom!=null&&t.height>=meta.spendFrom?{spendFrom:meta.spendFrom}:{}),
    // From the first block of claim records counting again on it names that block too.
-   ...(meta.recordsFrom!=null&&t.height>=meta.recordsFrom?{recordsFrom:meta.recordsFrom}:{}),height:t.height,blockHash:t.hash,records:accepted.length,
+   ...(meta.recordsFrom!=null&&t.height>=meta.recordsFrom?{recordsFrom:meta.recordsFrom}:{}),...(meta.offersFrom!=null&&t.height>=meta.offersFrom?{offersFrom:meta.offersFrom}:{}),height:t.height,blockHash:t.hash,records:accepted.length,
    listHash:sha(accepted.map(e=>`${e.height}:${e.txid}\n`).join('')),stateHash:sha(JSON.stringify(ledger.toJSON()))};}
  // Payment transactions a buy record names, as the node has them now (with `inputs`, the transaction that spent the coin
  // of a claim by a spent coin, as spendFacts() keeps it).
@@ -216,7 +227,8 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
  async function judge(block,pos,txid,record,tx=null){
   const e={height:block.height,pos,txid,record:hex(record)};let d;
   // A claim by a spent coin is a known record only from the first block of such claims on.
-  try{d=decodeRecord(record,network,{spend:spendFrom!==null&&block.height>=spendFrom});}catch(err){return {...e,ok:false,error:String(err.message)};}
+  // So are offers, from their first block on.
+  try{d=decodeRecord(record,network,{spend:spendFrom!==null&&block.height>=spendFrom,offers:offersFrom!==null&&block.height>=offersFrom});}catch(err){return {...e,ok:false,error:String(err.message)};}
   e.op=d.op;e.id=recordId(domain,d.bodyBytes);
   // A node failure here stops the pass (and is tried again); it never turns into a refusal.
   const facts=d.op===OP.buy?await lookup(d.body.payments.map(p=>p.txid),block.height):d.op===OP.claim&&d.body.proof===PROOF.spend?await lookup([d.body.spendTx],block.height,{inputs:true}):undefined;
@@ -256,11 +268,12 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
  // node's newest block: refused when that block is less than BURN_MARGIN blocks below it, written into the folder
  // otherwise. The service checks it before it serves anything.
  function confirmBurn(info){
-  if(!pendingBurn&&!pendingSpend&&!pendingRecords)return;
+  if(!pendingBurn&&!pendingSpend&&!pendingRecords&&!pendingOffers)return;
   if(pendingBurn&&burnFrom<info.height+BURN_MARGIN)throw Error(`The first burn block has to be at least ${BURN_MARGIN} blocks above the newest block of the Monero node (${info.height}); this folder keeps its setting.`);
   if(pendingSpend&&spendFrom<info.height+BURN_MARGIN)throw Error(`The first block of claims by a spent coin has to be at least ${BURN_MARGIN} blocks above the newest block of the Monero node (${info.height}); this folder keeps its setting.`);
   if(pendingRecords&&recordsFrom<info.height+BURN_MARGIN)throw Error(`The first block of claim records counting again has to be at least ${BURN_MARGIN} blocks above the newest block of the Monero node (${info.height}); this folder keeps its setting.`);
-  writeMeta(meta);if(opened!==null)log?.({opened:openFrom,at:opened});if(pendingBurn)log?.({burnFrom,at:lit});if(pendingSpend)log?.({spendFrom,at:spending});if(pendingRecords)log?.({recordsFrom,at:recording});pendingBurn=pendingSpend=pendingRecords=false;}
+  if(pendingOffers&&offersFrom<info.height+BURN_MARGIN)throw Error(`The first block of offers has to be at least ${BURN_MARGIN} blocks above the newest block of the Monero node (${info.height}); this folder keeps its setting.`);
+  writeMeta(meta);if(pendingOffers)log?.({offersFrom,at:offering});if(opened!==null)log?.({opened:openFrom,at:opened});if(pendingBurn)log?.({burnFrom,at:lit});if(pendingSpend)log?.({spendFrom,at:spending});if(pendingRecords)log?.({recordsFrom,at:recording});pendingBurn=pendingSpend=pendingRecords=pendingOffers=false;}
  let busy=null;
  async function pass({limit=Infinity}={}){
   const info=await chain.info();let reorg=0,added=0;
@@ -281,13 +294,15 @@ export function openReader({dir,chain,network='mainnet',domain,feeAddress,owners
   throw Error('The chain keeps changing; trying again later.');}
  const pool={seen:new Map()};
  return {
-  get ledger(){return ledger;},get height(){return tipBlock().height;},get hash(){return tipBlock().hash;},get meta(){return {...(pendingBurn||pendingSpend||pendingRecords?written:meta)};},
+  get ledger(){return ledger;},get height(){return tipBlock().height;},get hash(){return tipBlock().hash;},get meta(){return {...(pendingBurn||pendingSpend||pendingRecords||pendingOffers?written:meta)};},
   // A first burn block taken in or changed at this start and not yet confirmed against the node, or null.
   get burnPending(){return pendingBurn?burnFrom:null;},confirmBurn,
   // A first block of claims by a spent coin taken in at this start and not yet confirmed against the node, or null.
   get spendPending(){return pendingSpend?spendFrom:null;},
   // A first block of claim records counting again taken in at this start and not yet confirmed against the node, or null.
   get recordsPending(){return pendingRecords?recordsFrom:null;},
+  // The same for a first block of offers.
+  get offersPending(){return pendingOffers?offersFrom:null;},get offers(){return offerIds;},
   get events(){return events;},get journal(){return journal;},get lots(){return lots;},get checkpoints(){return checkpoints;},get blocks(){return blocks;},
   body:id=>bodies.get(id)||null,entryById:id=>byId.get(id)||null,entryByTx:txid=>byTx.get(txid)||null,timeOf,checkpoint,lookup,
   // What the fee payments of one journaled transaction counted for: [{index, number, amount, counted, error}], or null.

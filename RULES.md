@@ -56,6 +56,10 @@ op 8 mint     collection32 edition(u32) creator flags(u8) [to]
               name(len u8, 0–64) type(u8) content(len u16, 1 or more)
               [origin: kind(u8) ref(len u8, 1–64)]                    variant c32 r32
 op 9 burn     nft32 seq(u32) owner                                  variant c32 r32
+op 10 offer   bidder price(u64) until(u32) count(u16) kind(u8) ref32
+              rate(u16) [market when rate>0]                        variant c32 r32   (section 13)
+op 11 accept  offer32 reg32 seq(u32) seller n(u8) n × hash32        variant c32 r32
+op 12 withdraw offer32 bidder                                       variant c32 r32
 
 id   = SHA-256("MORDINALS-RECORD-v1" 0x00 ‖ domain ‖ "MD1" 0xfe ‖ op ‖ body)
 code = the first 16 bytes of id, shown as 32 hex characters
@@ -346,6 +350,9 @@ kept for that.
 | Old-style transfers after the start block | not honoured, except the burning transfer of section 10 on a ledger that has it | owner list | decided |
 | First burn block | not set | ledger setup | draft |
 | First block of claim records counting again | 3,814,262 on mainnet | ledger setup | decided |
+| First block of offers | 3,814,284 on mainnet | ledger setup | decided |
+| Longest offer | 5,040 blocks after its record (about 7 days) | `RULES.maxOffer` | draft |
+| Pieces in one offer | 1 to 100 | `RULES.maxOfferCount` | draft |
 | Claim records after the first burn block | 720 more blocks (about a day) | `RECORDS_OVERLAP` | draft |
 | Burn address | section 10 | `rules/lib/burn.mjs` | draft |
 | Dead outputs (mainnet) | 70499731–70499744 and 70499746, fixed | `MAINNET_DEAD` | draft |
@@ -903,3 +910,67 @@ The coin stays unspent for a later change of the rules that ties an NFT to its c
 A reader takes the setting in like a first block of claims by a spent coin: a state folder
 that has not read the block yet, with the block at least 10 blocks above the newest block
 of the folder and of the node.
+
+## 13. Offers (a ledger setting; the mainnet ledger uses it from block 3,814,284)
+
+A ledger may name a **first block of offers**. From that block on three more records
+count. Before it, and on a ledger without the setting, they are unknown operations.
+
+An offer is a signed, public promise to buy. Nobody holds the bidder's XMR. An owner
+accepts with one signature, and the bidder then pays as in section 5.
+
+1. **Offer.** Signed by the bidder's address, which also receives what is bought. Lowest
+   price 0.001 XMR. The last block is at most 5,040 blocks (about 7 days) after the block
+   of the offer. `count` is 1 to 100: how many pieces the bidder buys at this price; an
+   offer for one NFT (kind 0) is for one piece. The
+   fee address cannot make an offer. A marketplace fee is named as in a reservation. An
+   offer is for one of:
+   - kind 0, one NFT: `ref` is its 32 bytes (a Mordinal's registration, or a mint's id);
+   - kind 1, a collection made on this ledger (section 9): `ref` is its id;
+   - kind 2, a set of Mordinals: `ref` is the root of the set's list.
+2. **Accept.** Signed by the current owner of a piece (right `seq`) that the offer is
+   for, that is not listed, and whose owner is neither the bidder nor the fee address.
+   The offer is open (not withdrawn, not closed, not complete, not ended), has a piece
+   left that no running accept holds, and ends no sooner than 40 blocks after the block
+   of the accept. For kind 2 the accept carries the path that shows its Mordinal is on
+   the list; for kinds 0 and 1 it carries none.
+3. **What an accept does.** It is a listing at the offer's price and a reservation for
+   the bidder, in one record: pay-by block = the block of the accept + 30, held until
+   pay-by + 10. Amounts, the tail (from the accept's code), the protocol fee, the payment
+   proof and the buy record are those of section 5; the buy record names the accept as
+   its lot. Nobody else can reserve this sale, and the seller cannot cancel it.
+   The payment is in a block no later than the pay-by block, and the buy record in a
+   block no later than pay-by + 10: the ten blocks are for the record alone. A payment
+   made after the pay-by block does not count. Wallets and pages must refuse to pay late.
+4. **Paid.** The piece moves to the bidder and the offer has one piece fewer left. With
+   none left it is complete.
+5. **Not paid.** In the block after pay-by + 10 the piece is free again by itself: no
+   record is needed, and its `seq` goes up by one as after a cancelled listing. The offer
+   **closes for good**. Accepts of it that are still running can still be paid.
+6. **Withdraw.** Signed by the bidder. The offer takes no new accept; running ones can
+   still be paid.
+
+The same lines rule as in section 5 applies: an accept is refused when one of its payee
+lines equals a line another open sale is waiting for.
+
+### The list of a set
+
+```
+leaf = SHA-256(0x00 ‖ registration)
+node = SHA-256(0x01 ‖ the smaller child ‖ the larger child)      compared as bytes
+```
+
+The leaves are the registrations of the set, each once, in ascending order. A level with
+an odd number of nodes hands its last node up unchanged. The root of a set of one is its
+leaf. A path is the sibling at each level from the leaf up, at most 20 entries; a level
+without a sibling adds nothing. The rules check the path and nothing else about a set:
+which Mordinals a named collection holds is published by whoever shows the offer, and
+anyone can compute the root from that list.
+
+### What it rests on
+
+An accepted offer is a reservation, not money: the bidder may not pay. The cost of that
+is one closed offer and about 80 minutes of one seller's piece. An offer does not lock
+the bidder's XMR, and the bidder's address is public from the offer on.
+
+A relay may charge for carrying an offer. That is the relay's price, not a rule.

@@ -17,6 +17,11 @@
 //                 flags bit 0: the first owner is `to` (else the creator); bit 1: an origin follows the content.
 //                 collection32 is all zero for an NFT that belongs to no collection (then edition is 0).
 //   op 9 burn     nft32 seq(u32) owner                                 variant c32 r32
+//   op 10 offer   bidder price(u64) until(u32) count(u16) kind(u8) ref32 rate(u16) [market when rate > 0]  variant c32 r32
+//                 kind 0: one NFT (ref = its 32 bytes); 1: a collection made on this ledger (its id); 2: a set of
+//                 Mordinals (the root of its list, offers.mjs)
+//   op 11 accept  offer32 reg32 seq(u32) seller n(u8) n×hash32          variant c32 r32   (the path, for a set)
+//   op 12 withdraw offer32 bidder                                      variant c32 r32
 //   An NFT is named by 32 bytes: a Mordinal's registration transaction, or the id of a mint record.
 //   address  = kind(u8: 0 main address, 1 subaddress) B32 A32
 //   id       = SHA-256("MORDINALS-RECORD-v1\0" || domain32 || "MD1\xfe" op body); a listing's id is its lot id
@@ -26,14 +31,17 @@
 import {sha256} from '@noble/hashes/sha256';
 import {decodeAddress,encodeAddress,verifySpendSignature,usableSpendKey,parseSignature,hex,unhex,concat,le,leBytes} from './monero.mjs';
 const enc=new TextEncoder();
-export const MAGIC=Uint8Array.of(0x4d,0x44,0x31,0xfe),OP={claim:1,move:2,list:3,cancel:4,reserve:5,buy:6,collection:7,mint:8,burn:9},PROOF={outputKey:0,payment:1,spend:2};
+export const MAGIC=Uint8Array.of(0x4d,0x44,0x31,0xfe),OP={claim:1,move:2,list:3,cancel:4,reserve:5,buy:6,collection:7,mint:8,burn:9,offer:10,accept:11,withdraw:12},PROOF={outputKey:0,payment:1,spend:2};
 // A record travels in one relayed transaction, which leaves this many bytes for it (RULES.md section 8).
 export const MAX_RECORD=1000,NO_COLLECTION='0'.repeat(64),MAX_EDITIONS=10000,MAX_NAME=64,ORIGIN={bitcoinInscription:1};
 // Draft parameters. The fee address is given to the ledger; rate, cap, minimum price and window are the draft values of RULES.md section 7.
 // settle: blocks after a reservation's pay-by block in which the listing stays held for it, so a buyer who paid in time
 // can still get the purchase recorded before anyone else may reserve.
 // maxListing: a listing ends at most this many blocks (about 30 days) after the block of its record.
-export const RULES={feeBps:500,marketFeeCapBps:500,minPrice:10n**9n,maxReserve:30,settle:10,maxPayments:3,maxKeys:17,maxListing:21600};
+// maxOffer: an offer ends at most this many blocks (about 7 days) after the block of its record; maxOfferCount: the most
+// pieces one offer asks for; maxPath: the longest path an accept carries (offers.mjs).
+export const RULES={feeBps:500,marketFeeCapBps:500,minPrice:10n**9n,maxReserve:30,settle:10,maxPayments:3,maxKeys:17,maxListing:21600,maxOffer:5040,maxOfferCount:100,maxPath:20};
+export const SCOPE={nft:0,collection:1,set:2};
 // The last block at which a reservation still holds its listing (no other reservation, no cancel).
 export const heldUntil=reservation=>reservation.payBy+RULES.settle;
 export const SUFFIX=['','\n','\r\n'],U64=(1n<<64n)-1n,TX_EXTRA_LIMIT=1060;
@@ -83,12 +91,19 @@ export function encodeBody(op,b,network='mainnet'){
   return concat(head,id32(collection,'Collection id'),u32(edition),party(creator,network),Uint8Array.of((to?1:0)|(o?2:0)),to?party(to,network):new Uint8Array(0),
    nameBytes(b.name,0),Uint8Array.of(b.type),u16(content.length),content,o?concat(Uint8Array.of(o.kind,o.ref.length/2),unhex(o.ref)):new Uint8Array(0));}
  if(op===OP.burn)return concat(head,id32(b.nft,'NFT id'),u32(b.seq),party(b.owner,network));
+ if(op===OP.offer){const rate=b.rate||0;if(!(b.price>0n))throw Error('Price must be above 0');if(!Number.isInteger(rate)||rate<0||rate>0xffff)throw Error('Bad marketplace fee rate');if(!rate&&b.market)throw Error('A marketplace address needs a rate');
+  if(!Number.isInteger(b.count)||b.count<1||b.count>RULES.maxOfferCount)throw Error(`An offer is for 1 to ${RULES.maxOfferCount} pieces`);if(![SCOPE.nft,SCOPE.collection,SCOPE.set].includes(b.kind))throw Error('Unknown kind of offer');
+  return concat(head,party(b.bidder,network),u64(b.price),height(b.until,'last block'),u16(b.count),Uint8Array.of(b.kind),id32(b.ref,'What the offer is for'),u16(rate),rate?party(b.market,network):new Uint8Array(0));}
+ if(op===OP.accept){const path=b.path||[];if(path.length>RULES.maxPath)throw Error('The path is too long');
+  return concat(head,id32(b.offer,'Offer id'),id32(b.reg,'NFT id'),u32(b.seq),party(b.seller,network),Uint8Array.of(path.length),...path.map(p=>id32(p,'Path entry')));}
+ if(op===OP.withdraw)return concat(head,id32(b.offer,'Offer id'),party(b.bidder,network));
  throw Error('Unknown operation');}
-export const signedOp=op=>op===OP.move||op===OP.list||op===OP.cancel||op===OP.reserve||op===OP.collection||op===OP.mint||op===OP.burn;
+export const signedOp=op=>op===OP.move||op===OP.list||op===OP.cancel||op===OP.reserve||op===OP.collection||op===OP.mint||op===OP.burn||op===OP.offer||op===OP.accept||op===OP.withdraw;
 // Strict decode of a whole record, or of a body alone (sig: false). Nothing may follow the last field.
 // spend: false reads a claim with proof 2 (section 11) as an unknown proof kind, as it reads on a ledger, or in a block,
 // where claims by a spent coin do not count; a reader decodes so, and its log stays what it was before proof 2 existed.
-export function decodeRecord(bytes,network='mainnet',{sig=true,spend=true}={}){
+// offers: false reads an offer, an accept and a withdrawal (section 13) as an unknown operation, in the same way.
+export function decodeRecord(bytes,network='mainnet',{sig=true,spend=true,offers=true}={}){
  const r=reader(bytes);if(hex(r.take(4))!==hex(MAGIC))throw Error('Not an MD1 record');const op=r.u8();let body,proof=null;
  if(op===OP.claim){const reg=r.hex32(),ownerTx=r.hex32(),to=readParty(r,network),kind=r.u8();if(kind>(spend?2:1))throw Error('Unknown proof kind');
   body={reg,ownerTx,to,proof:kind};if(kind!==PROOF.outputKey)body.holder=readParty(r,network);if(kind===PROOF.spend){body.spendTx=r.hex32();body.keyImage=r.hex32();}}
@@ -106,6 +121,10 @@ export function decodeRecord(bytes,network='mainnet',{sig=true,spend=true}={}){
   body.name=readName(r,0);body.type=r.u8();if(!body.type)throw Error('Unknown content type');const n=r.u16();if(!n)throw Error('A mint has content');body.content=r.take(n).slice();
   if(flags&2){const kind=r.u8(),len=r.u8();if(!kind||len<1||len>64)throw Error('Bad origin');body.origin={kind,ref:hex(r.take(len))};}}
  else if(op===OP.burn)body={nft:r.hex32(),seq:r.u32(),owner:readParty(r,network)};
+ else if(offers&&op===OP.offer){body={bidder:readParty(r,network),price:r.u64(),until:r.u32(),count:r.u16(),kind:r.u8(),ref:r.hex32(),rate:r.u16()};
+  if(!(body.price>0n)||!body.until||body.count<1||body.count>RULES.maxOfferCount||body.kind>SCOPE.set)throw Error('Bad offer');if(body.rate)body.market=readParty(r,network);}
+ else if(offers&&op===OP.accept){body={offer:r.hex32(),reg:r.hex32(),seq:r.u32(),seller:readParty(r,network)};const n=r.u8();if(n>RULES.maxPath)throw Error('The path is too long');body.path=Array.from({length:n},()=>r.hex32());}
+ else if(offers&&op===OP.withdraw)body={offer:r.hex32(),bidder:readParty(r,network)};
  else throw Error('Unknown operation');
  const bodyBytes=bytes.slice(0,r.at);
  if(sig){
@@ -142,8 +161,12 @@ export function renderText(op,b,bodyBytes,ctx){
  if(op===OP.reserve){const l=ctx.lot,a=amounts({price:l.price,rate:b.rate,code});
   return `Mordinals reserve: buy ${what} for ${formatXmr(l.price)} XMR; pay exactly ${formatXmr(a.seller)} XMR to ${l.seller} and exactly ${formatXmr(a.protocol)} XMR to ${ctx.feeAddress}`
    +(b.rate?` and exactly ${formatXmr(a.market)} XMR to ${b.market}`:'')+` by block ${b.payBy}; ${ctx.what?'NFT':'Mordinal'} to ${b.buyer}; code ${code}`;}
+ // ctx.offer: the offer an accept or a withdrawal names; ctx.scope: what an offer is for, in words.
+ if(op===OP.offer)return `XMR721 offer: buy ${b.count===1?'1 piece':b.count+' pieces'} of ${ctx.scope} for ${formatXmr(b.price)} XMR each`+(b.rate?` plus ${formatXmr(b.price*BigInt(b.rate)/10000n)} XMR each to ${b.market}`:'')+`; pay within ${RULES.maxReserve} blocks of each accept; valid until block ${b.until}; NFTs to ${b.bidder}; code ${code}`;
+ if(op===OP.accept){const o=ctx.offer,s=splitOf(o.price);return `XMR721 accept: sell ${what} to ${o.bidder} for ${formatXmr(o.price)} XMR (${formatXmr(s.seller)} XMR to ${b.seller}, ${formatXmr(s.fee)} XMR protocol fee); offer ${codeOf(o.id)}; sale ${b.seq}; code ${code}`;}
+ if(op===OP.withdraw)return `XMR721 withdraw: end offer ${codeOf(b.offer)}; code ${code}`;
  throw Error('This record has no text to sign');}
-export const signerOf=(op,b)=>op===OP.claim?b.holder:op===OP.move?b.from:op===OP.list||op===OP.cancel?b.seller:op===OP.reserve?b.buyer:op===OP.collection||op===OP.mint?b.creator:op===OP.burn?b.owner:null;
+export const signerOf=(op,b)=>op===OP.claim?b.holder:op===OP.move?b.from:op===OP.list||op===OP.cancel?b.seller:op===OP.reserve?b.buyer:op===OP.collection||op===OP.mint?b.creator:op===OP.burn?b.owner:op===OP.offer||op===OP.withdraw?b.bidder:op===OP.accept?b.seller:null;
 // Which text ending the wallet used, or -1 when the signature is not a spend-key signature of this text by this address.
 export function matchSignature(text,address,signature,network='mainnet'){
  const s=typeof signature==='string'?parseSignature(signature):signature;return SUFFIX.findIndex(x=>verifySpendSignature(text+x,address,s,network));}
