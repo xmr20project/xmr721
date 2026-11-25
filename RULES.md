@@ -345,7 +345,7 @@ kept for that.
 | Claim deadline | none | — | decided |
 | Old-style transfers after the start block | not honoured, except the burning transfer of section 10 on a ledger that has it | owner list | decided |
 | First burn block | not set | ledger setup | draft |
-| First block of claim records counting again | not set | ledger setup | draft |
+| First block of claim records counting again | 3,814,262 on mainnet | ledger setup | decided |
 | Claim records after the first burn block | 720 more blocks (about a day) | `RECORDS_OVERLAP` | draft |
 | Burn address | section 10 | `rules/lib/burn.mjs` | draft |
 | Dead outputs (mainnet) | 70499731–70499744 and 70499746, fixed | `MAINNET_DEAD` | draft |
@@ -870,7 +870,7 @@ Code: `rules/lib/spend.mjs`; the checks in order: `spentCoin` in `rules/lib/ledg
 waiting and the fee as for burn claims. Tests: `rules/tests/spend.test.mjs` (with three key
 images that Feather exported, in `rules/tests/fixtures-spend.json`), `reader/tests/spend.test.mjs`.
 
-## 12. Claim records again (a ledger setting)
+## 12. Claim records again (a ledger setting; the mainnet ledger uses it from block 3,814,262)
 
 A ledger that claims by burning may name a **first block of claim records counting
 again**. It is fixed for the ledger and shared by every reader of it, and a checkpoint
