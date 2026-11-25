@@ -350,7 +350,7 @@ kept for that.
 | Old-style transfers after the start block | not honoured, except the burning transfer of section 10 on a ledger that has it | owner list | decided |
 | First burn block | not set | ledger setup | draft |
 | First block of claim records counting again | 3,814,262 on mainnet | ledger setup | decided |
-| First block of offers | not set | ledger setup | draft |
+| First block of offers | 3,814,284 on mainnet | ledger setup | decided |
 | Longest offer | 5,040 blocks after its record (about 7 days) | `RULES.maxOffer` | draft |
 | Pieces in one offer | 1 to 100 | `RULES.maxOfferCount` | draft |
 | Claim records after the first burn block | 720 more blocks (about a day) | `RECORDS_OVERLAP` | draft |
@@ -911,7 +911,7 @@ A reader takes the setting in like a first block of claims by a spent coin: a st
 that has not read the block yet, with the block at least 10 blocks above the newest block
 of the folder and of the node.
 
-## 13. Offers (a ledger setting)
+## 13. Offers (a ledger setting; the mainnet ledger uses it from block 3,814,284)
 
 A ledger may name a **first block of offers**. From that block on three more records
 count. Before it, and on a ledger without the setting, they are unknown operations.
