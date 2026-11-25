@@ -17,6 +17,7 @@
 //                                                   (it has to lie at least 10 blocks above the newest block of the folder and of the node).
 //        [--carrier-bin <path> --carrier-state <dir> --carrier-network offline-fakechain|stagenet|mainnet [--carrier-start <height>] [--relay-limits name=n,…]]   relay on (mainnet also needs MORDINALS_MAINNET=1)
 //        [--mint-fee <atomic units> --collection-fee <atomic units>]   what this relay charges to carry a mint or a collection record
+//        [--single-fee <atomic units>]   what it charges for a mint that names no collection (without it: the mint fee)
 //        [--token-mint-fee <atomic units>]   what this relay charges to carry a mint of an open XMR20 token (with --xmr20-open-from; without it the relay carries none)
 //        [--content-dir <dir> | --content-archive [url]] [--collections <dir>] [--views <dir>] [--allow-origin <origin>] [--allow-extension <id>] [--behind-proxy] [--test-hooks]
 //        [--xmr20-inscribers <address>,…]   list the XMR20 tokens these addresses inscribed (xmr20-tokens/FORMAT.md)
@@ -484,7 +485,7 @@ if(process.argv[1]===import.meta.filename){
  // two lists of allowed origins and extensions may repeat). A misspelt option stops the start: an ignored
  // --open-from or --minters would make this another ledger than the one that was meant.
  {const KNOWN=new Set(['owners','transfers','block-times','groups','domain','fee-address','node','start','start-hash','mint-from','minters','open-from','burn-from','burn-dead','burn-fee-wallet','spend-from','state','network','port','every','xmr20-inscribers','xmr20-open-from','xmr20-earlier','no-xmr20-earlier','no-xmr20-follow',
-   'mint-fee','collection-fee','token-mint-fee','carrier-bin','carrier-state','carrier-start','carrier-network','relay-limits','content-dir','content-archive','collections','views','allow-origin','allow-extension','behind-proxy','test-hooks']),MANY=new Set(['allow-origin','allow-extension']),seen=new Set();
+   'mint-fee','collection-fee','single-fee','token-mint-fee','carrier-bin','carrier-state','carrier-start','carrier-network','relay-limits','content-dir','content-archive','collections','views','allow-origin','allow-extension','behind-proxy','test-hooks']),MANY=new Set(['allow-origin','allow-extension']),seen=new Set();
   for(const a of process.argv.slice(2)){if(!a.startsWith('-'))continue;
    if(a.includes('='))throw Error(`Write "${a.split('=')[0]} <value>", with a space: ${a}`);
    const name=a.startsWith('--')?a.slice(2):null;if(!name||!KNOWN.has(name))throw Error(`There is no option ${a}. See the top of this file.`);
@@ -502,7 +503,7 @@ if(process.argv[1]===import.meta.filename){
   ...(has('spend-from')?{spendFrom:(v=>{if(!/^[1-9]\d{0,9}$/.test(v||''))throw Error('--spend-from <height>: the first block of claims by a spent coin is a whole number');return Number(v);})(arg('spend-from'))}:{}),
   ...(has('burn-dead')?{burnDead:(v=>{if(!/^\d{1,15}(,\d{1,15}){14}$/.test(v||''))throw Error('--burn-dead <index>,…: fifteen global output indexes');return v.split(',').map(Number);})(arg('burn-dead'))}:{}),
   ...(has('burn-fee-wallet')?{burnFee:(v=>{const m=/^([1-9A-HJ-NP-Za-km-z]{95}):([0-9a-f]{64})$/.exec(v||'');if(!m)throw Error('--burn-fee-wallet <main address>:<secret view key>');return {address:m[1],viewKey:m[2]};})(arg('burn-fee-wallet'))}:{}),state:arg('state'),network:arg('network'),xmr20Inscribers:(arg('xmr20-inscribers')||'').split(',').filter(Boolean),...(has('xmr20-open-from')?{xmr20OpenFrom:(v=>{if(!/^[1-9][0-9]{0,8}$/.test(v||''))throw Error('--xmr20-open-from <block>');return Number(v);})(arg('xmr20-open-from'))}:{}),...(has('no-xmr20-earlier')?{xmr20Earlier:false}:arg('xmr20-earlier')?{xmr20Earlier:arg('xmr20-earlier')}:{}),...(has('no-xmr20-follow')?{xmr20Follow:false}:{}),
-  port:arg('port'),fees:{mint:arg('mint-fee')||0,collection:arg('collection-fee')||0,tokenMint:arg('token-mint-fee')||0},carrierBin:arg('carrier-bin'),carrierState:arg('carrier-state'),carrierStart:arg('carrier-start'),carrierNetwork:arg('carrier-network'),contentDir:arg('content-dir'),collections:arg('collections'),contentArchive:archive,views:arg('views'),
+  port:arg('port'),fees:{mint:arg('mint-fee')||0,collection:arg('collection-fee')||0,tokenMint:arg('token-mint-fee')||0,single:arg('single-fee')||0},carrierBin:arg('carrier-bin'),carrierState:arg('carrier-state'),carrierStart:arg('carrier-start'),carrierNetwork:arg('carrier-network'),contentDir:arg('content-dir'),collections:arg('collections'),contentArchive:archive,views:arg('views'),
   origins:process.argv.flatMap((a,i)=>a==='--allow-origin'?[process.argv[i+1]]:[]),extensions:process.argv.flatMap((a,i)=>a==='--allow-extension'?[process.argv[i+1]]:[]),behindProxy:has('behind-proxy'),testHooks:has('test-hooks'),log:v=>console.log(new Date().toISOString(),JSON.stringify(v))});
  console.log(`Mordinals reader on http://127.0.0.1:${s.port} (${s.owners.length} Mordinals, block ${s.reader.height}${s.relay?', relay on':', reader only'})`);
  s.follow(Number(arg('every'))||5000);

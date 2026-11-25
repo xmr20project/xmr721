@@ -144,7 +144,8 @@ export async function nft(ctx,id,action){
   el('section',{class:'section','data-section':'history'},el('div',{class:'section-head'},el('h2',{text:'History'})),table(eventColumns({number:false}),n.history.slice().reverse(),'Nothing yet.')));}
 
 // What the relay charges for a collection or a mint, said before anything is signed.
-const feeLine=(kind,what)=>{const f=relayFee(kind);return f?`${what} costs ${formatXmr(f)} XMR. It pays for putting the record on the Monero network; you pay it after signing, and nothing is sent before it arrives.`:`${what} has no fee. The relay pays the Monero network fee of the record.`;};
+// One NFT minted on its own has the relay's `single` price when it names one, else the price of any mint.
+const feeLine=(kind,what)=>{const f=kind==='single'?relayFee('single')||relayFee('mint'):relayFee(kind);return f?`${what} costs ${formatXmr(f)} XMR. It pays for putting the record on the Monero network; you pay it after signing, and nothing is sent before it arrives.`:`${what} has no fee. The relay pays the Monero network fee of the record.`;};
 // Create: a collection, or one NFT. The content is read in the browser and goes into the record that is signed.
 function sniff(bytes){
  const s=(sig,at=0)=>sig.every((v,i)=>bytes[at+i]===v);
@@ -222,6 +223,6 @@ export async function create(ctx){
    field('Name (optional)',name,`Up to ${MAX_NAME} plain characters. It uses the same room as the content.`),
    field('First owner (optional)',to,'Another Monero address that receives the NFT. Uses 65 bytes of the room.'),room,problem,
    el('div',{class:'row'},el('button',{type:'button',class:'btn primary',text:'Continue','data-action':'next',onclick:next})),
-   el('p',{class:'dim','data-fee':'',text:feeLine('mint','Minting')+' Anything you inscribe is public for good.'})].filter(Boolean));
+   el('p',{class:'dim','data-fee':'',text:feeLine(set?'mint':'single','Minting')+' Anything you inscribe is public for good.'})].filter(Boolean));
   count_();}
  if(make==='collection')collectionForm();else await nftForm();}

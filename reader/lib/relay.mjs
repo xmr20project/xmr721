@@ -10,6 +10,8 @@
 // atomic units; 0 = free). The fee is this relay's own price, not a rule of the ledger: a record published any other
 // way counts the same. Each such record gets a subaddress of the relay's wallet; the record is sent once payments of
 // at least the fee to that subaddress are in a block. A record that is not paid for in time is dropped unsent.
+// A mint that names no collection (one NFT on its own) may have a price of its own (`fees.single`); without one it costs
+// what any mint costs. A token's deploy text is such a record too, and keeps the price of a mint.
 // A relay with a lane (`lane`: the ledger's listed minters) carries their collections and mints without the fee. Other
 // signers' collections and mints it carries only when it charges for them; without a fee it refuses them.
 //
@@ -63,7 +65,7 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
  // A collection or mint record of someone who is not one of this relay's own minters (on a relay that has any), when
  // the relay does not charge for that kind of record. A relay that charges carries it once it is paid for.
  const NOT_CARRIED='This relay carries collection and mint records of its own minters only. Inscribe from your own wallet with the xmr721 command (see the XMR721 README).';
- const foreign=d=>(d.op===OP.mint||d.op===OP.collection)&&laneOf.size>0&&!laneOf.has(canonical(d.body.creator,network))&&!priceOf(d.op);
+ const foreign=d=>(d.op===OP.mint||d.op===OP.collection)&&laneOf.size>0&&!laneOf.has(canonical(d.body.creator,network))&&!priceOf(d);
  // The launch a record is for: a deploy inscription (xmr20-tokens/FORMAT.md) names a Solana mint. The launch is its
  // signer's own (signer and mint together), so nobody holds a launch against another signer.
  const launchOf=d=>{if(d.op!==OP.mint||d.body.collection!==NO_COLLECTION||d.body.type!==TYPE_JSON)return null;
@@ -80,7 +82,9 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
  // Coins kept for the lane (none on a relay without one), and how many ready coins the relay keeps so that ordinary
  // records never wait on a count that starts no new split.
  const laneReserve=laneOf.size?limits.laneReserve:0,keepReady=Math.max(limits.minReady,limits.buyReserve+laneReserve+1);
- const fees={collection:BigInt(asked.collection||0),mint:BigInt(asked.mint||0),tokenMint:BigInt(asked.tokenMint||0)},priceOf=op=>op===OP.collection?fees.collection:op===OP.mint?fees.mint:0n;
+ const fees={collection:BigInt(asked.collection||0),mint:BigInt(asked.mint||0),tokenMint:BigInt(asked.tokenMint||0),single:BigInt(asked.single||0)};
+ const lone=d=>d.op===OP.mint&&d.body.collection===NO_COLLECTION&&d.body.type!==TYPE_JSON;
+ const priceOf=d=>d.op===OP.collection?fees.collection:d.op===OP.mint?(fees.single&&lone(d)?fees.single:fees.mint):0n;
  mkdirSync(jobsDir,{recursive:true});
  const write=(file,value)=>{const tmp=file+'.tmp',fd=openSync(tmp,'w',0o600);try{writeSync(fd,JSON.stringify(value)+'\n');fsyncSync(fd);}finally{closeSync(fd);}renameSync(tmp,file);};
  const jobs=new Map();
@@ -212,7 +216,7 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
    if(before.length&&!anew)throw Object.assign(bad('This launch was inscribed before and its inscription was burned. To inscribe it again, hand the record over with "anew".',409),{held:before.at(-1).id});}
   // The listed minters' collections and mints go without the fee.
   // (Token mints have limits of their own, so they neither fill nor use up the records' limits.)
-  const all=waiting().filter(j=>j.op!==TOKEN_MINT),open=all.filter(j=>j.state!=='unpaid'),price=ownLane?0n:priceOf(d.op);
+  const all=waiting().filter(j=>j.op!==TOKEN_MINT),open=all.filter(j=>j.state!=='unpaid'),price=ownLane?0n:priceOf(d);
   if(number!=null&&open.some(j=>j.number===number))throw bad('Another record for this Mordinal is waiting for a block. Try again in a few minutes.',429);
   if(price&&all.length-open.length>=limits.unpaid)throw bad('The relay is busy. Try again in a few minutes.',503);
   if(all.filter(j=>j.signer===signer).length>=limits.perSigner)throw bad('This address already has '+limits.perSigner+' records waiting for a block. Try again in a few minutes.',429);
@@ -392,7 +396,7 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
    return {tip,waiting:waiting().length,ready:status.ready,balance:status.balance};}
   catch(e){log({coins:String(e.message).slice(0,200)});return {tip,waiting:waiting().length,ready:null,balance:null};}}
 
- return {limits,fees:{collection:fees.collection.toString(),mint:fees.mint.toString(),...(fees.tokenMint?{tokenMint:fees.tokenMint.toString()}:{})},
+ return {limits,fees:{collection:fees.collection.toString(),mint:fees.mint.toString(),...(fees.tokenMint?{tokenMint:fees.tokenMint.toString()}:{}),...(fees.single?{single:fees.single.toString()}:{})},
   // Mints of open XMR20 tokens: the token list is the service's (it knows the opening block), handed over once.
   useTokens(lookup){tokenOf=lookup;},submitMint:o=>alone(()=>submitMint(o)),
   submit:(recordHex,o)=>alone(()=>submit(recordHex,o)),tick:()=>alone(tick),
