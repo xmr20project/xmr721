@@ -33,7 +33,8 @@ test('claim records are refused between the end of the overlap and the new first
  l.setHeight(END-1);l.apply(claim0(0,w.alice));assert.equal(l.mordinal(0).owner,w.alice.address);
  const c1=claim0(1,w.alice),c4=claim1(4,w.carol);
  for(const h of [END,AGAIN-1]){l.setHeight(h);
-  assert.throws(()=>l.check(c1),new RegExp(`Claim records count again from block ${AGAIN}\\.`));assert.throws(()=>l.apply(c4),/Claim records count again/);}
+  // The text is the one a ledger without the setting gives: a log written before the setting was taken in stays true.
+  assert.throws(()=>l.check(c1),/From block 830 a Mordinal is claimed only by burning it; a claim record no longer counts\./);assert.throws(()=>l.apply(c4),/no longer counts/);}
  // A burn in between claims as before.
  const b2=burn('between',2,w.dave);pay(2);l.applyBurnClaim(b2.txid,burnParts(b2.tx));assert.equal(l.mordinal(2).owner,w.dave.address);
  l.setHeight(AGAIN);

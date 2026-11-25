@@ -50,19 +50,22 @@ test('claim records count again from the block, in the reader and at the relay; 
  const relay=createRelay({dir:join(dir,'relay'),reader,chain,carrier:fakeCarrier(chain,{coins:6}),domain:DOMAIN,limits:{resendMs:1000},now:()=>1_000_000});
  // Before the block: refused in a block and not carried by the relay.
  const early=claim(0,w.alice,reader.ledger);chain.mine([early]);await reader.sync();
- assert.deepEqual(reader.journal.map(e=>[e.height,e.ok,e.error??null]),[[END+1,false,`Claim records count again from block ${AGAIN}.`]]);
+ assert.deepEqual(reader.journal.map(e=>[e.height,e.ok,e.error??null]),[[END+1,false,`From block ${END} a Mordinal is claimed only by burning it; a claim record no longer counts.`]]);
  await assert.rejects(relay.submit(recordOf(claim(1,w.alice,reader.ledger))),e=>new RegExp(`Claim records count again from block ${AGAIN}`).test(e.message)&&e.rule===true);
  for(let h=END+2;h<=AGAIN-1;h++)chain.mine();await reader.sync();assert.equal(reader.height,AGAIN-1);
  await assert.rejects(relay.submit(recordOf(claim(1,w.alice,reader.ledger))),/Claim records count again/);
  assert.equal(reader.checkpoints.at(-1).recordsFrom,undefined);
- // From the block on the relay carries a claim record, as the ledger takes it.
- chain.mine();await reader.sync();assert.equal(reader.height,AGAIN);
+ // A record carried by someone else into the first block itself counts there.
+ const direct=claim(2,w.bob,reader.ledger);chain.mine([direct]);await reader.sync();assert.equal(reader.height,AGAIN);assert.equal(reader.ledger.mordinal(2).owner,w.bob.address);
  const c=reader.checkpoints.at(-1);assert.equal(c.height,AGAIN);assert.equal(c.recordsFrom,AGAIN);
+ // From the block on the relay carries a claim record, as the ledger takes it.
  const sent=await relay.submit(recordOf(claim(1,w.alice,reader.ledger,w.bob)));assert.equal(sent.state,'sent');
  chain.mine();await reader.sync();await relay.tick();assert.equal(reader.ledger.mordinal(1).owner,w.bob.address);
  assert.equal(reader.events.at(-1).kind,'claim');assert.equal(reader.events.at(-1).proof,'one-time key');
- // A record carried by someone else into the first block itself counts there.
- const direct=claim(2,w.bob,reader.ledger);chain.mine([direct]);await reader.sync();assert.equal(reader.ledger.mordinal(2).owner,w.bob.address);
+ // The record refused before the block counts when it is carried again.
+ const again0=claim(0,w.alice,reader.ledger);chain.mine([again0]);await reader.sync();assert.equal(reader.ledger.mordinal(0).owner,w.alice.address);
  // The same blocks read from the start by a new folder that names the setting give the same state.
  const fresh=openReader({dir:join(dir,'fresh'),chain,domain:DOMAIN,feeAddress:w.fee.address,owners,start:100,checkpointEvery:1,burnFrom:FROM,recordsFrom:AGAIN});await fresh.sync();
- assert.deepEqual(fresh.checkpoints.at(-1),reader.checkpoints.at(-1));assert.equal(fresh.checkpoints.at(-1).recordsFrom,AGAIN);});
+ assert.deepEqual(fresh.checkpoints.at(-1),reader.checkpoints.at(-1));assert.equal(fresh.checkpoints.at(-1).recordsFrom,AGAIN);
+ // And the same log, entry for entry: the folder that refused a record before it took the setting in states the same text.
+ assert.deepEqual(fresh.journal,reader.journal);});

@@ -879,7 +879,8 @@ names it from that block on. It lies at or after the block where claim records s
 
 From that block on a claim record of proof 0 or proof 1 counts as section 3 says, as it
 did before the first burn block. In the blocks between the end of the 720 blocks and this
-block such a record is refused, and a record refused there stays refused.
+block such a record is refused. Its entry in the log stays refused; the same record carried
+again in a transaction from this block on counts like any other.
 
 Nothing else changes:
 
@@ -889,7 +890,8 @@ Nothing else changes:
   pays no fee to the project.
 - A claim record needs the keys of the owner coin and not the coin: the coin is not spent
   and no key image is shown. A holder whose coin was spent in an ordinary transaction, or
-  whose burn waits for its fee, can claim by record too.
+  whose burn waits for its fee, can claim by record too. A burn that waits for its fee is
+  lost when a record claims its Mordinal first, with whatever was paid towards that fee.
 - A Mordinal claimed by record keeps its owner coin. Under the original 2023 rules that
   coin can still be moved; this ledger does not follow such a move (section 7), so the
   owner here stays the address the claim named until a signed record moves it.

@@ -219,7 +219,7 @@ export function createLedger({network='mainnet',domain,feeAddress,owners,height=
    if(m.lot)throw Error('This Mordinal is listed for sale; cancel the listing first.');signedBy(b.owner);return {...out,mordinal:m};}
   if(op===OP.claim){
    if(b.proof===PROOF.spend){if(spendFrom===null)throw Error('Claiming by a spent coin is not part of this ledger.');if(tip<spendFrom)throw Error(`Claiming by a spent coin starts at block ${spendFrom}.`);}
-   else if(recordsEnd!==null&&tip>=recordsEnd&&(recordsFrom===null||tip<recordsFrom))throw Error(recordsFrom===null?`From block ${recordsEnd} a Mordinal is claimed only by burning it; a claim record no longer counts.`:`Claim records count again from block ${recordsFrom}.`);
+   else if(recordsEnd!==null&&tip>=recordsEnd&&(recordsFrom===null||tip<recordsFrom))throw Error(`From block ${recordsEnd} a Mordinal is claimed only by burning it; a claim record no longer counts.`);   // one text with or without recordsFrom: a journal keeps the text a record was refused with
    const m=find(b.reg);
    if(m.claimed)throw Error('This Mordinal is already claimed.');if(b.ownerTx!==m.ownerTx)throw Error('This is not the owner transaction of this Mordinal.');
    if(b.proof===PROOF.outputKey){if(!verifyOutputKeySignature(claimKeyHash(domain,bodyBytes),m.outputKey,proof.c,proof.r))throw Error('The signature was not made with the key of the owner coin.');}
