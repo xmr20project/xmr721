@@ -20,6 +20,7 @@
 //        [--carrier-bin <path> --carrier-state <dir> --carrier-network offline-fakechain|stagenet|mainnet [--carrier-start <height>] [--relay-limits name=n,…]]   relay on (mainnet also needs MORDINALS_MAINNET=1)
 //        [--mint-fee <atomic units> --collection-fee <atomic units>]   what this relay charges to carry a mint or a collection record
 //        [--single-fee <atomic units>]   what it charges for a mint that names no collection (without it: the mint fee)
+//        [--offer-fee <atomic units>]    what it charges to carry an offer (RULES.md section 13); accepts and withdrawals are free
 //        [--network-fee added]   the payer of a relay fee also pays the Monero network fee of the record's transaction,
 //                                worked out from its size and the node's fee rate (without it the relay pays it)
 //        [--token-mint-fee <atomic units>]   what this relay charges to carry a mint of an open XMR20 token (with --xmr20-open-from; without it the relay carries none)
@@ -36,6 +37,7 @@ import {existsSync,readFileSync,statSync} from 'node:fs';
 import {join,normalize,extname,sep} from 'node:path';
 import {RULES,NO_COLLECTION,heldUntil,canonical,decodeRecord} from '../rules/lib/records.mjs';
 import {BURN,CLAIM_PREFIX,isMainnetDead} from '../rules/lib/burn.mjs';
+import {setRoot,setPath} from '../rules/lib/offers.mjs';
 import {feeWallet,isProjectFeeWallet} from '../rules/lib/burn-fee.mjs';
 import {createChain} from './lib/chain.mjs';
 import {openReader} from './lib/reader.mjs';
@@ -97,7 +99,7 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
  const once=(key,make)=>{const at=reader.height+':'+reader.journal.length+':'+reader.hash;if(at!==memoAt){memoAt=at;memo=new Map();}if(!memo.has(key))memo.set(key,make());return memo.get(key);};
  const L=()=>reader.ledger;
  const lotView=id=>{const l=L().lot(id),r=l.reservations.at(-1)||null;
-  return {id:l.id,number:l.number,name:l.number==null?null:nameOf(l.number),nft:l.number==null?l.reg:null,reg:l.reg,seller:l.seller,price:l.price.toString(),until:l.until,status:l.status,body:reader.body(l.id),
+  return {id:l.id,number:l.number,name:l.number==null?null:nameOf(l.number),nft:l.number==null?l.reg:null,reg:l.reg,seller:l.seller,price:l.price.toString(),until:l.until,status:l.status,...(l.offer?{offer:l.offer}:{}),body:reader.body(l.id),
    reservation:r?{record:r.record,buyer:r.buyer,height:r.height,payBy:r.payBy,rate:r.rate}:null,buyer:l.sale?.buyer||null};};
  // A Mordinal whose burn claim, or claim by a spent coin, waits for its fee is not claimed; `waiting` says so.
  const state=n=>{const x=L().mordinal(n);return {number:x.number,name:nameOf(x.number),reg:x.reg,claimed:x.claimed,owner:x.owner,...(x.burned?{burned:true}:{}),...(x.waiting?{waiting:true}:{}),seq:x.seq,lot:x.lot?lotView(x.lot):null};};
@@ -159,7 +161,20 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
  // The relay carries mints of the tokens this service lists (lib/relay.mjs).
  if(relay&&xmr20Open)relay.useTokens(key=>openTokens().by.get(key)??null);
  const opened=()=>{if(!xmr20Open)throw fail('This reader lists no open XMR20 tokens.',404);if(reader.height+1<xmr20Open.from)throw fail(`Open XMR20 tokens start at block ${xmr20Open.from}; the ledger is at block ${reader.height}.`,409);};
- const open=()=>once('open',()=>reader.lots.map(lotView).filter(l=>l.status==='open'));
+ // Listings anyone can reserve. A sale that came from an accepted offer is for its bidder alone and is not among them.
+ const open=()=>once('open',()=>reader.lots.map(lotView).filter(l=>l.status==='open'&&!l.offer));
+ // Offers (section 13). A set of Mordinals an offer can name: each collection found on the chain, by the root of its list.
+ const SCOPES=['nft','collection','set'];
+ const setOf=g=>g.set??=(regs=>({regs,root:setRoot(regs)}))(g.members.map(n=>entry.get(n).registrationTx));
+ const groupByRoot=()=>once('roots',()=>new Map(groupList.map(g=>[setOf(g).root,g])));
+ const offerView=id=>{const o=L().offer(id),g=o.kind===2?groupByRoot().get(o.ref)||null:null,c=o.kind===1?L().collection(o.ref):null,one=o.kind===0?L().mordinal(o.ref):null;
+  return {id:o.id,bidder:o.bidder,price:o.price.toString(),until:o.until,count:o.count,left:o.left,running:o.running,scope:SCOPES[o.kind],ref:o.ref,rate:o.rate,market:o.market,height:o.height,status:o.status,open:o.open,
+   // Whether another accept would be taken now: open, pieces left, and time enough to pay.
+   acceptable:o.open&&o.left-o.running>0&&L().height+RULES.maxReserve+RULES.settle<=o.until,
+   ...(g?{group:{id:g.id,name:g.name}}:{}),...(c?{collection:{id:c.id,name:c.name}}:{}),...(one?{number:one.number,name:one.number==null?null:nameOf(one.number),...(one.number==null?{nft:one.reg}:{})}:{}),body:reader.body(o.id)};};
+ const offersNow=()=>once('offers',()=>reader.offers.map(offerView));
+ // The offers a piece fits: its own, its collection's, and those for a set whose list it is on.
+ const offersFor=m=>offersNow().filter(o=>o.acceptable&&(o.scope==='nft'?o.ref===m.reg:o.scope==='collection'?Boolean(m.minted)&&m.minted.collection===o.ref:m.number!=null&&o.group&&groupById.get(o.group.id).members.includes(m.number)));
  const claimed=()=>once('claimed',()=>numbers.filter(n=>L().mordinal(n).claimed));
  const card=n=>{const o=entry.get(n),s=state(n);return {number:n,name:s.name,reg:s.reg,claimed:s.claimed,owner:s.owner,...(s.burned?{burned:true}:{}),...(s.waiting?{waiting:true}:{}),bodySize:o.bodySize??null,group:groupOf.get(n)??null,
   lot:s.lot?{id:s.lot.id,price:s.lot.price,until:s.lot.until,seller:s.lot.seller,reserved:Boolean(s.lot.reservation&&heldUntil(s.lot.reservation)>=reader.height)}:null};};
@@ -189,7 +204,7 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
      fee:L().burn.fee}}:{}),
     // Claiming by a spent coin (section 11): its first block, and the fixed part of what such a claim pays to its Mordinal's
     // fee address (the network fee of the transaction that carries the record comes on top).
-    ...(m.spendFrom!=null?{spendFrom:m.spendFrom,spend:{base:L().spend.base}}:{}),...(m.recordsFrom!=null?{recordsFrom:m.recordsFrom}:{}),...(xmr20||E||xmr20Open?{xmr20:{...(xmr20?{inscribers:xmr20.inscribers}:{}),...(E?{earlier:earlierInfo()}:{}),...(xmr20Open?{open:{from:xmr20Open.from}}:{})}}:{}),
+    ...(m.spendFrom!=null?{spendFrom:m.spendFrom,spend:{base:L().spend.base}}:{}),...(m.recordsFrom!=null?{recordsFrom:m.recordsFrom}:{}),...(m.offersFrom!=null?{offersFrom:m.offersFrom}:{}),...(xmr20||E||xmr20Open?{xmr20:{...(xmr20?{inscribers:xmr20.inscribers}:{}),...(E?{earlier:earlierInfo()}:{}),...(xmr20Open?{open:{from:xmr20Open.from}}:{})}}:{}),
     relay:relay?{networkFee:relay.network?'added':'relay',...(relay.network?{network:relay.network}:{}),perAddress:relay.limits.perSigner,fees:relay.fees,payBlocks:relay.limits.payBlocks}:null,rules:{feeBps:RULES.feeBps,marketFeeCapBps:RULES.marketFeeCapBps,minPrice:RULES.minPrice.toString(),maxReserve:RULES.maxReserve,settle:RULES.settle}};
    if(path==='/owners'){const from=int(q.get('from'),0,0,list.length),limit=int(q.get('limit'),chunk,1,chunk);return {from,total:list.length,entries:list.slice(from,from+limit)};}
    if(path==='/claimed')return {height,numbers:claimed()};
@@ -250,6 +265,18 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
     return {height,entry:{txid:e.txid,height:e.height,pos:e.pos,id:e.id??null,op:e.op??null,...(e.burn?{kind:'burn claim',...(burned||{})}:spent?{kind:'spent coin claim',...spent}:feeOnly(e)?{kind:'fee payment'}:{}),ok:e.ok,...(e.ok?{}:{error:e.error}),
      ...(e.fee?{fees:reader.feesOf(e.txid)}:{})},confirmations:height-e.height+1};}
    if(path==='/pending')return {height,jobs:relay?relay.pending():[],pool:await poolNow()};
+   if(m.offersFrom!=null&&path==='/offers'){const group=q.get('group'),bidder=q.get('bidder'),collection=q.get('collection'),number=q.get('number'),all=q.get('all')==='1';
+    let list=offersNow();if(!all)list=list.filter(o=>o.acceptable);
+    if(group!==null)list=list.filter(o=>o.group?.id===group);if(collection!==null)list=list.filter(o=>o.collection?.id===collection);
+    if(bidder!==null){const a=canonical(bidder,m.network);list=offersNow().filter(o=>o.bidder===a);}
+    if(number!==null){const x=L().mordinal(which(number).number);list=offersFor(x);}
+    return {height,offers:[...list].sort((a,b)=>BigInt(a.price)>BigInt(b.price)?-1:BigInt(a.price)<BigInt(b.price)?1:a.height-b.height).slice(0,200)};}
+   if(m.offersFrom!=null&&path.startsWith('/offer/')){const [id,rest,n]=path.slice(7).split('/');if(!/^[0-9a-f]{64}$/.test(id)||!L().offer(id))throw fail('This offer does not exist.',404);
+    const o=offerView(id);if(rest===undefined)return {height,offer:o,sales:reader.lots.map(lotView).filter(l=>l.offer===id)};
+    // The path an accept of this offer carries for one Mordinal of its set.
+    if(rest!=='path')throw fail('Not found',404);const x=which(n);if(o.scope!=='set')return {height,offer:id,number:x.number,path:[]};
+    const g=o.group&&groupById.get(o.group.id);if(!g||!g.members.includes(x.number))throw fail('This offer is not for this Mordinal.',404);
+    return {height,offer:id,number:x.number,path:setPath(setOf(g).regs,entry.get(x.number).registrationTx)};}
    if(path==='/stats')return stats();
    if(path==='/activity'||path==='/sales'){
     const kind=path==='/sales'?'sale':q.get('kind'),number=q.has('number')?Number(q.get('number')):null,address=q.get('address'),limit=int(q.get('limit'),50,1,200);
@@ -273,7 +300,7 @@ export function createService({reader,relay=null,owners,transfers=[],blockTimes=
     const filter=q.get('filter')||'all',listed=new Set(open().filter(l=>l.until>=height&&l.number!=null).map(l=>l.number)),done=new Set(claimed());
     const pick=filter==='all'?g.members:filter==='listed'?g.members.filter(n=>listed.has(n)):filter==='claimed'?g.members.filter(n=>done.has(n)):null;if(!pick)throw fail('Unknown filter.');
     const from=int(q.get('from'),0,0,pick.length),limit=int(q.get('limit'),60,1,200);
-    return {height,group:{id:g.id,name:g.name,fullName:g.fullName,basis:g.basis,count:g.members.length,claimed:g.members.filter(n=>done.has(n)).length,forSale:g.members.filter(n=>listed.has(n)).length},
+    return {height,group:{id:g.id,name:g.name,fullName:g.fullName,basis:g.basis,...(m.offersFrom!=null?{root:setOf(g).root}:{}),count:g.members.length,claimed:g.members.filter(n=>done.has(n)).length,forSale:g.members.filter(n=>listed.has(n)).length},
      filter,from,total:pick.length,items:pick.slice(from,from+limit).map(card)};}
    if(path==='/gallery'){const filter=q.get('filter')||'all';
     const pick=filter==='claimed'?claimed():filter==='unclaimed'?once('unclaimed',()=>{const c=new Set(claimed());return numbers.filter(n=>!c.has(n));})
@@ -459,10 +486,10 @@ export async function startService(o){
  // opened (the reader refuses them again whenever it reads).
  if(o.burnDead!=null&&network==='mainnet'&&!isMainnetDead([...o.burnDead].map(Number).sort((x,y)=>x-y))&&(await chain.info()).nettype!=='fakechain')throw Error('--burn-dead: on mainnet the dead outputs are fixed; other ones can be named only on the offline test chain.');
  if(o.burnFee!=null&&network==='mainnet'&&!isProjectFeeWallet(feeWallet(o.burnFee,network,{testChain:true}))&&(await chain.info()).nettype!=='fakechain')throw Error('--burn-fee-wallet: on mainnet the fee wallet is the project\'s; another one can be named only on the offline test chain.');
- const reader=openReader({dir:o.state,chain,network,domain:o.domain,feeAddress:o.feeAddress,owners,start:Number(o.start),startHash:o.startHash||null,mintFrom:o.mintFrom==null?null:Number(o.mintFrom),minters:o.minters??null,openFrom:o.openFrom==null?null:Number(o.openFrom),burnFrom:o.burnFrom==null?null:Number(o.burnFrom),burnDead:o.burnDead??null,burnFee:o.burnFee??null,spendFrom:o.spendFrom==null?null:Number(o.spendFrom),recordsFrom:o.recordsFrom==null?null:Number(o.recordsFrom),checkpointEvery:o.checkpointEvery??720,log:o.log});
+ const reader=openReader({dir:o.state,chain,network,domain:o.domain,feeAddress:o.feeAddress,owners,start:Number(o.start),startHash:o.startHash||null,mintFrom:o.mintFrom==null?null:Number(o.mintFrom),minters:o.minters??null,openFrom:o.openFrom==null?null:Number(o.openFrom),burnFrom:o.burnFrom==null?null:Number(o.burnFrom),burnDead:o.burnDead??null,burnFee:o.burnFee??null,spendFrom:o.spendFrom==null?null:Number(o.spendFrom),recordsFrom:o.recordsFrom==null?null:Number(o.recordsFrom),offersFrom:o.offersFrom==null?null:Number(o.offersFrom),checkpointEvery:o.checkpointEvery??720,log:o.log});
  // A first burn block that this start takes in, or changes, has to lie at least 10 blocks above the node's newest block,
  // and so does a first block of claims by a spent coin that it takes in. It is checked here, before anything is served: otherwise the pages would announce a setting the folder refuses.
- if(reader.burnPending!=null||reader.spendPending!=null||reader.recordsPending!=null){const info=await chain.info();try{reader.confirmBurn(info);}catch(e){throw Error((/spent coin/.test(e.message)?'--spend-from: ':/claim records/.test(e.message)?'--records-from: ':'--burn-from: ')+e.message);}}
+ if(reader.burnPending!=null||reader.spendPending!=null||reader.recordsPending!=null||reader.offersPending!=null){const info=await chain.info();try{reader.confirmBurn(info);}catch(e){throw Error((/spent coin/.test(e.message)?'--spend-from: ':/claim records/.test(e.message)?'--records-from: ':/of offers/.test(e.message)?'--offers-from: ':'--burn-from: ')+e.message);}}
  let relay=null;
  if(o.carrierBin){const carrier=createCarrier({bin:o.carrierBin,stateDir:o.carrierState,node:o.node,network:o.carrierNetwork||'offline-fakechain',start:Number(o.carrierStart||o.start)});
   relay=createRelay({dir:join(o.state,'relay'),reader,chain,carrier,network,domain:o.domain,limits:o.limits,fees:o.fees,lane:o.minters||[],...(o.now?{now:o.now}:{}),log:o.log});}
@@ -489,7 +516,7 @@ if(process.argv[1]===import.meta.filename){
  // two lists of allowed origins and extensions may repeat). A misspelt option stops the start: an ignored
  // --open-from or --minters would make this another ledger than the one that was meant.
  {const KNOWN=new Set(['owners','transfers','block-times','groups','domain','fee-address','node','start','start-hash','mint-from','minters','open-from','burn-from','burn-dead','burn-fee-wallet','spend-from','records-from','state','network','port','every','xmr20-inscribers','xmr20-open-from','xmr20-earlier','no-xmr20-earlier','no-xmr20-follow',
-   'mint-fee','collection-fee','single-fee','network-fee','token-mint-fee','carrier-bin','carrier-state','carrier-start','carrier-network','relay-limits','content-dir','content-archive','collections','views','allow-origin','allow-extension','behind-proxy','test-hooks']),MANY=new Set(['allow-origin','allow-extension']),seen=new Set();
+   'mint-fee','collection-fee','single-fee','offer-fee','offers-from','network-fee','token-mint-fee','carrier-bin','carrier-state','carrier-start','carrier-network','relay-limits','content-dir','content-archive','collections','views','allow-origin','allow-extension','behind-proxy','test-hooks']),MANY=new Set(['allow-origin','allow-extension']),seen=new Set();
   for(const a of process.argv.slice(2)){if(!a.startsWith('-'))continue;
    if(a.includes('='))throw Error(`Write "${a.split('=')[0]} <value>", with a space: ${a}`);
    const name=a.startsWith('--')?a.slice(2):null;if(!name||!KNOWN.has(name))throw Error(`There is no option ${a}. See the top of this file.`);
@@ -506,9 +533,10 @@ if(process.argv[1]===import.meta.filename){
   ...(has('burn-from')?{burnFrom:(v=>{if(!/^[1-9]\d{0,9}$/.test(v||''))throw Error('--burn-from <height>: the first burn block is a whole number');return Number(v);})(arg('burn-from'))}:{}),
   ...(has('spend-from')?{spendFrom:(v=>{if(!/^[1-9]\d{0,9}$/.test(v||''))throw Error('--spend-from <height>: the first block of claims by a spent coin is a whole number');return Number(v);})(arg('spend-from'))}:{}),
   ...(has('records-from')?{recordsFrom:(v=>{if(!/^[1-9]\d{0,9}$/.test(v||''))throw Error('--records-from <height>: the first block of claim records counting again is a whole number');return Number(v);})(arg('records-from'))}:{}),
+  ...(has('offers-from')?{offersFrom:(v=>{if(!/^[1-9]\d{0,9}$/.test(v||''))throw Error('--offers-from <height>: the first block of offers is a whole number');return Number(v);})(arg('offers-from'))}:{}),
   ...(has('burn-dead')?{burnDead:(v=>{if(!/^\d{1,15}(,\d{1,15}){14}$/.test(v||''))throw Error('--burn-dead <index>,…: fifteen global output indexes');return v.split(',').map(Number);})(arg('burn-dead'))}:{}),
   ...(has('burn-fee-wallet')?{burnFee:(v=>{const m=/^([1-9A-HJ-NP-Za-km-z]{95}):([0-9a-f]{64})$/.exec(v||'');if(!m)throw Error('--burn-fee-wallet <main address>:<secret view key>');return {address:m[1],viewKey:m[2]};})(arg('burn-fee-wallet'))}:{}),state:arg('state'),network:arg('network'),xmr20Inscribers:(arg('xmr20-inscribers')||'').split(',').filter(Boolean),...(has('xmr20-open-from')?{xmr20OpenFrom:(v=>{if(!/^[1-9][0-9]{0,8}$/.test(v||''))throw Error('--xmr20-open-from <block>');return Number(v);})(arg('xmr20-open-from'))}:{}),...(has('no-xmr20-earlier')?{xmr20Earlier:false}:arg('xmr20-earlier')?{xmr20Earlier:arg('xmr20-earlier')}:{}),...(has('no-xmr20-follow')?{xmr20Follow:false}:{}),
-  port:arg('port'),fees:{mint:arg('mint-fee')||0,collection:arg('collection-fee')||0,tokenMint:arg('token-mint-fee')||0,single:arg('single-fee')||0,...(arg('network-fee')?{network:arg('network-fee')}:{})},carrierBin:arg('carrier-bin'),carrierState:arg('carrier-state'),carrierStart:arg('carrier-start'),carrierNetwork:arg('carrier-network'),contentDir:arg('content-dir'),collections:arg('collections'),contentArchive:archive,views:arg('views'),
+  port:arg('port'),fees:{mint:arg('mint-fee')||0,collection:arg('collection-fee')||0,tokenMint:arg('token-mint-fee')||0,single:arg('single-fee')||0,offer:arg('offer-fee')||0,...(arg('network-fee')?{network:arg('network-fee')}:{})},carrierBin:arg('carrier-bin'),carrierState:arg('carrier-state'),carrierStart:arg('carrier-start'),carrierNetwork:arg('carrier-network'),contentDir:arg('content-dir'),collections:arg('collections'),contentArchive:archive,views:arg('views'),
   origins:process.argv.flatMap((a,i)=>a==='--allow-origin'?[process.argv[i+1]]:[]),extensions:process.argv.flatMap((a,i)=>a==='--allow-extension'?[process.argv[i+1]]:[]),behindProxy:has('behind-proxy'),testHooks:has('test-hooks'),log:v=>console.log(new Date().toISOString(),JSON.stringify(v))});
  console.log(`Mordinals reader on http://127.0.0.1:${s.port} (${s.owners.length} Mordinals, block ${s.reader.height}${s.relay?', relay on':', reader only'})`);
  s.follow(Number(arg('every'))||5000);

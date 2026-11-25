@@ -49,7 +49,7 @@ export async function verify({info,entries,checkpoints=[],owners,chain=null,publ
  // Off mainnet (stagenet, testnet) a ledger names its own dead outputs, and the service's list is the one to replay with.
  const burns=info.burnFrom!=null?{burnFrom:info.burnFrom,burnDead:own||info.network!=='mainnet'?info.burn?.dead??null:null,burnFee:own||info.network!=='mainnet'?named:null,testChain:own}:{};
  if(info.burnFrom!=null&&ownerOutputsHash(owners)!==info.burn?.ownerOutputs)return {ok:false,problems:['The owner list here has other owner output indexes than the one this service uses (hash differs).'],accepted:0,refused:0,checkpoints:0,checkedOnNode:0};
- let ledger;try{ledger=createLedger({network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,height:info.start,mintFrom:info.mintFrom??null,minters:info.minters??null,openFrom:info.openFrom??null,...burns,...(info.spendFrom!=null?{spendFrom:info.spendFrom}:{}),...(info.recordsFrom!=null?{recordsFrom:info.recordsFrom}:{})});}
+ let ledger;try{ledger=createLedger({network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,height:info.start,mintFrom:info.mintFrom??null,minters:info.minters??null,openFrom:info.openFrom??null,...burns,...(info.spendFrom!=null?{spendFrom:info.spendFrom}:{}),...(info.recordsFrom!=null?{recordsFrom:info.recordsFrom}:{}),...(info.offersFrom!=null?{offersFrom:info.offersFrom}:{})});}
  catch(e){return {ok:false,problems:['The service states a setup the rules do not take: '+String(e?.message||e).slice(0,200)],accepted:0,refused:0,checkpoints:0,checkedOnNode:0};}
  // The fee of a claim by a spent coin is part of the rules: a service that states another one runs other rules.
  if(info.spendFrom!=null&&info.spend?.base!==ledger.spend.base)return {ok:false,problems:[`The service asks ${info.spend?.base} piconero besides the network fee for a claim by a spent coin; these rules ask ${ledger.spend.base}.`],accepted:0,refused:0,checkpoints:0,checkedOnNode:0};
@@ -60,7 +60,8 @@ export async function verify({info,entries,checkpoints=[],owners,chain=null,publ
   const burning=info.burnFrom!=null&&c.height>=info.burnFrom;
   if((c.burnFrom??null)!==(burning?info.burnFrom:null)||(c.burnDead??null)!==(burning?ledger.burn.dead.join(','):null)||(c.ownerOutputs??null)!==(burning?info.burn.ownerOutputs:null)||(c.burnFee??null)!==(burning?ledger.burn.fee.wallet:null)){bad(`The checkpoint at block ${c.height} is for a ledger with another first burn block, other dead outputs, other owner outputs or another fee wallet.`);break;}
   if((c.spendFrom??null)!==(info.spendFrom!=null&&c.height>=info.spendFrom?info.spendFrom:null)){bad(`The checkpoint at block ${c.height} is for a ledger with another first block of claims by a spent coin.`);break;}
-  if((c.recordsFrom??null)!==(info.recordsFrom!=null&&c.height>=info.recordsFrom?info.recordsFrom:null)){bad(`The checkpoint at block ${c.height} is for a ledger with another first block of claim records counting again.`);break;}}
+  if((c.recordsFrom??null)!==(info.recordsFrom!=null&&c.height>=info.recordsFrom?info.recordsFrom:null)){bad(`The checkpoint at block ${c.height} is for a ledger with another first block of claim records counting again.`);break;}
+  if((c.offersFrom??null)!==(info.offersFrom!=null&&c.height>=info.offersFrom?info.offersFrom:null)){bad(`The checkpoint at block ${c.height} is for a ledger with another first block of offers.`);break;}}
  // Whether a claim by a spent coin is a known record in the block of an entry (section 11), as the reader decodes it.
  const spends=e=>info.spendFrom!=null&&e.height>=info.spendFrom;
  const marks=[...checkpoints].sort((a,b)=>a.height-b.height),accepted=[];let mark=0,last=[info.start,-1],ok=0,refused=0;
@@ -87,7 +88,7 @@ export async function verify({info,entries,checkpoints=[],owners,chain=null,publ
   // A fee payment and nothing else.
   if(e.record===undefined&&e.fee!==undefined){if(e.ok!==true||e.id!==undefined||e.error!==undefined){bad(`Log entry ${i} (block ${e.height}) is not a well-formed fee payment entry.`);break;}
    if(!fees(e,i))break;accepted.push(e);ok++;continue;}
-  let bytes,d=null;try{bytes=unhex(e.record);d=decodeRecord(bytes,info.network,{spend:spends(e)});}catch{}
+  let bytes,d=null;try{bytes=unhex(e.record);d=decodeRecord(bytes,info.network,{spend:spends(e),offers:info.offersFrom!=null&&e.height>=info.offersFrom});}catch{}
   if(!d){if(e.ok)bad(`Log entry ${i} (block ${e.height}) is marked accepted but does not decode.`);else refused++;if(!fees(e,i))break;continue;}
   if(e.id!==recordId(info.domain,d.bodyBytes))bad(`Log entry ${i} (block ${e.height}) has another record id than its bytes.`);
   let out=null,error=null;try{out=ledger.check(bytes,e.facts);}catch(err){error=String(err.message);}
@@ -114,7 +115,7 @@ export async function verify({info,entries,checkpoints=[],owners,chain=null,publ
    if(!record||hex(record)!==e.record){bad(`Log entry ${i}: transaction ${e.txid} does not carry this record.`);continue;}
    // A purchase, and a claim by a spent coin where such claims count, are judged with what the reader looked up on the
    // node: the log has to hold it (a claim by a spent coin keeps the spending transaction as spendFacts() reads it).
-   let d=null;try{d=decodeRecord(unhex(e.record),info.network,{spend:spends(e)});}catch{}
+   let d=null;try{d=decodeRecord(unhex(e.record),info.network,{spend:spends(e),offers:info.offersFrom!=null&&e.height>=info.offersFrom});}catch{}
    const spent=d?.op===OP.claim&&d.body.proof===PROOF.spend;
    if((spent||d?.op===OP.buy)&&!Array.isArray(e.facts)){bad(`Log entry ${i}: the transactions this record names are missing from the log.`);continue;}
    if(e.facts){const ids=[...new Set(e.facts.map(f=>f.txid))],got=await chain.txs(ids),read=tx=>spent?spendFacts(tx):slim(tx);
@@ -134,7 +135,7 @@ export async function verify({info,entries,checkpoints=[],owners,chain=null,publ
 // A reader of your own over the same blocks; the two logs must be equal. -> list of problems
 export async function scan({info,entries,owners,chain,dir,height}){
  const named=info.burn?.fee?{address:info.burn.fee.wallet,viewKey:info.burn.fee.viewKey}:null;let project=false;try{project=info.burnFrom!=null&&isProjectFeeWallet(feeWallet(named,info.network,{testChain:true}));}catch{}
- let reader;try{reader=openReader({dir,chain,network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,start:info.start,startHash:info.startHash,mintFrom:info.mintFrom??null,minters:info.minters??null,openFrom:info.openFrom??null,...(info.burnFrom!=null?{burnFrom:info.burnFrom,burnDead:info.network==='mainnet'&&Array.isArray(info.burn?.dead)&&isMainnetDead([...info.burn.dead].sort((a,b)=>a-b))?null:info.burn?.dead??null,burnFee:project?null:named}:{}),...(info.spendFrom!=null?{spendFrom:info.spendFrom}:{}),...(info.recordsFrom!=null?{recordsFrom:info.recordsFrom}:{}),checkpointEvery:0});}catch(e){return ['The service states a setup the rules do not take: '+String(e?.message||e).slice(0,200)];}
+ let reader;try{reader=openReader({dir,chain,network:info.network,domain:info.domain,feeAddress:info.feeAddress,owners,start:info.start,startHash:info.startHash,mintFrom:info.mintFrom??null,minters:info.minters??null,openFrom:info.openFrom??null,...(info.burnFrom!=null?{burnFrom:info.burnFrom,burnDead:info.network==='mainnet'&&Array.isArray(info.burn?.dead)&&isMainnetDead([...info.burn.dead].sort((a,b)=>a-b))?null:info.burn?.dead??null,burnFee:project?null:named}:{}),...(info.spendFrom!=null?{spendFrom:info.spendFrom}:{}),...(info.recordsFrom!=null?{recordsFrom:info.recordsFrom}:{}),...(info.offersFrom!=null?{offersFrom:info.offersFrom}:{}),checkpointEvery:0});}catch(e){return ['The service states a setup the rules do not take: '+String(e?.message||e).slice(0,200)];}
  while(reader.height<height){const before=reader.height;await reader.sync({limit:height-reader.height});if(reader.height===before)break;}
  if(reader.height<height)return [`The node only reaches block ${reader.height}; the service is at ${height}.`];
  const mine=reader.journal.filter(e=>e.height<=height),theirs=entries.filter(e=>e.height<=height),problems=[];

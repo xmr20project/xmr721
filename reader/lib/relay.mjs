@@ -89,7 +89,7 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
  // Coins kept for the lane (none on a relay without one), and how many ready coins the relay keeps so that ordinary
  // records never wait on a count that starts no new split.
  const laneReserve=laneOf.size?limits.laneReserve:0,keepReady=Math.max(limits.minReady,limits.buyReserve+laneReserve+1);
- const fees={collection:BigInt(asked.collection||0),mint:BigInt(asked.mint||0),tokenMint:BigInt(asked.tokenMint||0),single:BigInt(asked.single||0)};
+ const fees={collection:BigInt(asked.collection||0),mint:BigInt(asked.mint||0),tokenMint:BigInt(asked.tokenMint||0),single:BigInt(asked.single||0),offer:BigInt(asked.offer||0)};
  // The type of a record is what its signer wrote, so the content itself has to be a JSON text to count as one.
  const jsonText=bytes=>{try{const v=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));return v!==null&&typeof v==='object';}catch{return false;}};
  // The network fee of the transaction that will carry a record. Such a transaction spends one coin and makes two, so
@@ -110,7 +110,8 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
  const paying=(price,network)=>({amount:(price+network).toString(),...(addNetwork?{price:price.toString(),network:network.toString()}:{})});
  const payView=j=>({address:j.pay.address,amount:j.pay.amount,payBy:j.payBy,...(j.pay.network!=null?{price:j.pay.price,network:j.pay.network}:{})});
  const lone=d=>d.op===OP.mint&&d.body.collection===NO_COLLECTION&&!(d.body.type===TYPE_JSON&&jsonText(d.body.content));
- const priceOf=d=>d.op===OP.collection?fees.collection:d.op===OP.mint?(fees.single&&lone(d)?fees.single:fees.mint):0n;
+ // An offer has a price of its own (`fees.offer`); its accept and its withdrawal are carried free.
+ const priceOf=d=>d.op===OP.collection?fees.collection:d.op===OP.mint?(fees.single&&lone(d)?fees.single:fees.mint):d.op===OP.offer?fees.offer:0n;
  mkdirSync(jobsDir,{recursive:true});
  const write=(file,value)=>{const tmp=file+'.tmp',fd=openSync(tmp,'w',0o600);try{writeSync(fd,JSON.stringify(value)+'\n');fsyncSync(fd);}finally{closeSync(fd);}renameSync(tmp,file);};
  const jobs=new Map();
@@ -193,6 +194,8 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   catch(e){e.rule=true;throw e;}}
  function describe(d){
   const b=d.body;if(d.op===OP.collection||d.op===OP.mint)return {number:null,signer:b.creator};
+  // An offer and its withdrawal are about no one NFT.
+  if(d.op===OP.offer||d.op===OP.withdraw)return {number:null,signer:b.bidder};
   const l=d.op===OP.cancel||d.op===OP.reserve||d.op===OP.buy?reader.ledger.lot(b.lot):null;
   // One record at a time per NFT: a Mordinal by its number, a minted NFT by its id.
   const m=reader.ledger.mordinal(l?l.reg:d.op===OP.burn?b.nft:b.reg),number=m.number??m.reg;
@@ -425,7 +428,7 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
  return {limits,
   // What is added for the network when the relay adds it: the rate, and the fee of a small record (100 bytes) and of the largest.
   get network(){return addNetwork?{perByte:rate.perByte.toString(),least:feeFor(CARRIER_BYTES+extraBytes(100)).toString(),most:feeFor(CARRIER_BYTES+extraBytes(MAX_RECORD)).toString()}:null;},
-  fees:{collection:fees.collection.toString(),mint:fees.mint.toString(),...(fees.tokenMint?{tokenMint:fees.tokenMint.toString()}:{}),...(fees.single?{single:fees.single.toString()}:{})},
+  fees:{collection:fees.collection.toString(),mint:fees.mint.toString(),...(fees.tokenMint?{tokenMint:fees.tokenMint.toString()}:{}),...(fees.single?{single:fees.single.toString()}:{}),...(fees.offer?{offer:fees.offer.toString()}:{})},
   // Mints of open XMR20 tokens: the token list is the service's (it knows the opening block), handed over once.
   useTokens(lookup){tokenOf=lookup;},submitMint:o=>alone(()=>submitMint(o)),
   submit:(recordHex,o)=>alone(()=>submit(recordHex,o)),tick:()=>alone(tick),

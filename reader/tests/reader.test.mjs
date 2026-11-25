@@ -241,7 +241,7 @@ test('the relay sends records, waits for blocks and keeps to its limits',async()
  assert.equal((await relay.submit(hex(claim))).state,'done');assert.deepEqual(relay.pending(),[]);
  // Records the rules refuse cost nothing: they are not sent.
  await assert.rejects(relay.submit(hex(make.claim(0,w.alice,w.carol))),e=>!e.status&&e.message==='This Mordinal is already claimed.');
- await assert.rejects(relay.submit('zz'),/hexadecimal/);await assert.rejects(relay.submit(hex(Uint8Array.of(...MAGIC,10))),/Unknown operation/);
+ await assert.rejects(relay.submit('zz'),/hexadecimal/);await assert.rejects(relay.submit(hex(Uint8Array.of(...MAGIC,13))),/Unknown operation/);
  await assert.rejects(relay.submit(hex(make.list(0,w.alice,XMR,reader.height+2).record)),/would end before it reaches a block/);
  assert.equal(carrier.made.length,1);
  // Two waiting records per address here; the third waits its turn.
