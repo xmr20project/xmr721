@@ -1,0 +1,15 @@
+{
+ "schema": "mordinals-checkpoint-v1",
+ "network": "mainnet",
+ "domain": "ec7f7d26dba6725124df69417d43335c52e34557fc61c1d8d6b4736370e6ba1d",
+ "owners": "e71d340d84538c229f9e190d221271873cde6b1daab8366d9b282ff016e639ee",
+ "start": 3804029,
+ "mintFrom": 3805946,
+ "minters": "42zfMRhM9aQAXb4uZKw5gzVN9uTf3bUrgAz2cY7jpvbn8ZE4RWsBsKUECgXNiFKsqK9nBDPThFzTafsZX3bZ7socRQZU1qX,47hW3YWbqR5LrvJyfRSBAqArp8TcU1xnL29dn5xpEWJN9dmyohzaS4ug3e57yvSGmT3UWh47gfN4VW1soHSrXsmqD8haurE",
+ "openFrom": 3806220,
+ "height": 3807360,
+ "blockHash": "4e9ec2919a6ed2e99ba5e66f04899f62bc35dfcf79d77195ad899cecd809e58b",
+ "records": 12,
+ "listHash": "add01d675923a73cfb0c604ac5671aae9f052912db9669bf263609e8f26a3a22",
+ "stateHash": "af08d07287d0c7286202eff839756bbb31f92be405665322b1fe8c5a88606525"
+}

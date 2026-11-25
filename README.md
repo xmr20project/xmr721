@@ -144,6 +144,26 @@ two readers with the same settings at the same block give the same one.
 `node reader/tools/verify.mjs` replays a reader's log and checks it without trusting the reader.
 The settings are explained in [`docs/LAUNCH-SETTINGS.md`](docs/LAUNCH-SETTINGS.md).
 
+### Compare with the published checkpoints
+
+Every 720 blocks a reader writes a checkpoint: one hash over the list of accepted records and
+one over the whole ledger ([`RULES.md`](RULES.md) section 12). The checkpoints of the mainnet
+ledger, as the project's reader computed them, are in [`mainnet/`](mainnet), one file per
+block and a list with each file's SHA-256. A file there is never changed once written.
+
+```
+node reader/tools/verify.mjs --service http://127.0.0.1:18951 \
+  --owners ownership-index/result/owners.jsonl,ownership-index/added/added.jsonl \
+  --node http://127.0.0.1:18081 --published mainnet
+```
+
+checks your own reader against them, record by record against your node. If your reader
+and a published checkpoint ever differ at the same block, one of the two is not following
+these rules, and the difference is public: please open an issue with both checkpoints.
+Run the same command with `--service https://api.xmr20.org/xmr721 --scan <empty folder>` to
+check the project's reader instead: it reads every block from the start block with the code
+in this repository and compares the two logs.
+
 A reader of this ledger that was set up without `--open-from 3806220` has to be stopped and
 started again with it before block 3,806,220. A state folder that has not read that block takes
 the opening in at the next start; one that read it without the opening judges mints
