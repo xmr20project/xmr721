@@ -83,7 +83,9 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
  // records never wait on a count that starts no new split.
  const laneReserve=laneOf.size?limits.laneReserve:0,keepReady=Math.max(limits.minReady,limits.buyReserve+laneReserve+1);
  const fees={collection:BigInt(asked.collection||0),mint:BigInt(asked.mint||0),tokenMint:BigInt(asked.tokenMint||0),single:BigInt(asked.single||0)};
- const lone=d=>d.op===OP.mint&&d.body.collection===NO_COLLECTION&&d.body.type!==TYPE_JSON;
+ // The type of a record is what its signer wrote, so the content itself has to be a JSON text to count as one.
+ const jsonText=bytes=>{try{const v=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));return v!==null&&typeof v==='object';}catch{return false;}};
+ const lone=d=>d.op===OP.mint&&d.body.collection===NO_COLLECTION&&!(d.body.type===TYPE_JSON&&jsonText(d.body.content));
  const priceOf=d=>d.op===OP.collection?fees.collection:d.op===OP.mint?(fees.single&&lone(d)?fees.single:fees.mint):0n;
  mkdirSync(jobsDir,{recursive:true});
  const write=(file,value)=>{const tmp=file+'.tmp',fd=openSync(tmp,'w',0o600);try{writeSync(fd,JSON.stringify(value)+'\n');fsyncSync(fd);}finally{closeSync(fd);}renameSync(tmp,file);};

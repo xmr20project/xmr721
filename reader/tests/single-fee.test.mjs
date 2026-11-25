@@ -34,3 +34,10 @@ test('a collection costs the collection fee, each mint into it the mint fee',asy
 test('a JSON text with no collection, as a token deploy is, keeps the mint fee',async()=>{
  const p=L().prepareMint({creator:W.carol.address,type:6,content:text('{"p":"test"}')}),out=await send(W.carol,p);
  assert.equal(out.state,'unpaid');assert.equal(out.pay.amount,MINT.toString());});
+
+test('a picture is not a JSON text because its record says so: it costs the single price',async()=>{
+ const png=Uint8Array.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0,0,0,13,0x49,0x48,0x44,0x52,0,0,0,1,0,0,0,1,8,6,0,0,0]);
+ const p=L().prepareMint({creator:W.dave.address,type:6,content:png}),out=await send(W.dave,p);
+ assert.equal(out.pay.amount,SINGLE.toString());
+ const q=L().prepareMint({creator:W.dave.address,type:6,content:text('"only a string"')}),other=await send(W.dave,q);
+ assert.equal(other.pay.amount,SINGLE.toString());});
