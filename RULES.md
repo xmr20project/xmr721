@@ -1,11 +1,16 @@
-# XMR721 — rule document (draft 4)
+# XMR721 — the rules, version 1.0
 
-Status: draft. Not final, not independently reviewed, not in use anywhere.
-The code in `rules/lib/` is these rules; `rules/tests/fixtures.json` holds test cases any
-other implementation can replay. Values marked **draft** can still change before review.
-Section 10 (claiming by burning) is a draft of a setting that no ledger uses yet.
+Status: in use on Monero mainnet since block 3,804,029. These are the rules the mainnet
+ledger is judged by, with every value it uses (section 13). They change only as section 14
+says: by a new numbered version, published before its first block, that leaves every earlier
+block judged as it was. They have not been reviewed by anyone outside the project yet.
 
-This draft covers the Mordinals collection. Byte strings inside records (`"MD1"`,
+The code in `rules/lib/` is these rules; where this text and that code disagree about a
+block that is already in the chain, the code at the tag of this version says what the
+ledger is, and the text is corrected. `rules/tests/` holds test cases any other
+implementation can replay.
+
+This document covers the Mordinals collection. Byte strings inside records (`"MD1"`,
 `MORDINALS-RECORD-v1`, `MORDINALS-CLAIM-KEY-v1`, `mordinals-payment:`) and the texts a
 wallet signs name Mordinals, because these records are about Mordinals; they are fixed
 identifiers, not the name of the standard.
@@ -277,7 +282,8 @@ therefore carries proofs and no key.
 
 ## 6. Privacy rules
 
-1. No record contains or requires a key image.
+1. No record contains or requires a key image, except a claim by a spent coin (proof 2,
+   section 11), which shows the key image of the owner coin it claims by.
 2. No record requires a transaction with chosen ring members. Every transaction that
    carries a record is made by a standard wallet with normal rings.
 3. No reserve proofs, no spend proofs.
@@ -334,22 +340,24 @@ kept for that.
 | Mint fee | none | section 9 | decided |
 | Largest mint record | 1,000 bytes (824 of name and content) | `MAX_RECORD` | decided |
 | Who may mint | anyone, or only the addresses the ledger's setup lists; into a collection only its creator | section 9 | decided |
-| First mint block | not set | ledger setup | open |
+| First mint block | per ledger; mainnet: section 13 | ledger setup | decided |
 | Marketplace fee cap | 5% on top | `RULES.marketFeeCapBps` | decided |
 | Lowest price | 0.001 XMR | `RULES.minPrice` | decided |
 | Longest listing | 21,600 blocks after its record | `RULES.maxListing` | decided |
 | Reservation length | at most 30 blocks | `RULES.maxReserve` | decided |
-| Time to record a paid purchase | 10 blocks after the pay-by block | `RULES.settle` | draft |
+| Time to record a paid purchase | 10 blocks after the pay-by block | `RULES.settle` | decided |
 | Entries per buy | 2 or 3, one per payee, from 1 to 3 transactions | `RULES.maxPayments` | decided |
 | Claim deadline | none | — | decided |
 | Old-style transfers after the start block | not honoured, except the burning transfer of section 10 on a ledger that has it | owner list | decided |
-| First burn block | not set | ledger setup | draft |
-| Claim records after the first burn block | 720 more blocks (about a day) | `RECORDS_OVERLAP` | draft |
-| Burn address | section 10 | `rules/lib/burn.mjs` | draft |
-| Dead outputs (mainnet) | 70499731–70499744 and 70499746, fixed | `MAINNET_DEAD` | draft |
+| First burn block | per ledger; mainnet: section 13 | ledger setup | decided |
+| Claim records after the first burn block | 720 more blocks (about a day) | `RECORDS_OVERLAP` | decided |
+| Burn address | section 10 | `rules/lib/burn.mjs` | decided |
+| Dead outputs (mainnet) | 70499731–70499744 and 70499746, fixed | `MAINNET_DEAD` | decided |
+| First block of claims by a spent coin | per ledger; mainnet: section 13 | ledger setup | decided |
+| Fee of a claim by a spent coin | the network fee of the transaction that carries the record, and 0.0025 XMR | `SPEND_BASE` | decided |
 | Payment-proof claim (proof 1) | kept; wallets warn what it shows | section 3 | decided |
 | Buy record size | 296 or 425 bytes | record format | decided |
-| Domain, fee address, start block | test values only | ledger setup | open |
+| Domain, fee address, start block | per ledger; mainnet: section 13 | ledger setup | decided |
 
 ## 8. How records travel
 
@@ -366,6 +374,9 @@ tx_extra = 01 <transaction public key 32>  [02 09 01 <payment id 8>]
   way, in this order (the public key first, then the payment id if there is one, then all chunks with nothing after
   them), is at most 1,060 bytes, and the joined chunks start with `"MD1" 0xfe` and are at
   most 1,000 bytes. Anything else is not a record and is skipped.
+- The mining reward transaction of a block is never read: not for a record, not for a
+  burning transfer (section 10), not for a fee payment. Only the block's other transactions
+  are, in the order the block lists them.
 - One transaction carries one record. Who made the transaction and what it pays do not
   matter: a record stands on its own signature or payments, so anyone can carry it. A
   relay carries records for wallets that cannot build such a transaction themselves; it
@@ -377,7 +388,7 @@ tx_extra = 01 <transaction public key 32>  [02 09 01 <payment id 8>]
 - When blocks are replaced, records in the replaced blocks are undone and the records of
   the new blocks applied; the result depends only on the chain.
 
-## 9. New NFTs: collections, mints, burns (new in draft 4)
+## 9. New NFTs: collections, mints, burns
 
 From the ledger's first mint block on, NFTs can be made. An NFT is named by 32 bytes: a
 Mordinal by its registration transaction, a minted NFT by the id of its mint record.
@@ -867,3 +878,135 @@ refuses it when the node does not know `spendTx`.
 Code: `rules/lib/spend.mjs`; the checks in order: `spentCoin` in `rules/lib/ledger.mjs`, the
 waiting and the fee as for burn claims. Tests: `rules/tests/spend.test.mjs` (with three key
 images that Feather exported, in `rules/tests/fixtures-spend.json`), `reader/tests/spend.test.mjs`.
+
+## 12. Checkpoints
+
+A checkpoint is a short summary of the ledger at one block. Two readers of the same ledger
+that have read the same chain compute the same checkpoint, byte for byte, so comparing one
+line is enough to know that two indexes agree on every owner, lot and fee. A checkpoint
+proves nothing by itself: it is a statement to compare, by whoever computed it.
+
+A reader computes one at every block whose height is a multiple of 720, after it has
+applied that block. It is a JSON object with these members, in this order:
+
+| Member | Value |
+| --- | --- |
+| `schema` | `"mordinals-checkpoint-v1"` |
+| `network`, `domain`, `owners`, `start` | the ledger: network name, domain (hex), the owner list hash, the start block |
+| `mintFrom`, `minters`, `openFrom` | from the first mint block on: that block; the minter list (canonical addresses, sorted, joined by commas) when the ledger has one; from the opening block on, that block |
+| `burnFrom`, `burnDead`, `ownerOutputs`, `burnFee` | from the first burn block on: that block, the fifteen dead outputs joined by commas, the hash of the owner outputs' indexes, the fee wallet's address |
+| `spendFrom` | from the first block of claims by a spent coin on: that block |
+| `height`, `blockHash` | the block the checkpoint is for |
+| `records` | how many journal entries were accepted so far |
+| `listHash` | SHA-256 over one line `<height>:<txid>\n` per accepted entry, in chain order |
+| `stateHash` | SHA-256 over the ledger summary below |
+
+Members whose block has not come yet are left out, so a checkpoint from before a setting's
+block is what it always was.
+
+**Accepted entries** are, in chain order (block, then position in the block): every MD1
+record that passed its checks; from the first burn block on, every burning transfer that
+passed its checks, whether or not its fee is paid yet; and every other transaction that pays
+a fee address of the ledger. Refused records and refused burns are not in the list.
+
+**The ledger summary** is the JSON text (no spaces, members in the order given) of:
+
+- `height`: the block;
+- `claimed`: every claimed Mordinal in owner-list order, as `{number, owner, seq, lot,
+  history}`: its number, owner address, counter, open lot id or `null`, and the kind of each
+  thing that happened to it in order (`"claim"`, `"move"`, `"sale"`);
+- `lots`: every lot in the order the listings were recorded, as `{id, number, seller, price,
+  status, buyer, reservations}` (`price` as decimal text, `buyer` an address or `null`,
+  `reservations` a count);
+- `payments`: the ids of every payment transaction a purchase used, sorted;
+- `collections`, once one exists: `{id, creator, name, max, editions}` in the order recorded,
+  `editions` sorted;
+- `minted`, once something was minted: `{id, collection, edition, sha256, owner, seq,
+  burned}` in mint order;
+- `waiting`, while a claim waits for its fee: `{number, id, to, due}` by number;
+- `fees`, once a fee payment counted: `{number, paid, outputs}` by number.
+
+The exact text is what `toJSON()` in `rules/lib/ledger.mjs` returns, given to
+`JSON.stringify`. A second implementation that reproduces the state hash of every published
+mainnet checkpoint has reproduced the ledger.
+
+Checkpoints of the mainnet ledger are published as files (`reader/tools/export-checkpoints.mjs`).
+A published checkpoint is never changed afterwards; `reader/tools/verify.mjs --published`
+compares a reader with them.
+
+## 13. The mainnet ledger
+
+Every value that makes a reader a reader of the mainnet ledger. The same values are in
+`rules/lib/mainnet.mjs`, which `reader/service.mjs --ledger mainnet` uses; a test holds the
+two together. None of them is read from a server.
+
+| Value | Mainnet |
+| --- | --- |
+| Rules | version 1.0 (this document) |
+| Network | Monero mainnet |
+| Domain | `ec7f7d26dba6725124df69417d43335c52e34557fc61c1d8d6b4736370e6ba1d` = SHA-256("XMR721 mainnet ledger 1") |
+| Owner list | `ownership-index/result/owners.jsonl`, then `ownership-index/added/added.jsonl`: 42,895 entries |
+| Owner list hash | `e71d340d84538c229f9e190d221271873cde6b1daab8366d9b282ff016e639ee` |
+| Hash of the owner outputs' indexes | `7f01d0149f44350f9b381d33598453219c3bf453ae79726c75f9b0bf1b11165f` |
+| Start block | 3,804,029, hash `cddee72e248e6fc903d7850f73e29cceff64dd9a027f64afc7362d76784081cd` |
+| Protocol fee address | `45J4QMTbVoi61ZQoUzLVh7VkvjuRbqaaHW1AophY1Jbi9KzTzk8qoh43fT6JWYvkk6j6X1Stog7Xb9ZabzBrMr7tGzANudW` |
+| First mint block | 3,805,946 |
+| Minters until the opening block | `42zfMRhM9aQAXb4uZKw5gzVN9uTf3bUrgAz2cY7jpvbn8ZE4RWsBsKUECgXNiFKsqK9nBDPThFzTafsZX3bZ7socRQZU1qX`, `47hW3YWbqR5LrvJyfRSBAqArp8TcU1xnL29dn5xpEWJN9dmyohzaS4ug3e57yvSGmT3UWh47gfN4VW1soHSrXsmqD8haurE` |
+| Opening block | 3,806,220 |
+| First burn block | 3,808,200 (claim records counted until block 3,808,919) |
+| Dead outputs | 70499731–70499744 and 70499746 |
+| Fee wallet of claims | `47BebHskardKh24pHr92oZ8wv9JLcyjmJQcUKTpzK4gshhHkffYBqnJ7CUFNRjbJ77iMx3bTgESDjXmBMJZeTKbhCoTxnfE`; its view key is public (`rules/lib/burn-fee.mjs`) |
+| First block of claims by a spent coin | 3,813,165 |
+
+**What a key can and cannot do on this ledger.**
+
+- An NFT changes owner only by a record signed with its owner's key, by a purchase that
+  pays the seller the listed price, or, for an unclaimed Mordinal, by a claim that only the
+  holder of its owner coin can make. There is no other way, and none for the project.
+- The protocol fee address receives 5% of each sale. That is all it does: it has no say
+  over any NFT, and the ledger refuses it as a seller.
+- The fee wallet receives the fee of burn claims and of claims by a spent coin. Its view key
+  is public so that every reader sees the payments; anyone may pay a claim's fee. Holding its
+  spend key gives the money, nothing in the ledger.
+- The burn address has no known spend key (section 10); nothing sent to it moves again.
+- The two minter addresses could mint before the opening block only. Since block 3,806,220
+  they are addresses like any other.
+- A relay carries records. It can decline to carry one, or charge for carrying it; it cannot
+  change a record, and any Monero transaction of the right form carries a record without it.
+- The owner list is a file in this repository, pinned by the two hashes above. How it was
+  made from the chain, and how to make it again, is in `ownership-index/`.
+
+## 14. Changing the rules
+
+The ledger is whatever every reader computes from the chain with the same rules. A change
+of rules is therefore a change every reader has to take at the same block. This is how one
+is made, and what none may do.
+
+1. **A numbered version.** A change is a new version of this document and of `rules/lib/`,
+   with the block from which it applies. Corrections of wording that change no judgement
+   keep the version.
+2. **Published first.** The version is merged into the public repository, with its first
+   block written in it, at least 5,040 blocks (about seven days) before that block. Readers
+   that update in that time judge every block alike; a reader that does not stops agreeing
+   at the first block the new rule decides differently, and its checkpoints show it.
+3. **Never backwards.** No version changes how a block before its first block is judged.
+   What a past version accepted stays accepted; what it refused stays refused.
+4. **Never without the owner.** No version adds a way to move, list, sell, burn or freeze an
+   NFT without the signature of its owner, and none gives any key a say over NFTs it does
+   not own.
+5. **A fault that loses NFTs** (a way to take what one does not own, or one that makes
+   readers disagree) may be closed with less notice than point 2 asks. The version then
+   says so, names the fault, and still keeps points 3 and 4.
+
+Version history of the mainnet ledger:
+
+| Version | From block | What |
+| --- | --- | --- |
+| 1.0 | 3,804,029 | Claims, moves and trades (sections 2–8) |
+| 1.0 | 3,805,946 | Collections, mints and burns for listed minters (section 9) |
+| 1.0 | 3,806,220 | Minting open to everyone |
+| 1.0 | 3,808,200 | Claims by burning (section 10) |
+| 1.0 | 3,813,165 | Claims by a spent coin (section 11) |
+
+Version 1.0 is the rules as they stand from block 3,813,165; the earlier rows are the
+blocks at which its parts began, and each was added without changing an earlier block.

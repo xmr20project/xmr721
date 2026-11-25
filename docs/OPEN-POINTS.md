@@ -1,11 +1,12 @@
 # Review notes and open points
 
-10 November 2026. Draft: nothing here is live, and no start block, domain or fee address
-is chosen. This page says what a reviewer should read first, what review inside the
+First written 10 November 2026, before the ledger started. The ledger is live on mainnet
+since block 3,804,029 ([settings](LAUNCH-SETTINGS.md)); points below that speak of a draft
+describe the state at that time. This page says what a reviewer should read first, what review inside the
 project has already found and changed, and what is still open. No outside review has
 happened yet.
 
-The rules are [`../RULES.md`](../RULES.md) (XMR721, draft 4). The code in `rules/lib/` is the
+The rules are [`../RULES.md`](../RULES.md) (XMR721, version 1.0). The code in `rules/lib/` is the
 rules: the reader, the check tool, the pages and the wallets all import that one library.
 The wallets are not in this repository; points about them are kept here because they bear
 on the rules.

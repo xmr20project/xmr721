@@ -108,7 +108,7 @@ inscriptions are planned to use XMR721.
 
 | Path | What |
 |---|---|
-| [`RULES.md`](RULES.md) | The XMR721 rules (draft 4): records, checks, fee rule, privacy rules, new NFTs |
+| [`RULES.md`](RULES.md) | The XMR721 rules, version 1.0: records, checks, fee rule, privacy rules, new NFTs, checkpoints, the mainnet ledger's values, and how the rules may change |
 | [`rules/`](rules) | The rule library, its offline tests, and tests against real wallet software on a local test chain |
 | [`reader/`](reader) | Reader, relay, HTTP service, explorer/gallery/market pages, check tools |
 | [`cli/`](cli) | The `xmr721` command: a wallet of its own that inscribes NFTs and collections ([Inscribe](#inscribe)) |
@@ -128,18 +128,14 @@ Node.js 22 or newer and a synchronized Monero node (`monerod`).
 
 ```
 npm install
-node reader/service.mjs --network mainnet --node http://127.0.0.1:18081 --state xmr721-state \
-  --owners ownership-index/result/owners.jsonl,ownership-index/added/added.jsonl \
-  --transfers ownership-index/result/transfers.jsonl \
-  --domain ec7f7d26dba6725124df69417d43335c52e34557fc61c1d8d6b4736370e6ba1d \
-  --fee-address 45J4QMTbVoi61ZQoUzLVh7VkvjuRbqaaHW1AophY1Jbi9KzTzk8qoh43fT6JWYvkk6j6X1Stog7Xb9ZabzBrMr7tGzANudW \
-  --start 3804029 --start-hash cddee72e248e6fc903d7850f73e29cceff64dd9a027f64afc7362d76784081cd \
-  --mint-from 3805946 \
-  --minters 42zfMRhM9aQAXb4uZKw5gzVN9uTf3bUrgAz2cY7jpvbn8ZE4RWsBsKUECgXNiFKsqK9nBDPThFzTafsZX3bZ7socRQZU1qX,47hW3YWbqR5LrvJyfRSBAqArp8TcU1xnL29dn5xpEWJN9dmyohzaS4ug3e57yvSGmT3UWh47gfN4VW1soHSrXsmqD8haurE \
-  --open-from 3806220 \
-  --xmr20-inscribers 42zfMRhM9aQAXb4uZKw5gzVN9uTf3bUrgAz2cY7jpvbn8ZE4RWsBsKUECgXNiFKsqK9nBDPThFzTafsZX3bZ7socRQZU1qX \
-  --collections xmr20-nfts/collections
+node reader/service.mjs --ledger mainnet --node http://127.0.0.1:18081 --state xmr721-state
 ```
+
+`--ledger mainnet` stands for every setting of the mainnet ledger: the owner list, the domain,
+the fee address, the start block and each later block at which a rule began
+([`RULES.md`](RULES.md) section 13, [`rules/lib/mainnet.mjs`](rules/lib/mainnet.mjs)). No
+setting is typed by hand, and none can be given beside it, so two people who run this
+command run the same ledger.
 
 It reads every block from the start block on and serves the ledger at
 `http://127.0.0.1:18951` (`/info`, `/owners`, `/nfts`, `/xmr20/tokens`, `/collections/genesis`
@@ -147,6 +143,26 @@ and the rest in [`reader/README.md`](reader/README.md)). `/info` gives the lates
 two readers with the same settings at the same block give the same one.
 `node reader/tools/verify.mjs` replays a reader's log and checks it without trusting the reader.
 The settings are explained in [`docs/LAUNCH-SETTINGS.md`](docs/LAUNCH-SETTINGS.md).
+
+### Compare with the published checkpoints
+
+Every 720 blocks a reader writes a checkpoint: one hash over the list of accepted records and
+one over the whole ledger ([`RULES.md`](RULES.md) section 12). The checkpoints of the mainnet
+ledger, as the project's reader computed them, are in [`mainnet/`](mainnet), one file per
+block and a list with each file's SHA-256. A file there is never changed once written.
+
+```
+node reader/tools/verify.mjs --service http://127.0.0.1:18951 \
+  --owners ownership-index/result/owners.jsonl,ownership-index/added/added.jsonl \
+  --node http://127.0.0.1:18081 --published mainnet
+```
+
+checks your own reader against them, record by record against your node. If your reader
+and a published checkpoint ever differ at the same block, one of the two is not following
+these rules, and the difference is public: please open an issue with both checkpoints.
+Run the same command with `--service https://api.xmr20.org/xmr721 --scan <empty folder>` to
+check the project's reader instead: it reads every block from the start block with the code
+in this repository and compares the two logs.
 
 A reader of this ledger that was set up without `--open-from 3806220` has to be stopped and
 started again with it before block 3,806,220. A state folder that has not read that block takes

@@ -220,7 +220,7 @@ replaced, the block is read again.
 Three waiting records per signing address, one waiting record per Mordinal, a total and a daily cap, and a request
 rate per network address. The relay's wallet pays the Monero network fee of each carrying transaction (measured
 size: about 2 kB for a claim with a payment proof). It can charge for collection and mint records
-(`--mint-fee`, `--collection-fee`); the project's relay charges nothing at present.
+(`--mint-fee`, `--collection-fee`); the project's relay states what it charges in [`docs/LAUNCH-SETTINGS.md`](../docs/LAUNCH-SETTINGS.md).
 
 ## Known limits
 

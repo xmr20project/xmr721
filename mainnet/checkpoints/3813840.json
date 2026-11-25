@@ -1,0 +1,20 @@
+{
+ "schema": "mordinals-checkpoint-v1",
+ "network": "mainnet",
+ "domain": "ec7f7d26dba6725124df69417d43335c52e34557fc61c1d8d6b4736370e6ba1d",
+ "owners": "e71d340d84538c229f9e190d221271873cde6b1daab8366d9b282ff016e639ee",
+ "start": 3804029,
+ "mintFrom": 3805946,
+ "minters": "42zfMRhM9aQAXb4uZKw5gzVN9uTf3bUrgAz2cY7jpvbn8ZE4RWsBsKUECgXNiFKsqK9nBDPThFzTafsZX3bZ7socRQZU1qX,47hW3YWbqR5LrvJyfRSBAqArp8TcU1xnL29dn5xpEWJN9dmyohzaS4ug3e57yvSGmT3UWh47gfN4VW1soHSrXsmqD8haurE",
+ "openFrom": 3806220,
+ "burnFrom": 3808200,
+ "burnDead": "70499731,70499732,70499733,70499734,70499735,70499736,70499737,70499738,70499739,70499740,70499741,70499742,70499743,70499744,70499746",
+ "ownerOutputs": "7f01d0149f44350f9b381d33598453219c3bf453ae79726c75f9b0bf1b11165f",
+ "burnFee": "47BebHskardKh24pHr92oZ8wv9JLcyjmJQcUKTpzK4gshhHkffYBqnJ7CUFNRjbJ77iMx3bTgESDjXmBMJZeTKbhCoTxnfE",
+ "spendFrom": 3813165,
+ "height": 3813840,
+ "blockHash": "d927883e4613e060991c43b1cb064af593296af30a41821d3e20c188e5eab407",
+ "records": 18,
+ "listHash": "3265a04a35b8fdf17c06f04b5e84172e574d3b24f330b6488eea04c0979cd36c",
+ "stateHash": "9f7fb5f223ace749df0e529c087eb746e08e4e230a167794cc5c70a5f37b89fb"
+}

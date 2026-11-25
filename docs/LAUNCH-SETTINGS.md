@@ -6,6 +6,7 @@ ledger setting from a later block.
 
 | Setting | Value |
 | --- | --- |
+| Rules | [RULES.md](../RULES.md), version 1.0; section 13 lists these values, [`rules/lib/mainnet.mjs`](../rules/lib/mainnet.mjs) holds them, and the reader takes them all with `--ledger mainnet` |
 | Network | Monero mainnet |
 | Ledger domain | `ec7f7d26dba6725124df69417d43335c52e34557fc61c1d8d6b4736370e6ba1d` = SHA-256("XMR721 mainnet ledger 1") |
 | Owner list | `ownership-index/result/owners.jsonl` + `ownership-index/added/added.jsonl` (42,895 Mordinals); its hash is `e71d340d84538c229f9e190d221271873cde6b1daab8366d9b282ff016e639ee` |
@@ -20,7 +21,7 @@ ledger setting from a later block.
 | Claims by a spent coin | 3,813,165: from this block on a holder whose wallet builds no burn spends the owner coin in an ordinary transaction and claims with its signed key image ([RULES.md](../RULES.md) section 11); only a coin spent from this block on counts; the fee is the network fee of the transaction that carries the claim and 0.0025 XMR; reader option `--spend-from 3813165` |
 | Who may mint | Until the opening block the listed minters: `42zfMRhM9aQAXb4uZKw5gzVN9uTf3bUrgAz2cY7jpvbn8ZE4RWsBsKUECgXNiFKsqK9nBDPThFzTafsZX3bZ7socRQZU1qX` (the XMR20 launchpad's inscriber) and `47hW3YWbqR5LrvJyfRSBAqArp8TcU1xnL29dn5xpEWJN9dmyohzaS4ug3e57yvSGmT3UWh47gfN4VW1soHSrXsmqD8haurE` (the Sweep and Burn issuer) |
 | XMR20 token inscribers | `42zfMRhM9aQAXb4uZKw5gzVN9uTf3bUrgAz2cY7jpvbn8ZE4RWsBsKUECgXNiFKsqK9nBDPThFzTafsZX3bZ7socRQZU1qX` |
-| Relay fee | None at present. Claims, moves, listings, reservations and purchases are always carried free |
+| Relay fee | Not part of the rules: a relay sets its own. The project's relay carries claims, moves, listings, reservations and purchases free, and at present asks 0.0005 XMR to carry a mint that does not come from the XMR20 launchpad |
 | Repository | Public |
 
 The fee address is a main mainnet address and passes the ledger's own check for usable
