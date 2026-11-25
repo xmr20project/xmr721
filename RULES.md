@@ -100,7 +100,8 @@ owner list. The Mordinal then belongs to `to`. Claims have no deadline.
 
 On a ledger with a first burn block, claim records of proof 0 and 1 count up to 720 blocks
 past it and no longer after that; from the first burn block on a Mordinal is claimed as
-section 10 says. A claim record of proof 2 counts only on a ledger that names a first block
+section 10 says. A ledger may name a block from which they count again
+(section 12). A claim record of proof 2 counts only on a ledger that names a first block
 of claims by a spent coin, from that block on (section 11). What follows describes proofs 0
 and 1.
 
@@ -344,6 +345,7 @@ kept for that.
 | Claim deadline | none | — | decided |
 | Old-style transfers after the start block | not honoured, except the burning transfer of section 10 on a ledger that has it | owner list | decided |
 | First burn block | not set | ledger setup | draft |
+| First block of claim records counting again | not set | ledger setup | draft |
 | Claim records after the first burn block | 720 more blocks (about a day) | `RECORDS_OVERLAP` | draft |
 | Burn address | section 10 | `rules/lib/burn.mjs` | draft |
 | Dead outputs (mainnet) | 70499731–70499744 and 70499746, fixed | `MAINNET_DEAD` | draft |
@@ -867,3 +869,35 @@ refuses it when the node does not know `spendTx`.
 Code: `rules/lib/spend.mjs`; the checks in order: `spentCoin` in `rules/lib/ledger.mjs`, the
 waiting and the fee as for burn claims. Tests: `rules/tests/spend.test.mjs` (with three key
 images that Feather exported, in `rules/tests/fixtures-spend.json`), `reader/tests/spend.test.mjs`.
+
+## 12. Claim records again (a ledger setting)
+
+A ledger that claims by burning may name a **first block of claim records counting
+again**. It is fixed for the ledger and shared by every reader of it, and a checkpoint
+names it from that block on. It lies at or after the block where claim records stopped
+(the first burn block plus 720).
+
+From that block on a claim record of proof 0 or proof 1 counts as section 3 says, as it
+did before the first burn block. In the blocks between the end of the 720 blocks and this
+block such a record is refused, and a record refused there stays refused.
+
+Nothing else changes:
+
+- A Mordinal is claimed once. The first claim that completes wins, whichever way it was
+  made: by record, by burning (section 10) or by a spent coin (section 11).
+- Burn claims and claims by a spent coin go on as before, with their fees. A claim record
+  pays no fee to the project.
+- A claim record needs the keys of the owner coin and not the coin: the coin is not spent
+  and no key image is shown. A holder whose coin was spent in an ordinary transaction, or
+  whose burn waits for its fee, can claim by record too.
+- A Mordinal claimed by record keeps its owner coin. Under the original 2023 rules that
+  coin can still be moved; this ledger does not follow such a move (section 7), so the
+  owner here stays the address the claim named until a signed record moves it.
+
+Why a ledger takes this setting: a holder shows the Mordinal is theirs by signature, from
+the wallet that holds it, and sells or sends it from then on without spending the coin.
+The coin stays unspent for a later change of the rules that ties an NFT to its coin again.
+
+A reader takes the setting in like a first block of claims by a spent coin: a state folder
+that has not read the block yet, with the block at least 10 blocks above the newest block
+of the folder and of the node.

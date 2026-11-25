@@ -173,7 +173,7 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
    // A claim record handed over now reaches the next block at the earliest. On a ledger that claims by burning it
    // would be refused there once claim records no longer count, so it is not carried. A claim by a spent coin counts
    // from its own first block on, whatever the claim records do.
-   const burn=reader.ledger.burn;if(d.op===OP.claim&&!spent&&burn&&reader.height+1>=burn.recordsEnd)throw bad(`From block ${burn.recordsEnd} a Mordinal is claimed only by burning it; a claim record no longer counts.`);
+   const burn=reader.ledger.burn,again=reader.ledger.records;if(d.op===OP.claim&&!spent&&burn&&reader.height+1>=burn.recordsEnd&&!(again&&reader.height>=again.from))throw bad(again?`Claim records count again from block ${again.from}.`:`From block ${burn.recordsEnd} a Mordinal is claimed only by burning it; a claim record no longer counts.`);
    if(spent){
     // Before the first block of such claims: refused if the record could not reach it, held if it reaches it at the earliest.
     const from=reader.ledger.spend?.from??null;

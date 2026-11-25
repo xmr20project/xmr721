@@ -18,7 +18,7 @@ export function burning(){
  let address=null,wallet=null;try{address=burnAddress(i.network);wallet=feeWallet(null,i.network);}catch{}
  const text=CLAIM_PREFIX+'<address>',b=i.burn,f=b?.fee,feeFits=Boolean(wallet&&f&&f.wallet===wallet.address&&f.viewKey===wallet.viewKey&&f.account===1&&f.offset===1);
  const fits=Boolean(b&&address&&b.address===address&&b.text===text&&Number.isInteger(b.recordsEnd)&&b.recordsEnd>i.burnFrom&&feeFits);
- return {from:i.burnFrom,recordsEnd:fits?b.recordsEnd:null,active:i.height>=i.burnFrom,records:fits&&i.height<b.recordsEnd,fits,address,text,wallet:walletBurns(),fee:fits?wallet:null};}
+ return {from:i.burnFrom,recordsEnd:fits?b.recordsEnd:null,active:i.height>=i.burnFrom,records:fits&&(i.height<b.recordsEnd||Number.isInteger(i.recordsFrom)&&i.height>=i.recordsFrom),again:fits&&Number.isInteger(i.recordsFrom)?i.recordsFrom:null,fits,address,text,wallet:walletBurns(),fee:fits?wallet:null};}
 export const burnMisfit=()=>notice('warn',el('span',{'data-burn':'misfit',text:'This service states another burn address, claim text or fee wallet than these pages work out themselves, so no instructions are shown. The service does not fit its code: do not burn a Mordinal or pay a fee on its word.'}));
 // The fee address of Mordinal n, worked out here.
 export const feeAddress=(b,n)=>feeAddressOf(b.fee,n).address;
