@@ -38,9 +38,20 @@ test('a larger record is asked more for the network; the node\'s rate of the mom
  // A dearer network: after the relay's next pass a new record is asked at the new rate.
  demo.chain.rate={perByte:30001n,mask:10000n};await demo.step();
  const next=L().prepareMint({creator:W.bob.address,type:5,content:text('c')}),rn=signed(W.bob,next),c=await post('/records',{record:rn});
- assert.equal(c.pay.network,network(rn,30001n).toString());assert.equal(BigInt(c.pay.network)%10000n,0n);demo.chain.rate={perByte:20000n,mask:10000n};await demo.step();
- // The same record asked again keeps what it was told.
- assert.equal((await post('/records',{record:signed(W.bob,small)})).pay.amount,a.pay.amount);});
+ assert.equal(c.pay.network,network(rn,30001n).toString());assert.equal(BigInt(c.pay.network)%10000n,0n);
+ // The same record asked again, while the network is dearer, keeps what it was told.
+ assert.equal((await post('/records',{record:ra})).pay.amount,a.pay.amount);
+ // A rate no network asks is not taken: the last one stays.
+ demo.chain.rate={perByte:5000000n,mask:10000n};await demo.step();
+ const odd=L().prepareMint({creator:W.other.address,type:5,content:text('d')}),ro=signed(W.other,odd);
+ assert.equal((await post('/records',{record:ro})).pay.network,network(ro,30001n).toString());demo.chain.rate={perByte:20000n,mask:10000n};await demo.step();});
+
+test('a record whose time ran out is asked the same amount again, so the late payment for it counts',async()=>{
+ const p=L().prepareMint({creator:W.erin.address,type:5,content:text('late with the network fee')}),r=signed(W.erin,p),out=await post('/records',{record:r});
+ for(let i=0;i<31;i++)await demo.mine();assert.equal((await get('/status/'+p.id)).state,'refused');
+ demo.chain.rate={perByte:40000n,mask:10000n};await demo.step();await pay(out.pay.address,out.pay.amount);await demo.mine();
+ const again=await post('/records',{record:r});assert.equal(again.pay.amount,out.pay.amount);assert.equal(again.pay.address,out.pay.address);
+ await demo.mine();await demo.mine();assert.equal((await get('/status/'+p.id)).state,'done');demo.chain.rate={perByte:20000n,mask:10000n};await demo.step();});
 
 test('a collection and a mint into it are asked their own price and the network fee',async()=>{
  const set=L().prepareCollection({creator:W.carol.address,name:'Net Set',max:2}),sr=signed(W.carol,set),made=await post('/records',{record:sr});

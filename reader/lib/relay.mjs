@@ -66,7 +66,7 @@ export const DEFAULT_LIMITS={perSigner:3,waiting:200,perDay:2000,margin:5,resend
 
 // A carrier transaction without its tx_extra: one input with 16 ring members and two outputs. Carriers on the chain
 // measure 1490 to 1494 bytes there; a few bytes are added so the fee asked is not below the fee paid.
-const CARRIER_BYTES=1499,extraBytes=n=>frame(new Uint8Array(n),new Uint8Array(32),{paymentId:new Uint8Array(8)}).length;
+const CARRIER_BYTES=1499,MOST_RATE=2000000n,extraBytes=n=>frame(new Uint8Array(n),new Uint8Array(32),{paymentId:new Uint8Array(8)}).length;
 export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,limits:given={},fees:asked={},lane=[],now=()=>Date.now(),log=()=>{}}){
  const laneOf=new Set(lane.map(a=>canonical(a,network)));
  // A collection or mint record of someone who is not one of this relay's own minters (on a relay that has any), when
@@ -99,7 +99,13 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
  const addNetwork=asked.network==='added';let rate={perByte:20000n,mask:10000n},rateAt=0;
  const feeFor=bytes=>{const f=BigInt(bytes)*rate.perByte;return (f+rate.mask-1n)/rate.mask*rate.mask;};
  // The rate is asked for at every pass of the relay, and before a fee is named when the last answer is a minute old.
- const refreshRate=async(force=false)=>{if(addNetwork&&chain.feeRate&&(force||now()-rateAt>60000)){try{rate=await chain.feeRate();rateAt=now();}catch(e){log({feeRate:String(e.message).slice(0,120)});}}};
+ // An answer that fails, or names a rate far above any the network has asked (100 times the usual one), leaves the last
+ // rate in place; the next pass asks again.
+ const refreshRate=async(force=false)=>{if(addNetwork&&chain.feeRate&&(force||now()-rateAt>60000)){rateAt=now();
+  try{const r=await chain.feeRate();if(r.perByte>MOST_RATE||r.mask>MOST_RATE)throw Error('fee rate out of range');rate=r;}catch(e){log({feeRate:String(e.message).slice(0,120)});}}};
+ // A record handed in again after its time ran out is asked what it was asked before, so a payment that came late for
+ // that amount is enough.
+ const networkFor=(known,price,recordHex)=>known?.pay?.network!=null&&known.pay.price===price.toString()?BigInt(known.pay.network):networkOf(recordHex);
  const networkOf=async recordHex=>{if(!addNetwork)return 0n;await refreshRate();return feeFor(CARRIER_BYTES+extraBytes(recordHex.length/2));};
  const paying=(price,network)=>({amount:(price+network).toString(),...(addNetwork?{price:price.toString(),network:network.toString()}:{})});
  const payView=j=>({address:j.pay.address,amount:j.pay.amount,payBy:j.payBy,...(j.pay.network!=null?{price:j.pay.price,network:j.pay.network}:{})});
@@ -253,7 +259,7 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   if(price){
    // The subaddress is saved by the carrier before it is given out, so every later scan looks for payments to it.
    const index=payAddress(id,tip,j.createdAt),{address}=await carrier.address(index);
-   j.state='unpaid';j.pay={index,address,...paying(price,await networkOf(recordHex))};j.payBy=tip+limits.payBlocks;}
+   j.state='unpaid';j.pay={index,address,...paying(price,await networkFor(known,price,recordHex))};j.payBy=tip+limits.payBlocks;}
   jobs.set(id,j);save(j);
   if(j.state==='queued')await send(j);return view(j);}
 
@@ -304,7 +310,7 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   // (No signer: the address the tokens go to did not ask for anything, so the mint does not count against its records.)
   const j={id,record:made.record,op:TOKEN_MINT,number:null,signer:null,caller:who,state:'unpaid',createdAt:now(),createdHeight:tip,mint:{token:t.id,amount:units.toString(),to,...(wallet!=null?{wallet}:{}),asset:made.asset,salt:s}};
   const index=payAddress(id,tip,j.createdAt),{address:payTo}=await carrier.address(index);
-  j.pay={index,address:payTo,...paying(fees.tokenMint,await networkOf(made.record))};j.payBy=tip+limits.payBlocks;jobs.set(id,j);save(j);return mintView(j);}
+  j.pay={index,address:payTo,...paying(fees.tokenMint,await networkFor(known,fees.tokenMint,made.record))};j.payBy=tip+limits.payBlocks;jobs.set(id,j);save(j);return mintView(j);}
  // One step of a mint job. The node alone says where its transaction is.
  async function mintStep(j,tip,t,received){
   const where=async()=>{const s=(await chain.txs([j.txid])).get(j.txid);return !s?'unknown':s.inPool?'pool':s.height;};
