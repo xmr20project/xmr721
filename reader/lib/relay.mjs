@@ -12,6 +12,10 @@
 // at least the fee to that subaddress are in a block. A record that is not paid for in time is dropped unsent.
 // A mint that names no collection (one NFT on its own) may have a price of its own (`fees.single`); without one it costs
 // what any mint costs. A token's deploy text is such a record too, and keeps the price of a mint.
+// A relay may add the Monero network fee of the carrying transaction to what it charges (`fees.network: 'added'`): the
+// one who pays then pays the relay's price and the network fee. The transaction is built only after the payment, so the
+// network fee is worked out beforehand, from the size the transaction will have and the node's fee rate of the moment;
+// the relay bears what the built transaction costs more or less than that. Records carried free stay free.
 // A relay with a lane (`lane`: the ledger's listed minters) carries their collections and mints without the fee. Other
 // signers' collections and mints it carries only when it charges for them; without a fee it refuses them.
 //
@@ -38,7 +42,7 @@ import {join} from 'node:path';
 import {OP,PROOF,NO_COLLECTION,decodeRecord,recordId,signerOf,canonical} from '../../rules/lib/records.mjs';
 import {readDeploy,TYPE_JSON} from '../../xmr20-tokens/lib/token.mjs';
 import {unhex,hex,leBytes,decodeAddress} from '../../rules/lib/monero.mjs';
-import {MAX_RECORD} from './transport.mjs';
+import {MAX_RECORD,frame} from './transport.mjs';
 
 // The carrier tool, one call at a time (it keeps one state file).
 export function createCarrier({bin,stateDir,node,network='offline-fakechain',start=1,timeout=180000}){
@@ -60,6 +64,9 @@ export const DEFAULT_LIMITS={perSigner:3,waiting:200,perDay:2000,margin:5,resend
 // A purchase is never held back by the shared limits: once a buyer has paid, the record that makes the Mordinal
 // theirs goes first, with coins kept back for it (buyReserve), so nobody can crowd it out until the reservation runs out.
 
+// A carrier transaction without its tx_extra: one input with 16 ring members and two outputs. Carriers on the chain
+// measure 1490 to 1494 bytes there; a few bytes are added so the fee asked is not below the fee paid.
+const CARRIER_BYTES=1499,extraBytes=n=>frame(new Uint8Array(n),new Uint8Array(32),{paymentId:new Uint8Array(8)}).length;
 export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,limits:given={},fees:asked={},lane=[],now=()=>Date.now(),log=()=>{}}){
  const laneOf=new Set(lane.map(a=>canonical(a,network)));
  // A collection or mint record of someone who is not one of this relay's own minters (on a relay that has any), when
@@ -85,6 +92,17 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
  const fees={collection:BigInt(asked.collection||0),mint:BigInt(asked.mint||0),tokenMint:BigInt(asked.tokenMint||0),single:BigInt(asked.single||0)};
  // The type of a record is what its signer wrote, so the content itself has to be a JSON text to count as one.
  const jsonText=bytes=>{try{const v=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));return v!==null&&typeof v==='object';}catch{return false;}};
+ // The network fee of the transaction that will carry a record. Such a transaction spends one coin and makes two, so
+ // its size is the record in its frame plus a part that is always the same (CARRIER_BYTES, a few bytes above what
+ // carriers on the chain measure); the fee is the node's rate for each byte, rounded up to the node's step.
+ if(asked.network!=null&&asked.network!=='added')throw Error('The network fee is either added to the relay fee ("added") or paid by the relay (leave the option out).');
+ const addNetwork=asked.network==='added';let rate={perByte:20000n,mask:10000n},rateAt=0;
+ const feeFor=bytes=>{const f=BigInt(bytes)*rate.perByte;return (f+rate.mask-1n)/rate.mask*rate.mask;};
+ // The rate is asked for at every pass of the relay, and before a fee is named when the last answer is a minute old.
+ const refreshRate=async(force=false)=>{if(addNetwork&&chain.feeRate&&(force||now()-rateAt>60000)){try{rate=await chain.feeRate();rateAt=now();}catch(e){log({feeRate:String(e.message).slice(0,120)});}}};
+ const networkOf=async recordHex=>{if(!addNetwork)return 0n;await refreshRate();return feeFor(CARRIER_BYTES+extraBytes(recordHex.length/2));};
+ const paying=(price,network)=>({amount:(price+network).toString(),...(addNetwork?{price:price.toString(),network:network.toString()}:{})});
+ const payView=j=>({address:j.pay.address,amount:j.pay.amount,payBy:j.payBy,...(j.pay.network!=null?{price:j.pay.price,network:j.pay.network}:{})});
  const lone=d=>d.op===OP.mint&&d.body.collection===NO_COLLECTION&&!(d.body.type===TYPE_JSON&&jsonText(d.body.content));
  const priceOf=d=>d.op===OP.collection?fees.collection:d.op===OP.mint?(fees.single&&lone(d)?fees.single:fees.mint):0n;
  mkdirSync(jobsDir,{recursive:true});
@@ -115,10 +133,10 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
  const paidFor=(j,payments)=>{const e=pay.addresses[j.pay.index];return e&&e.id===j.id?payments.filter(p=>p.index===j.pay.index&&p.height>=e.from&&!used.has(outKey(p))):[];};
  const save=j=>write(join(jobsDir,j.id+'.json'),j),drop=j=>{jobs.delete(j.id);try{unlinkSync(join(jobsDir,j.id+'.json'));}catch{}};
  const waiting=()=>[...jobs.values()].filter(j=>!FINAL.has(j.state));
- const view=j=>({id:j.id,state:j.state,op:j.op,number:j.number,txid:j.txid||null,error:j.error||null,note:j.note||null,...(j.mint?{mint:{token:j.mint.token,amount:j.mint.amount,asset:j.mint.asset}}:{}),...(j.state==='unpaid'&&!j.mint?{pay:{address:j.pay.address,amount:j.pay.amount,payBy:j.payBy}}:{})});
+ const view=j=>({id:j.id,state:j.state,op:j.op,number:j.number,txid:j.txid||null,error:j.error||null,note:j.note||null,...(j.mint?{mint:{token:j.mint.token,amount:j.mint.amount,asset:j.mint.asset}}:{}),...(j.state==='unpaid'&&!j.mint?{pay:payView(j)}:{})});
  // What the one who asked for a mint is told: also the address the tokens go to, the record, and where to pay. The
  // public answers (status, pending) leave those out: the chain shows an owner key, never the address behind it.
- const mintView=j=>({...view(j),mint:j.mint,record:j.record,...(j.state==='unpaid'?{pay:{address:j.pay.address,amount:j.pay.amount,payBy:j.payBy}}:{}),
+ const mintView=j=>({...view(j),mint:j.mint,record:j.record,...(j.state==='unpaid'?{pay:payView(j)}:{}),
   notice:'The fee pays for carrying the mint. What it credits is the token ledger\'s to say: less than asked when less is left of the token, nothing when it is minted out.'});
  const refuse=(j,error)=>{j.state='refused';j.error=String(error).slice(0,300);j.endedAt=now();save(j);};
  // One thing at a time: a new record and the regular check never interleave.
@@ -235,7 +253,7 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   if(price){
    // The subaddress is saved by the carrier before it is given out, so every later scan looks for payments to it.
    const index=payAddress(id,tip,j.createdAt),{address}=await carrier.address(index);
-   j.state='unpaid';j.pay={index,address,amount:price.toString()};j.payBy=tip+limits.payBlocks;}
+   j.state='unpaid';j.pay={index,address,...paying(price,await networkOf(recordHex))};j.payBy=tip+limits.payBlocks;}
   jobs.set(id,j);save(j);
   if(j.state==='queued')await send(j);return view(j);}
 
@@ -286,7 +304,7 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
   // (No signer: the address the tokens go to did not ask for anything, so the mint does not count against its records.)
   const j={id,record:made.record,op:TOKEN_MINT,number:null,signer:null,caller:who,state:'unpaid',createdAt:now(),createdHeight:tip,mint:{token:t.id,amount:units.toString(),to,...(wallet!=null?{wallet}:{}),asset:made.asset,salt:s}};
   const index=payAddress(id,tip,j.createdAt),{address:payTo}=await carrier.address(index);
-  j.pay={index,address:payTo,amount:fees.tokenMint.toString()};j.payBy=tip+limits.payBlocks;jobs.set(id,j);save(j);return mintView(j);}
+  j.pay={index,address:payTo,...paying(fees.tokenMint,await networkOf(made.record))};j.payBy=tip+limits.payBlocks;jobs.set(id,j);save(j);return mintView(j);}
  // One step of a mint job. The node alone says where its transaction is.
  async function mintStep(j,tip,t,received){
   const where=async()=>{const s=(await chain.txs([j.txid])).get(j.txid);return !s?'unknown':s.inPool?'pool':s.height;};
@@ -323,7 +341,7 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
    if(at==='unknown'&&t-j.sentAt>limits.resendMs){j.state='built';save(j);await send(j);}}}
 
  // After each reader pass: settle what reached a block, send again what did not, keep coins ready.
- async function tick(){
+ async function tick(){await refreshRate(true);
   const tip=reader.height,t=now();let asked=null,unknown=null,payments=null;
   // (One look at the relay's wallet per pass, also when it fails: then every unpaid job waits for the next pass.)
   let unseen=null;const received=async()=>{if(unseen)throw unseen;try{return payments??=((await carrier.status()).payments||[]);}catch(e){unseen=e;throw e;}};
@@ -398,7 +416,10 @@ export function createRelay({dir,reader,chain,carrier,network='mainnet',domain,l
    return {tip,waiting:waiting().length,ready:status.ready,balance:status.balance};}
   catch(e){log({coins:String(e.message).slice(0,200)});return {tip,waiting:waiting().length,ready:null,balance:null};}}
 
- return {limits,fees:{collection:fees.collection.toString(),mint:fees.mint.toString(),...(fees.tokenMint?{tokenMint:fees.tokenMint.toString()}:{}),...(fees.single?{single:fees.single.toString()}:{})},
+ return {limits,
+  // What is added for the network when the relay adds it: the rate, and the fee of a small record (100 bytes) and of the largest.
+  get network(){return addNetwork?{perByte:rate.perByte.toString(),least:feeFor(CARRIER_BYTES+extraBytes(100)).toString(),most:feeFor(CARRIER_BYTES+extraBytes(MAX_RECORD)).toString()}:null;},
+  fees:{collection:fees.collection.toString(),mint:fees.mint.toString(),...(fees.tokenMint?{tokenMint:fees.tokenMint.toString()}:{}),...(fees.single?{single:fees.single.toString()}:{})},
   // Mints of open XMR20 tokens: the token list is the service's (it knows the opening block), handed over once.
   useTokens(lookup){tokenOf=lookup;},submitMint:o=>alone(()=>submitMint(o)),
   submit:(recordHex,o)=>alone(()=>submit(recordHex,o)),tick:()=>alone(tick),

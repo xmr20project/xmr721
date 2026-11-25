@@ -185,3 +185,14 @@ test('asking for mints costs the relay nothing before its limits, and an address
   x.tick(5000);const c=(await x.post('/xmr20/open/mints',ask)).body;
   assert.ok([a.pay.address,b.pay.address].includes(c.pay.address));assert.equal((await x.get('/xmr20/open-mint/'+a.id)).status+(await x.get('/xmr20/open-mint/'+b.id)).status,200+404);
  }finally{await x.close();}});
+
+test('a relay that adds the network fee asks a token mint its fee and the network fee, and carries it once both are paid',async()=>{
+ const x=await world({fees:{mint:FEE,tokenMint:FEE,network:'added'}});
+ try{
+  await x.until(OPEN-1);const token=await x.deploy(x.w.alice,{tick:'NET',max:'1000',lim:'100'});
+  const m=(await x.post('/xmr20/open/mints',{token:token.id,amount:'10',address:x.w.bob.address,salt:'0a0b0c0d0e0f0001'})).body;
+  // 84 bytes of record: 1499 bytes of transaction and 131 of tx_extra, at 20,000 for each byte.
+  assert.deepEqual([m.state,m.pay.price,m.pay.network,m.pay.amount],['unpaid',FEE.toString(),'32600000',(FEE+32600000n).toString()]);
+  await x.payFee(m.pay,FEE);await x.block();assert.equal((await x.get('/xmr20/open-mint/'+m.id)).body.state,'unpaid');
+  await x.payFee(m.pay,32600000n);await x.block();await x.block();assert.match((await x.get('/xmr20/open-mint/'+m.id)).body.state,/sent|done/);
+ }finally{await x.close();}});

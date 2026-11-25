@@ -2,7 +2,7 @@
 // Create page. Everything that is signed is built here from the records themselves; the service's plain fields are
 // only used for reading.
 import {OP,RULES,MAX_RECORD,NO_COLLECTION,MAX_NAME,MAX_EDITIONS,encodeBody,decodeRecord,recordId,codeOf,renderText,nftLabel,splitOf,formatXmr,parseXmr,canonical,unhex} from './rules.js';
-import {el,add,api,service,count,xmr,relayFee,addr,txid,code,notice,pill,strong,table,field,textInput,eventColumns,waitingList,terms,running,draft,ROOT,mordinalName,pills} from './ui.js';
+import {el,add,api,service,count,xmr,relayFee,networkFee,addr,txid,code,notice,pill,strong,table,field,textInput,eventColumns,waitingList,terms,running,draft,ROOT,mordinalName,pills} from './ui.js';
 import {signPanel,signingWallet} from './sign.js';
 import {walletLink,watchWallet} from './wallet.js';
 // An origin as RULES.md describes it: kind 1 with 36 bytes is a Bitcoin inscription id, txid then the index (u32 little-endian).
@@ -145,7 +145,7 @@ export async function nft(ctx,id,action){
 
 // What the relay charges for a collection or a mint, said before anything is signed.
 // One NFT minted on its own has the relay's `single` price when it names one, else the price of any mint.
-const feeLine=(kind,what)=>{const f=kind==='single'?relayFee('single')||relayFee('mint'):relayFee(kind);return f?`${what} costs ${formatXmr(f)} XMR. It pays for putting the record on the Monero network; you pay it after signing, and nothing is sent before it arrives.`:`${what} has no fee. The relay pays the Monero network fee of the record.`;};
+const feeLine=(kind,what)=>{const f=kind==='single'?relayFee('single')||relayFee('mint'):relayFee(kind);const n=networkFee();return f?n?`${what} costs ${formatXmr(f)} XMR plus the Monero network fee (up to ${formatXmr(n)} XMR, by size). You pay both in one payment after signing, and nothing is sent before it arrives.`:`${what} costs ${formatXmr(f)} XMR. It pays for putting the record on the Monero network; you pay it after signing, and nothing is sent before it arrives.`:`${what} has no fee. The relay pays the Monero network fee of the record.`;};
 // Create: a collection, or one NFT. The content is read in the browser and goes into the record that is signed.
 function sniff(bytes){
  const s=(sig,at=0)=>sig.every((v,i)=>bytes[at+i]===v);
