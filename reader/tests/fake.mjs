@@ -11,6 +11,8 @@ export function fakeChain({start=100,time=1700000000}={}){
  blocks.set(start,{height:start,hash:hashOf(start),prev:sha('before'),time,txids:[]});
  const c={node:'fake',fail:null,calls:0,
   get tip(){return tip;},
+  // The fee rate tests can change: atomic units for each byte, and the step fees are rounded up to.
+  rate:{perByte:20000n,mask:10000n},async feeRate(){c.trip('feeRate');return c.rate;},
   trip(what){if(c.fail===what){c.fail=null;throw Error('The Monero node answered HTTP 500');}},
   async info(){c.trip('info');return {height:tip,hash:blocks.get(tip).hash,nettype:'fakechain',offline:true};},
   async header(h){c.trip('header');const b=blocks.get(h);if(!b)throw Error('Monero node: no such block');return {height:b.height,hash:b.hash,prev:b.prev,time:b.time};},

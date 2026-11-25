@@ -21,6 +21,9 @@ export function createChain(node,{fetch:f=fetch,timeout=30000}={}){
     for(const t of v.txs||[]){if(!part.includes(t.tx_hash))throw Error('The Monero node returned a transaction that was not asked for');
      out.set(t.tx_hash,{txid:t.tx_hash,inPool:Boolean(t.in_pool),height:t.in_pool?null:t.block_height,tx:JSON.parse(t.as_json)});}}
    return out;},
+  // What the node asks for a transaction that is in no hurry: atomic units for each byte, and the step fees are rounded up to.
+  async feeRate(){const r=await rpc('get_fee_estimate',{grace_blocks:10}),perByte=BigInt(r.fees?.[0]??r.fee),mask=BigInt(r.quantization_mask||1);
+   if(perByte<=0n||mask<=0n)throw Error('The Monero node gave no fee rate');return {perByte,mask};},
   // For each key image, whether it is spent: 0 no, 1 by a transaction in a block, 2 by a transaction that waits for one.
   async spent(images){if(!images.length)return [];const v=await post('/is_key_image_spent',{key_images:images});
    if(v.status!=='OK'||!Array.isArray(v.spent_status)||v.spent_status.length!==images.length||v.spent_status.some(x=>![0,1,2].includes(x)))throw Error('The Monero node could not say whether coins are spent');return v.spent_status;},

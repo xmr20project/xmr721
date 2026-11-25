@@ -429,7 +429,7 @@ What a reader operator has to know:
   it has to be made again from the start block. The service refuses an option it does not know, so a misspelt
   `--open-from` stops the start instead of being ignored.
 - **A relay with a lane carries its own minters' collections and mints without its fee.** Everyone else's it carries
-  only when it charges for them (`--mint-fee`, `--collection-fee`), once paid; without a fee they go out from wallets of
+  only when it charges for them (`--mint-fee`, `--collection-fee`, and `--single-fee` for a mint that names no collection; `--network-fee added` puts the Monero network fee of the record's transaction on top), once paid; without a fee they go out from wallets of
   their own.
 
 Known limits:

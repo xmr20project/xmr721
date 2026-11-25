@@ -25,7 +25,7 @@ export function follow(ctx,id,{own=false,onEnd}={}){
   if(s.state!=='unpaid'||!s.pay){paying.hidden=true;shownFor='';return;}
   if(shownFor===s.pay.address)return;shownFor=s.pay.address;paying.hidden=false;
   fill(paying,el('h3',{text:'Pay the relay fee'}),
-   el('p',{class:'muted'},'Send ',el('strong',{'data-pay-amount':'',text:xmr(s.pay.amount)+' XMR'}),' to this address from any Monero wallet. The record is sent to the Monero network once the payment is in a block, usually a few minutes after you pay.'),
+   el('p',{class:'muted'},'Send ',el('strong',{'data-pay-amount':'',text:xmr(s.pay.amount)+' XMR'}),s.pay.network!=null?` (${xmr(s.pay.price)} XMR and ${xmr(s.pay.network)} XMR Monero network fee)`:'',' to this address from any Monero wallet. The record is sent to the Monero network once the payment is in a block, usually a few minutes after you pay.'),
    el('div',{class:'signtext','data-pay-address':'',text:s.pay.address}),
    el('div',{class:'row'},copyButton(s.pay.address,'Copy address','to pay'),copyButton(xmr(s.pay.amount),'Copy amount','to pay'),el('span',{class:'dim',text:'Pay by block '+count(s.pay.payBy)+'. This address is for this record only.'})),
    el('p',{class:'dim',text:'The fee pays for putting the record on the Monero network. If you do not pay, nothing is sent and nothing is owed.'}));}

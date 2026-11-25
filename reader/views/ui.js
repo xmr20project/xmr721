@@ -54,6 +54,9 @@ export const running=(t,height)=>t.reservation&&heldUntil(t.reservation)>=height
 export const xmr=p=>formatXmr(BigInt(p));
 // What this relay charges to carry a collection or a mint record, in atomic units (0n = free).
 export const relayFee=kind=>{try{return BigInt(service.info.relay?.fees?.[kind]||0);}catch{return 0n;}};
+// The most the Monero network fee of one record comes to when the relay adds it to its own fee (rounded up to 0.00001 XMR);
+// 0n when the relay pays the network fee itself.
+export const networkFee=()=>{try{const r=service.info.relay;if(r?.networkFee!=='added')return 0n;const m=BigInt(r.network?.most||0),u=10000000n;return (m+u-1n)/u*u;}catch{return 0n;}};
 export const count=n=>Number(n).toLocaleString('en-US');
 export const short=(s,head=8,tail=6)=>s.length>head+tail+1?s.slice(0,head)+'…'+s.slice(-tail):s;
 export const when=seconds=>seconds?new Date(seconds*1000).toISOString().slice(0,16).replace('T',' ')+' UTC':'';
